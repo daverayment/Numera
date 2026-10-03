@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageTags>calculator;expression;engine;arithmetic;math;mathematics;parser;parsing</PackageTags>
+    <RepositoryUrl>https://github.com/daverayment/Numera</RepositoryUrl>
+    <Version>0.1.0-dev</Version>
+    <Description>A portable calculator expression engine with integer, decimal and floating-point arithmetic.</Description>
+    <Authors>daverayment</Authors>
+    <Copyright>Copyright (c) 2026 David Rayment</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReleaseNotes>Initial release.</PackageReleaseNotes>
+  </PropertyGroup>
+
+</Project>
