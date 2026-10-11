@@ -1,7 +1,7 @@
 namespace Numera;
 
 /// <summary>
-/// Hard safety ceilings used by the bounded numeric implementation.
+/// Hard safety ceilings for expression parsing and bounded numeric operations.
 /// </summary>
 public static class CalculationLimits
 {

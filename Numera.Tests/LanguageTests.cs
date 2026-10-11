@@ -42,6 +42,8 @@ public class LanguageTests
     [DataRow("9/0", EvaluationError.DivisionByZero)]
     public void ExpectedFailuresHaveStableDiagnosticCodes(string input, EvaluationError code)
     {
+        // Skipped operands still require valid syntax, names, and arity. Assert categories
+        // rather than wording so consumers can rely on the structured diagnostic contract.
         Assert.IsFalse(Calculator.TryEvaluate(input, out _, out var diagnostic));
         Assert.IsNotNull(diagnostic);
         Assert.AreEqual(code, diagnostic.Code);
@@ -93,6 +95,8 @@ public class LanguageTests
         var original = CultureInfo.CurrentCulture;
         try
         {
+            // A comma-decimal culture must not change the core grammar: dots remain
+            // decimal points and commas remain function argument separators.
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
             Assert.AreEqual(1.75m, Calculator.Evaluate("min(2.5,1.75,3)").DecVal);
             Assert.IsFalse(Calculator.TryEvaluate("1,75", out _, out _));
@@ -113,5 +117,64 @@ public class LanguageTests
             Assert.IsTrue(fraction >= 0 && fraction < 1);
             Assert.IsTrue(integer >= 0 && integer < 17);
         }
+    }
+
+    [TestMethod]
+    [DataRow("PI", 3.1415926535897931)]
+    [DataRow("Pi", 3.1415926535897931)]
+    [DataRow("pi", 3.1415926535897931)]
+    [DataRow("π", 3.1415926535897931)]
+    [DataRow("E", 2.7182818284590451)]
+    [DataRow("e", 2.7182818284590451)]
+    public void ConstantsAreCaseInsensitive(string constantName, double expectedValue)
+    {
+        Assert.AreEqual(expectedValue, Calculator.Evaluate(constantName).DblVal, 1e-15);
+    }
+
+    [TestMethod]
+    public void BracketPairingsMustMatch()
+    {
+        // Matching parentheses and brackets are valid
+        Assert.AreEqual(new BigInteger(6), Calculator.Evaluate("(1+2)*2").IntVal);
+        Assert.AreEqual(new BigInteger(6), Calculator.Evaluate("[1+2]*2").IntVal);
+
+        // Mismatched bracket types fail
+        Assert.IsFalse(Calculator.TryEvaluate("(1+2]", out _, out var diag1));
+        Assert.AreEqual(EvaluationError.InvalidSyntax, diag1!.Code);
+
+        Assert.IsFalse(Calculator.TryEvaluate("[1+2)", out _, out var diag2));
+        Assert.AreEqual(EvaluationError.InvalidSyntax, diag2!.Code);
+    }
+
+    [TestMethod]
+    public void EqualityChainsFoldLeft()
+    {
+        // 2 == 2 is 1. Then 1 == 1 is 1.
+        Assert.AreEqual(1m, Calculator.Evaluate("2 == 2 == 1").DecVal);
+
+        // 2 == 3 is 0. Then 0 == 0 is 1.
+        Assert.AreEqual(1m, Calculator.Evaluate("2 == 3 == 0").DecVal);
+
+        // 2 == 2 is 1. Then 1 == 3 is 0.
+        Assert.AreEqual(0m, Calculator.Evaluate("2 == 2 == 3").DecVal);
+    }
+
+    [TestMethod]
+    public void UnaryChainsAndExponentiationPrecedence()
+    {
+        // - - 5 is 5
+        Assert.AreEqual(new BigInteger(5), Calculator.Evaluate("- - 5").IntVal);
+
+        // + - + 5 is -5
+        Assert.AreEqual(new BigInteger(-5), Calculator.Evaluate("+ - + 5").IntVal);
+
+        // Powers bind tighter than leading sign: -2^4 is -(2^4) = -16
+        Assert.AreEqual(new BigInteger(-16), Calculator.Evaluate("-2^4").IntVal);
+
+        // Explicit grouping: (-2)^4 is 16
+        Assert.AreEqual(new BigInteger(16), Calculator.Evaluate("(-2)^4").IntVal);
+
+        // Negative exponent in power: 2^-1 is 0.5
+        Assert.AreEqual(0.5, Calculator.Evaluate("2^-1").DblVal, 1e-15);
     }
 }

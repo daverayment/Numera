@@ -5,12 +5,20 @@ namespace Numera;
 /// </summary>
 public sealed record EvaluationOptions
 {
+    /// <summary>
+    /// Maximum input length in UTF-16 code units, including whitespace.
+    /// </summary>
     public int MaxInputLength { get; init; } = CalculationLimits.MaxInputLength;
 
+    /// <summary>
+    /// Maximum active unary-parser depth, including recursion through grouping,
+    /// function arguments, unary signs, and powers; not just bracket nesting.
+    /// </summary>
     public int MaxNestingDepth { get; init; } = CalculationLimits.MaxNestingDepth;
 
     internal void Validate()
     {
+        // Options may reduce work for a caller, but cannot bypass the engine's ceilings.
         if (MaxInputLength is < 1 or > CalculationLimits.MaxInputLength)
         {
             throw new ArgumentOutOfRangeException(nameof(MaxInputLength));

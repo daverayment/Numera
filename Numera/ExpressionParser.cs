@@ -1,16 +1,22 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Numerics;
 
 namespace Numera;
 
 /// <summary>
-/// Parses mathematical expressions, mapping standard order of operations and interpreting
-/// transcendental functions, rounding, negative roots, and factorials.
+/// Evaluates one mathematical expression using recursive descent, without retaining an
+/// abstract syntax tree. Each instance owns the parsing state for a single evaluation.
 /// </summary>
+/// <remarks>
+/// Precedence, from lowest to highest, is OR, AND, equality, addition/subtraction,
+/// multiplication/division/remainder, unary signs, and exponentiation. Grouping and
+/// function arguments restart at the lowest precedence.
+/// </remarks>
 internal sealed class ExpressionParser
 {
     private readonly string _input;
     private readonly EvaluationOptions _options;
+    // Cursor positions also identify diagnostic locations in the original input.
     private int _pos;
     private int _depth;
 
@@ -24,7 +30,6 @@ internal sealed class ExpressionParser
 
         _input = input;
         _options = options;
-        _pos = 0;
     }
 
     public NumberValue Evaluate()
@@ -32,6 +37,7 @@ internal sealed class ExpressionParser
         var result = ParseLogical();
         SkipWhitespace();
 
+        // A valid prefix is not enough: the entire expression must be consumed.
         if (_pos < _input.Length)
         {
             throw SyntaxError($"Unexpected character '{_input[_pos]}'.");
@@ -40,8 +46,11 @@ internal sealed class ExpressionParser
         return result;
     }
 
+    // With evaluate=false, parsing and validation still run, but operators and function
+    // execution are skipped. Returned values on that path are not evaluation results.
     private NumberValue ParseLogical(bool evaluate = true)
     {
+        // Logical OR has the lower precedence, so AND is evaluated first.
         var left = ParseLogicalAnd(evaluate);
         while (true)
         {
@@ -53,6 +62,9 @@ internal sealed class ExpressionParser
 
             Consume();
             Consume();
+
+            // Short-circuit evaluation: if the left side is already true (non-zero), the
+            // right side is parsed but not evaluated.
             var right = ParseLogicalAnd(evaluate && left.IsZero);
             if (evaluate)
             {
@@ -88,6 +100,8 @@ internal sealed class ExpressionParser
 
     private NumberValue ParseEquality(bool evaluate)
     {
+        // Equality chains fold left, comparing each Boolean result with the next operand;
+        // they are not interpreted as a conjunction of pairwise comparisons.
         var left = ParseExpression(evaluate);
         while (true)
         {
@@ -198,6 +212,8 @@ internal sealed class ExpressionParser
 
     private NumberValue ParseUnary(bool evaluate)
     {
+        // Recursive grammar paths return through here, so one counter bounds grouping,
+        // function arguments, unary chains, and right-associative powers alike.
         if (_depth >= _options.MaxNestingDepth)
         {
             throw new CalculationLimitException();
@@ -219,6 +235,7 @@ internal sealed class ExpressionParser
                 return ParseUnary(evaluate);
             }
 
+            // Powers bind more tightly than a leading sign: -2^2 means -(2^2).
             return ParsePower(evaluate);
         }
         finally
@@ -234,7 +251,10 @@ internal sealed class ExpressionParser
         if (Peek() == '^')
         {
             Consume();
-            var right = ParseUnary(evaluate); // Right-associative, e.g. 2^3^2 = 2^(3^2)
+
+            // Recursing through unary permits signed exponents and makes powers
+            // right-associative: 2^-3 is valid, and 2^3^2 means 2^(3^2).
+            var right = ParseUnary(evaluate);
             if (evaluate)
             {
                 left = NumberValue.Pow(left, right);
@@ -308,7 +328,8 @@ internal sealed class ExpressionParser
                     throw SyntaxError("Expected ')'.");
                 }
 
-                // Validate skipped operands too, without evaluating their functions.
+                // Short-circuiting suppresses execution, not errors in function names
+                // or argument counts. Validation also protects the dispatch below.
                 if (!FunctionArity.TryGet(identifier, out var signature))
                 {
                     throw new ExpressionException(new EvaluationDiagnostic(
@@ -324,6 +345,8 @@ internal sealed class ExpressionParser
                 return evaluate ? EvaluateFunction(identifier, args) : default;
             }
 
+            // Constants and literals are still resolved in skipped operands, so invalid
+            // names and malformed numbers cannot hide behind short-circuiting.
             return EvaluateConstant(identifier);
         }
 
@@ -335,6 +358,8 @@ internal sealed class ExpressionParser
         var start = _pos;
         var hasDecimal = false;
 
+        // Signs belong to ParseUnary. Literal syntax allows digits and a decimal point,
+        // but does not admit exponent notation even though the numeric APIs support it.
         while (_pos < _input.Length && (char.IsDigit(Peek()) || Peek() == '.'))
         {
             if (Peek() == '.')
@@ -352,6 +377,9 @@ internal sealed class ExpressionParser
 
         var numberStr = _input[start.._pos];
 
+        // Keep whole-number literals as arbitrary-precision integers. For literals with
+        // a decimal point, prefer decimal to binary floating point; parsing may still
+        // round excess digits. Double is a fallback, not a guarantee of exactness.
         if (!hasDecimal && BigInteger.TryParse(
             numberStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
         {
@@ -381,6 +409,7 @@ internal sealed class ExpressionParser
             Consume();
         }
 
+        // Function and constant dispatch use canonical names regardless of user culture.
         return _input.Substring(start, _pos - start).ToLowerInvariant();
     }
 
@@ -402,6 +431,7 @@ internal sealed class ExpressionParser
 
     private static NumberValue EvaluateFunction(string name, List<NumberValue> args)
     {
+        // ParsePrimary has already validated the canonical name and argument count.
         if (name is "min" or "max")
         {
             return EvaluateMinMax(args, name == "min");
@@ -409,11 +439,14 @@ internal sealed class ExpressionParser
 
         if (args.Count == 0)
         {
+            // rand is the only registered zero-argument function.
             return new NumberValue(Random.Shared.NextDouble());
         }
 
         if (args.Count == 1)
         {
+            // Math-based functions use double approximations. Branches that can operate
+            // on integer or decimal values use the original argument instead.
             var v = args[0].AsDouble();
             switch (name)
             {
@@ -465,6 +498,8 @@ internal sealed class ExpressionParser
                     return new NumberValue(Math.Sqrt(v));
 
                 case "factorial":
+                    // Domain errors yield NaN; valid but prohibitively expensive inputs
+                    // fail with a calculation limit before the multiplication loop.
                     if (!args[0].TryGetInteger(out var factorialArgument) || factorialArgument < 0)
                     {
                         return new NumberValue(double.NaN);
@@ -497,13 +532,16 @@ internal sealed class ExpressionParser
 
                     if (double.IsNaN(v))
                     {
-                        // Required for Sign(Sqrt(-1)) to return 0 instead of throwing an exception.
+                        // The calculator defines sign(NaN) as zero (e.g. sign(sqrt(-1))),
+                        // whereas Math.Sign would throw for NaN.
                         return new NumberValue(0m);
                     }
 
                     return new NumberValue((double)Math.Sign(v));
 
                 case "round":
+                    // Calculator midpoint rounding is away from zero, not Math.Round's
+                    // default ties-to-even behavior.
                     if (args[0].Type is NumberValue.DataType.Integer)
                     {
                         return args[0];
@@ -625,7 +663,8 @@ internal sealed class ExpressionParser
                     var rootVal = args[1].AsDouble();
                     if (baseVal < 0 && Math.Abs(rootVal % 2) == 1)
                     {
-                        // Negative real root handling for odd numbers, e.g. -8^(1/3) = -2.
+                        // Math.Pow with a negative base and a fractional exponent yields
+                        // NaN. Odd integer roots have a real branch: root(-8, 3) = -2.
                         return new NumberValue(-Math.Pow(-baseVal, 1.0 / rootVal));
                     }
 
@@ -641,6 +680,8 @@ internal sealed class ExpressionParser
 
     private static NumberValue EvaluateMinMax(List<NumberValue> args, bool findMinimum)
     {
+        // Compare without converting every argument to double, and return the selected
+        // operand unchanged so its numeric representation is preserved.
         var result = args[0];
         for (var i = 1; i < args.Count; i++)
         {

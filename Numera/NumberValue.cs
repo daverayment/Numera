@@ -1,21 +1,46 @@
-﻿using System.Numerics;
+using System.Numerics;
 
 namespace Numera;
 
 /// <summary>
-/// A calculator value retaining its integer, decimal or binary floating-point representation.
-/// Representation describes storage, not a guarantee of mathematical accuracy.
+/// A calculator value stored as an integer, decimal, or double. Operations select their
+/// result representation eagerly, preserving integer arithmetic where supported and
+/// falling back to double when decimal arithmetic overflows.
 /// </summary>
-public readonly struct NumberValue
+/// <remarks>
+/// Only the property selected by Type carries the value; the other value properties are
+/// zero. The default instance is integer zero. Representation alone does not establish
+/// the accuracy of a calculation: decimal arithmetic can round, and double operations
+/// can approximate. Integer results exceeding the safety ceiling throw rather than
+/// falling back to double.
+/// </remarks>
+public readonly struct NumberValue : IFormattable
 {
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1720:Identifier contains type name", Justification = "The enum names are descriptive of their usage, which does not conflict with type names.")]
     public enum DataType
     {
+        /// <summary>
+        /// Exact integer, bounded by the calculator's integer-size ceiling.
+        /// </summary>
         Integer,
+
+        /// <summary>
+        /// A base-10 value stored with a 96-bit coefficient and a scale from 0 to 28.
+        /// The stored value is exact, but parsing and arithmetic may round to fit it.
+        /// </summary>
         Decimal,
+
+        /// <summary>
+        /// Approximate double-precision floating-point value. 64-bit binary
+        /// representation with roughly 15-17 significant decimal digits. Also permits
+        /// NaN and infinities; used for Math-based functions and decimal overflow fallback.
+        /// </summary>
         Double,
     }
 
+    /// <summary>
+    /// Identifies which value property is active; it is not a numerical accuracy guarantee.
+    /// </summary>
     public DataType Type { get; }
 
     public BigInteger IntVal { get; }
@@ -53,11 +78,58 @@ public readonly struct NumberValue
         DblVal = value;
     }
 
+    /// <summary>
+    /// Forces the value into a standard 64-bit floating-point representation. This may
+    /// result in loss of precision or magnitude.
+    /// </summary>
+    /// <returns>The value as a 64-bit floating-point number.</returns>
     public double AsDouble() => Type switch
     {
         DataType.Integer => (double)IntVal,
         DataType.Decimal => (double)DecVal,
         _ => DblVal,
+    };
+
+    /// <summary>
+    /// Returns <c>true</c> if the value is a finite number. Returns <c>false</c> for NaN
+    /// or Infinity.
+    /// </summary>
+    public bool IsFinite => Type switch
+    {
+        DataType.Double => double.IsFinite(DblVal),
+        _ => true,
+    };
+
+    /// <summary>
+    /// Returns <c>true</c> if the value is Not-a-Number (NaN); otherwise <c>false</c>.</c>
+    /// </summary>
+    public bool IsNaN => Type switch
+    {
+        DataType.Double => double.IsNaN(DblVal),
+        _ => false,
+    };
+
+    /// <summary>
+    /// Formats the value using the current thread culture.
+    /// </summary>
+    public override string ToString() => ToString(null, null);
+
+    /// <summary>
+    /// Formats the value using the specified format string and current thread culture.
+    /// </summary>
+    public string ToString(string? format) => ToString(format, null);
+
+    /// <summary>
+    /// Formats the value using the specified format and format provider. If the active
+    /// representation is <see cref="DataType.Double"/> and no format is supplied,
+    /// defaults to "G17" to preserve floating-point round-trip precision.
+    /// </summary>
+    public string ToString(string? format, IFormatProvider? formatProvider) => Type switch
+    {
+        DataType.Integer => IntVal.ToString(format, formatProvider),
+        DataType.Decimal => DecVal.ToString(format, formatProvider),
+        DataType.Double => DblVal.ToString(string.IsNullOrEmpty(format) ? "G17" : format, formatProvider),
+        _ => string.Empty,
     };
 
     internal bool IsZero => Type switch
@@ -67,6 +139,10 @@ public readonly struct NumberValue
         _ => DblVal == 0.0,
     };
 
+    /// <summary>
+    /// Extracts an integer when the stored value is finite and has no fractional part.
+    /// Success does not recover digits lost in an earlier approximate calculation.
+    /// </summary>
     public bool TryGetInteger(out BigInteger value)
     {
         switch (Type)
@@ -93,6 +169,11 @@ public readonly struct NumberValue
         _ => new NumberValue(-value.DblVal),
     };
 
+    /// <summary>
+    /// Orders integer and decimal values without precision loss. If either value is a
+    /// double, both are converted and ordered using Double.CompareTo, including its NaN
+    /// semantics; distinct exact values may compare equal after conversion.
+    /// </summary>
     public static int Compare(NumberValue a, NumberValue b)
     {
         // If both values are integers, compare them as big integers to avoid precision
@@ -120,6 +201,8 @@ public readonly struct NumberValue
         return a.AsDouble().CompareTo(b.AsDouble());
     }
 
+    // Logical results use decimal zero/one. Only zero is false, so NaN is truthy here.
+    // These helpers receive both values; short-circuiting belongs to the parser.
     public static NumberValue LogicalAnd(NumberValue a, NumberValue b) =>
         (!a.IsZero && !b.IsZero) ? new NumberValue(1m) : new NumberValue(0m);
 
@@ -134,16 +217,20 @@ public readonly struct NumberValue
 
     public static NumberValue operator +(NumberValue a, NumberValue b)
     {
+        // If either value is a double, the entire operation is promoted to double.
         if (a.Type is DataType.Double || b.Type is DataType.Double)
         {
             return new NumberValue(a.AsDouble() + b.AsDouble());
         }
-
+        
+        // If both values are integers, perform exact integer addition.
         if (a.Type is DataType.Integer && b.Type is DataType.Integer)
         {
             return new NumberValue(a.IntVal + b.IntVal);
         }
 
+        // Prefer decimal for mixed integer/decimal or pure decimal arithmetic. This can
+        // round to fit decimal precision; conversion or arithmetic overflow uses double.
         try
         {
             var decA = a.Type is DataType.Integer ? (decimal)a.IntVal : a.DecVal;
@@ -152,8 +239,6 @@ public readonly struct NumberValue
         }
         catch (OverflowException)
         {
-            // Decimal overflow, convert to double, which can represent a wider range of
-            // values, but with less precision.
             return new NumberValue(a.AsDouble() + b.AsDouble());
         }
     }
@@ -222,6 +307,8 @@ public readonly struct NumberValue
             b.Type is DataType.Integer &&
             BigInteger.Remainder(a.IntVal, b.IntVal) == BigInteger.Zero)
         {
+            // Preserve an exact integer quotient; fractional quotients use the decimal
+            // path below, which can round even when it does not overflow.
             return new NumberValue(a.IntVal / b.IntVal);
         }
 
@@ -266,6 +353,10 @@ public readonly struct NumberValue
         }
     }
 
+    /// <summary>
+    /// Uses bounded integer exponentiation for an integer base and a nonnegative whole
+    /// exponent. Other cases use Math.Pow, including negative integer exponents.
+    /// </summary>
     public static NumberValue Pow(NumberValue baseVal, NumberValue expVal)
     {
         if (expVal.TryGetInteger(out var exponent))
@@ -278,6 +369,9 @@ public readonly struct NumberValue
             if (baseVal.Type is DataType.Integer && exponent >= BigInteger.Zero)
             {
                 var magnitude = BigInteger.Abs(baseVal.IntVal);
+
+                // This lower bound rejects powers that must exceed the bit ceiling
+                // before allocating them. The result constructor enforces the final size.
                 if (magnitude > BigInteger.One && ((magnitude.GetBitLength() - 1) * (int)exponent) + 1 > CalculationLimits.MaxIntegerBits)
                 {
                     throw new CalculationLimitException();
@@ -304,6 +398,9 @@ public readonly struct NumberValue
         }
 
         var scale = (bits[3] >> 16) & 0xff;
+
+        // A decimal is coefficient / 10^scale. Multiplying the integer by 10^scale
+        // puts both sides on the same exact integer scale without division or rounding.
         return (integer * BigInteger.Pow(10, scale)).CompareTo(coefficient);
     }
 
@@ -325,6 +422,10 @@ public readonly struct NumberValue
         }
 
         var magnitude = BigInteger.Abs(IntVal);
+
+        // Keep at most 53 leading bits, the double significand's capacity, and restore
+        // their scale separately. Discarded low bits are truncated, so this is
+        // approximate.
         exponent = (int)Math.Max(0, magnitude.GetBitLength() - 53);
         var mantissa = (double)(magnitude >> exponent);
         return IntVal.Sign < 0 ? -mantissa : mantissa;

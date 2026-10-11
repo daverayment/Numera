@@ -1,7 +1,8 @@
 namespace Numera;
 
 /// <summary>
-/// Keeps function validation and culture-sensitive argument separator handling consistent.
+/// Shares function argument-count rules between parser validation and public metadata,
+/// so adapters do not need a separate list of supported function signatures.
 /// </summary>
 internal static class FunctionArity
 {

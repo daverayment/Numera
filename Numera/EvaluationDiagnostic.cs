@@ -15,9 +15,14 @@ public enum EvaluationError
 }
 
 /// <summary>
-/// An evaluation failure. Position and length are UTF-16 offsets. null position means no
-/// source location is available.
+/// An evaluation failure with a category and a message. Position is a zero-based UTF-16
+/// offset; length counts UTF-16 code units. A null position means no source location is
+/// available, and a zero length can identify the end of input.
 /// </summary>
+/// <remarks>
+/// Consumers should use Code for programmatic decisions or localization rather than
+/// matching message text, which is intended for human-readable diagnostics.
+/// </remarks>
 public sealed record EvaluationDiagnostic(EvaluationError Code, string Message, int? Position = null, int Length = 0);
 
 /// <summary>

@@ -31,6 +31,8 @@ public class SafetyTests
     public void NestingCeilingRejectsDeepInputWithoutStackOverflow()
     {
         var depth = CalculationLimits.MaxNestingDepth;
+        // The literal itself occupies a unary-parser frame, leaving depth - 1 frames
+        // for enclosing groups at the accepted boundary.
         var accepted = new string('(', depth - 1) + "1" + new string(')', depth - 1);
         var rejected = new string('(', depth) + "1" + new string(')', depth);
         Assert.AreEqual(BigInteger.One, Calculator.Evaluate(accepted).IntVal);
