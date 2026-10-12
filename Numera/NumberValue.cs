@@ -101,7 +101,8 @@ public readonly struct NumberValue : IFormattable
     };
 
     /// <summary>
-    /// Returns <c>true</c> if the value is Not-a-Number (NaN); otherwise <c>false</c>.</c>
+    /// Returns <c>true</c> if the value is mathematically undefined (Not-a-Number);
+    /// otherwise <c>false</c>.
     /// </summary>
     public bool IsNaN => Type switch
     {
@@ -120,6 +121,13 @@ public readonly struct NumberValue : IFormattable
     public string ToString(string? format) => ToString(format, null);
 
     /// <summary>
+    /// Formats the value using the specified format provider and no format string.
+    /// </summary>
+    /// <param name="formatProvider">The format provider to use.</param>
+    /// <returns>The formatted string representation of the value.</returns>
+    public string ToString(IFormatProvider? formatProvider) => ToString(null, formatProvider);
+
+    /// <summary>
     /// Formats the value using the specified format and format provider. If the active
     /// representation is <see cref="DataType.Double"/> and no format is supplied,
     /// defaults to "G17" to preserve floating-point round-trip precision.
@@ -128,8 +136,8 @@ public readonly struct NumberValue : IFormattable
     {
         DataType.Integer => IntVal.ToString(format, formatProvider),
         DataType.Decimal => DecVal.ToString(format, formatProvider),
-        DataType.Double => DblVal.ToString(string.IsNullOrEmpty(format) ? "G17" : format, formatProvider),
-        _ => string.Empty,
+        DataType.Double => DblVal.ToString(format ?? "G17", formatProvider),
+        _ => throw new InvalidOperationException($"Unexpected data type: {Type}"),
     };
 
     internal bool IsZero => Type switch
