@@ -1,68 +1,103 @@
 # Numera
 
-A portable calculator expression engine targeting .NET 10.
+A lightweight mathematical expression evaluator for **.NET 10**, written in portable C# and with no third-party dependencies.
 
-## Evaluation
+Numera dynamically scales between integer, decimal, and double arithmetic for each operation, with a focus on exact integer arithmetic and preserving representable base-10 values. It is designed for applications that need expression evaluation without a full symbolic math library.
 
-`Numera.Calculator.Evaluate(expression)` returns a `NumberValue`. Its `Type`
-selects the meaningful property: `IntVal` (BigInteger), `DecVal` (decimal), or
-`DblVal` (double). Results are not narrowed to decimal or formatted for display.
-`AsDouble()` is an explicit, potentially lossy conversion.
+## Why? The Precision Problem
+Relying solely on double-precision floating-point arithmetic may lead to surprising evaluation results:
 
-`Calculator.TryEvaluate` returns a value and null diagnostic on success, or false
-and an `EvaluationDiagnostic` on an expected expression failure. Invalid API
-arguments still throw. Diagnostic codes support consumer localization; messages
-are not localized. Syntax spans use UTF-16 offsets; arithmetic/limit failures
-may have no source location.
+1. **Decimal Artifacts:** Base-10 fractions such as `0.3` and `0.1` aren't exactly representable in binary. Standard double-based engines evaluate `0.3 / 0.1` as `2.9999999999999996` rather than `3`. Financial calculations like `3033554.11 - 3033359.71` can likewise expose small binary rounding differences instead of the exact decimal value; so you would see `194.3999999999` instead of `194.40`.
 
-## Syntax
+2. **Loss of integer precision:** In double arithmetic, large gaps can exist between the values that can be accurately represented by the type. For example all the integers from `10^16 - 5` to `10^16 + 50` silently round to `10^16`. The issue becomes more pronounced with larger integers, such as `2^64`, which is represented as `18,446,744,073,709,600,000` instead of the exact value of `18,446,744,073,709,551,616`.
 
-- Invariant decimal point `.` and argument separator `,`; no digit grouping.
-- Integer/decimal literals, `pi` / `π`, and `e`; case-insensitive functions.
-- `+`, `-`, `*`, `/`, `%`, right-associative `^`, unary signs, `()` / `[]` grouping.
-- Powers bind more tightly than unary minus: `-3^2` means `-(3^2)`.
-- `==`, `~=`, `&&`, `||`; zero is false and nonzero is true.
-- Skipped logical branches still validate syntax and function arity.
-- `log` / `log10` are base 10; `ln` is natural; `logn(value,base)` selects a base.
-- Trigonometric functions use radians. `rad`, `deg`, `grad` convert degrees to
-  radians, radians to degrees, and radians to gradians respectively.
-- `min` / `max` accept one or more operands and retain the selected value.
-- `round` uses midpoint rounding away from zero; factorial takes nonnegative integers.
-- `rand()` returns a double in [0,1); `randi(n)` returns an integer in [0,n).
-- `Functions.TryGetSignature` exposes supported function arities.
 
-Localized input, implicit multiplication, postfix factorial, scientific notation
-and base-prefixed literals are not currently parser syntax. PowerToys implements
-those transformations in its adapter. No variables/custom functions in this version.
+## How it Works: A Hybrid Approach
 
-## Numerical contract and limitations
+Instead of forcing all calculations into a single numeric type, Numera evaluates expressions using recursive descent where every node returns a polymorphic `NumberValue`. Each operation returns a `NumberValue`, which stores its result as an integer, decimal, or double:
 
-Integer arithmetic is exact within safety limits. Integral integer quotients stay
-integers; other division uses decimal when possible. Decimal has .NET's rounding
-and range constraints: decimal storage does not prove mathematical exactness.
-Overflowing mixed/decimal operations can fall back to double. Transcendental
-functions and non-integer powers use double; accuracy beyond tested tolerances
-is unverified. No arbitrary-precision floating point, rational arithmetic or
-accuracy tracking is promised.
+* **BigInteger** for exact integer arithmetic within a 16,384-bit safety ceiling. Preserves large integers and whole-number quotients, such as `(10^50) / (10^49)`.
+* **Decimal** for base-10 arithmetic with roughly 28-29 significant digits and up to 28 decimal places. It preserves representable decimal fractions, making it useful for financial expressions. Parsing and arithmetic can round to fit its precision; conversion or arithmetic overflow falls back to double.
+* **Double** for functions such as `sqrt` and `sin`, powers outside the exact integer path, and decimal overflow fallback. It provides roughly 15-17 significant decimal digits and a wide range of magnitudes. Results may be approximate, `NaN`, or infinite.
 
-Integer/decimal comparison avoids narrowing. Comparison involving double uses
-double conversion and may lose distinctions between large exact values.
-NaN/infinity remain numeric results for consumers to handle. Extrema retain the
-existing comparison ordering, including double.CompareTo's NaN ordering.
-`sign(NaN)` returns zero for compatibility.
+Integer arithmetic is exact within the supported limits. Decimal and double calculations have finite precision, so their accuracy depends on the expression and its intermediate results. Numera reports the result's numeric type; the accuracy of approximate results is unverified.
 
-`EvaluationOptions` can tighten input length/nesting per call. `CalculationLimits`
-lists hard integer-size, factorial and exponent ceilings. No timeout/cancellation
-guarantee is provided.
+## Getting Started
+
+```csharp
+using System.Globalization;
+using Numera;
+
+// Basic evaluation.
+NumberValue result = Calculator.Evaluate("3033554.11 - 3033359.71");
+
+// This calculation is exactly representable in decimal.
+Console.WriteLine(result.Type); // Output: Decimal
+Console.WriteLine(result.DecVal.ToString(CultureInfo.InvariantCulture)); // Output: 194.40
+
+// Report expected evaluation failures using stable diagnostic codes.
+if (Calculator.TryEvaluate("1 / 0", out var value, out var diagnostic))
+{
+	Console.WriteLine(value.AsDouble());
+}
+else
+{
+	Console.WriteLine($"Error: {diagnostic.Code}"); // Output: Error: DivisionByZero
+}
+
+```
+
+`Evaluate` throws for evaluation failures; `TryEvaluate` returns false with a diagnostic for expected failures. Invalid API arguments, such as a null expression or invalid options, throw exceptions from either method. `diagnostic.Code` provides a stable category for programmatic decisions or localisation, while `diagnostic.Message` provides a human-readable explanation.
+
+To read a result in its stored representation, inspect `Type` and use `IntVal`, `DecVal`, or `DblVal`. `AsDouble()` is convenient when you need a double, with possible precision loss when converting an integer or decimal.
+
+`TryEvaluate` returns true when evaluation completes, including results such as `NaN` from `sqrt(-1)` or infinity from `exp(1000)`. Applications that require finite results should check these values before using them.
+
+## Supported Syntax
+Numera implements a standard Recursive Descent parser with the following capabilities:
+
+- **Basic Mathematical Operators:** `+`, `-`, `*`, `/`, `%`, and right-associative `^` (exponentiation), unary `+` and unary `-`. (An example of right-associative exponentiation is `2^3^2` which evaluates as `2^(3^2) = 512`.)
+
+- **Grouping:** Parentheses `()` and brackets `[]` for grouping expressions.
+
+- **Equality and Logical Operators:** `==`, `~=`, `&&`, and `||`. Zero is false; other values, including `NaN`, are treated as true. AND binds more tightly than OR. Short-circuit evaluation validates skipped branches for syntax, function and constant names, and argument counts without executing their operations or functions. Equality chains are evaluated left to right: `a == b == c` compares the zero-or-one result of `a == b` with `c`.
+
+- **Constants:** `pi` (or `π`) and `e`.
+
+- **Functions:**
+	- **Trigonometry (Radians):** sin, cos, tan, arcsin, arccos, arctan, cot, sec, csc, arccot, arcsec, arccsc.
+  - **Hyperbolic:** sinh, cosh, tanh, arsinh, arcosh, artanh, coth, sech, csch, arcoth, arsech, arcsch.
+	- **Angle Conversion:** rad(degrees) converts degrees to radians; deg(radians) converts radians to degrees; grad(radians) converts radians to gradians (200 gradians = π radians).
+  - **Logarithms/Roots:** log (base 10), log2, log10, ln (natural), logn(value, base), sqrt, root(value, root).
+  - **General:** min, max, abs, round, ceil, floor, sign/sgn, factorial.
+  - **Random:** rand() returns a double in [0,1); randi(n) returns an integer in [0,n).
+
+Function and constant names are case-insensitive. `min` and `max` accept one or more arguments. `round` rounds to a whole number, with midpoint ties away from zero. `factorial` accepts nonnegative whole numbers within its limit; invalid domain arguments return `NaN`. `randi(n)` requires a positive whole-number bound no greater than `long.MaxValue`; invalid bounds return `NaN`.
+
+Unary signs bind less tightly than powers: `-2^2` means `-(2^2)`, while `2^-3` permits a negative exponent.
+
+Numera requires `.` as the decimal point and `,` as the argument separator, regardless of the current culture. It does not support localised input, digit-grouping separators, implicit multiplication, postfix factorial, scientific notation, or base-prefixed literals. The caller is responsible for any transformations to support those features.
+
+## Computational Safety and Limits
+Numera limits expression size and computational work to reduce resource-exhaustion risk when evaluating user input. Applications should also control request volume and overall resource usage.
+
+- Input length is limited to 4,096 UTF-16 code units, including whitespace.
+- Parser recursion depth is limited to 128, counted at unary-expression parsing. Grouping, function arguments, unary signs, and powers contribute to this depth.
+- Integers are limited to 16,384 bits (≈ 4,932 decimal digits).
+- The maximum factorial argument is 1,000.
+- Whole-number exponents are limited to an absolute magnitude of 10,000. Integer powers also have size checks. Fractional exponents use `Math.Pow` without an exponent-magnitude limit.
+- Callers can set lower input-length and parser-depth limits using `EvaluationOptions`; the values above are the maximum allowed settings.
+
+Exceeding a ceiling produces `CalculationLimitException`, or a `LimitExceeded` diagnostic through `TryEvaluate`.
 
 ## Development
 
-Open `Numera.slnx` in Visual Studio, or run from this repository:
+With the .NET 10 SDK installed, open `Numera.slnx` in a compatible Visual Studio version, or run from the repository root:
 
-- `dotnet build tests/Numera.Tests/Numera.Tests.csproj`
-- `dotnet vstest tests/Numera.Tests/bin/Debug/net10.0/Numera.Tests.dll`
-- `dotnet pack src/Numera/Numera.csproj -c Release -o artifacts`
+- `dotnet build Numera.slnx`
+- `dotnet test Numera.Tests/Numera.Tests.csproj`
+- `dotnet pack Numera/Numera.csproj -c Release -o artifacts`
 
 ## License
 
-Licensed under the MIT license. See [LICENSE.md](LICENSE.md) for more details.
+Licensed under the MIT license. See [LICENSE](LICENSE) for more details.
