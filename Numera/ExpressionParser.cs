@@ -375,30 +375,30 @@ internal sealed class ExpressionParser
             Consume();
         }
 
-        var numberStr = _input[start.._pos];
+        var numberSpan = _input.AsSpan(start, _pos - start);
 
         // Keep whole-number literals as arbitrary-precision integers. For literals with
         // a decimal point, prefer decimal to binary floating point; parsing may still
         // round excess digits. Double is a fallback for overflow or underflow to zero.
         if (!hasDecimal && BigInteger.TryParse(
-            numberStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
+            numberSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
         {
             return new NumberValue(intValue);
         }
         else if (decimal.TryParse(
-            numberStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var decValue))
+            numberSpan, NumberStyles.Float, CultureInfo.InvariantCulture, out var decValue))
         {
             // If decimal parsed to zero but the literal contains non-zero digits, the literal
             // underflowed decimal's 28-29 digit scale limit. Fall through to double so the
             // non-zero magnitude is preserved and expressions like 1 / 0.000...001 do not divide by zero.
-            if (decValue != 0m || numberStr.AsSpan().IndexOfAnyInRange('1', '9') < 0)
+            if (decValue != 0m || numberSpan.IndexOfAnyInRange('1', '9') < 0)
             {
                 return new NumberValue(decValue);
             }
         }
 
         if (double.TryParse(
-            numberStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue))
+            numberSpan, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue))
         {
             return new NumberValue(doubleValue);
         }
@@ -407,7 +407,7 @@ internal sealed class ExpressionParser
             new EvaluationDiagnostic(EvaluationError.InvalidSyntax, "Expected a number.", start, Math.Max(1, _pos - start)));
     }
 
-    private string ParseIdentifier()
+    private ReadOnlySpan<char> ParseIdentifier()
     {
         var start = _pos;
         while (_pos < _input.Length && (char.IsLetterOrDigit(Peek()) || Peek() == 'π'))
@@ -415,18 +415,17 @@ internal sealed class ExpressionParser
             Consume();
         }
 
-        // Function and constant dispatch use canonical names regardless of user culture.
-        return _input.Substring(start, _pos - start).ToLowerInvariant();
+        return _input.AsSpan(start, _pos - start);
     }
 
-    private NumberValue EvaluateConstant(string name)
+    private NumberValue EvaluateConstant(ReadOnlySpan<char> name)
     {
-        if (name is "pi" or "π")
+        if (name.Equals("pi", StringComparison.OrdinalIgnoreCase) || name.SequenceEqual("π"))
         {
             return new NumberValue(Math.PI);
         }
 
-        if (name is "e")
+        if (name.Equals("e", StringComparison.OrdinalIgnoreCase))
         {
             return new NumberValue(Math.E);
         }
@@ -435,12 +434,15 @@ internal sealed class ExpressionParser
             new EvaluationDiagnostic(EvaluationError.UnknownConstant, $"Unknown constant '{name}'.", _pos - name.Length, name.Length));
     }
 
-    private static NumberValue EvaluateFunction(string name, List<NumberValue> args)
+    private static NumberValue EvaluateFunction(ReadOnlySpan<char> name, List<NumberValue> args)
     {
+        Span<char> lower = stackalloc char[name.Length];
+        name.ToLowerInvariant(lower);
+
         // ParsePrimary has already validated the canonical name and argument count.
-        if (name is "min" or "max")
+        if (lower is "min" or "max")
         {
-            return EvaluateMinMax(args, name == "min");
+            return EvaluateMinMax(args, lower is "min");
         }
 
         if (args.Count == 0)
@@ -454,7 +456,7 @@ internal sealed class ExpressionParser
             // Math-based functions use double approximations. Branches that can operate
             // on integer or decimal values use the original argument instead.
             var v = args[0].AsDouble();
-            switch (name)
+            switch (lower)
             {
                 case "ceil":
                     return args[0].Type switch
@@ -656,7 +658,7 @@ internal sealed class ExpressionParser
 
         if (args.Count == 2)
         {
-            switch (name)
+            switch (lower)
             {
                 case "pow":
                     return NumberValue.Pow(args[0], args[1]);

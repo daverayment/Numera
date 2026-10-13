@@ -69,4 +69,16 @@ internal static class FunctionArity
         signature = default;
         return false;
     }
+
+    internal static bool TryGet(ReadOnlySpan<char> name, out FunctionSignature signature)
+    {
+        if (ArgumentRanges.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(name, out var range))
+        {
+            signature = new FunctionSignature(range.Minimum, range.Maximum);
+            return true;
+        }
+
+        signature = default;
+        return false;
+    }
 }
