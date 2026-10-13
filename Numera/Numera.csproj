@@ -17,7 +17,7 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageReleaseNotes>Initial release.</PackageReleaseNotes>
-    <PackageIcon>FxGear128x128.png</PackageIcon>
+    <PackageIcon>assets\FxGear128x128.png</PackageIcon>
 
     <!-- Consumer Experience & IntelliSense -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -29,10 +29,7 @@
 
   <ItemGroup>
     <None Include="..\README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="..\assets\FxGear128x128.png" Pack="true" PackagePath="\" />
+    <None Include="..\assets\FxGear128x128.png" Pack="true" PackagePath="assets\" />
   </ItemGroup>
 
 </Project>

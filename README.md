@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/FxGear128x128.png" alt="Numera logo" width="128" height="128" />
+</p>
+
 # Numera
 
 A lightweight mathematical expression evaluator for **.NET 10**, written in portable C# and with no third-party dependencies.
