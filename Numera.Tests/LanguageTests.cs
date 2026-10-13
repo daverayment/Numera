@@ -177,4 +177,38 @@ public class LanguageTests
         // Negative exponent in power: 2^-1 is 0.5
         Assert.AreEqual(0.5, Calculator.Evaluate("2^-1").DblVal, 1e-15);
     }
+
+    [TestMethod]
+    public void AllEvaluationExceptionsInheritFromNumeraException()
+    {
+        // Syntax failure.
+        var syntaxEx = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("1 +"));
+        Assert.IsInstanceOfType<NumeraException>(syntaxEx);
+        Assert.AreEqual(EvaluationError.InvalidSyntax, syntaxEx.Diagnostic.Code);
+
+        // Limit failure.
+        var limitEx = Assert.Throws<CalculationLimitException>(() => Calculator.Evaluate("2^10001"));
+        Assert.IsInstanceOfType<NumeraException>(limitEx);
+        Assert.AreEqual(EvaluationError.LimitExceeded, limitEx.Diagnostic.Code);
+
+        // Division by zero in expression.
+        var divEx = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("1 / 0"));
+        Assert.IsInstanceOfType<NumeraException>(divEx);
+        Assert.AreEqual(EvaluationError.DivisionByZero, divEx.Diagnostic.Code);
+        Assert.IsInstanceOfType<DivideByZeroException>(divEx.InnerException);
+
+        // Consumers can catch all engine failures with a single catch (NumeraException).
+        NumeraException? caught = null;
+        try
+        {
+            Calculator.Evaluate("unknownFunc(1)");
+        }
+        catch (NumeraException ex)
+        {
+            caught = ex;
+        }
+
+        Assert.IsNotNull(caught);
+        Assert.AreEqual(EvaluationError.UnknownFunction, caught.Diagnostic.Code);
+    }
 }

@@ -58,25 +58,6 @@ internal static class FunctionArity
         { "grad", (1, 1) },
     };
 
-    internal static void ValidateArgumentCount(string name, int argumentCount)
-    {
-        if (!ArgumentRanges.TryGetValue(name, out var range))
-        {
-            throw new FormatException($"Unknown function '{name}'.");
-        }
-
-        if (argumentCount < range.Minimum || (range.Maximum.HasValue && argumentCount > range.Maximum.Value))
-        {
-            var expectedArguments = range.Minimum == range.Maximum
-                ? $"{range.Minimum}"
-                : range.Maximum is null ? $"at least {range.Minimum}" : $"between {range.Minimum} and {range.Maximum}";
-            throw new FormatException($"Function '{name}' expects {expectedArguments} arguments.");
-        }
-    }
-
-    internal static bool HasMultipleArguments(string name) =>
-        ArgumentRanges.TryGetValue(name, out var range) && (!range.Maximum.HasValue || range.Maximum.Value > 1);
-
     internal static bool TryGet(string name, out FunctionSignature signature)
     {
         if (ArgumentRanges.TryGetValue(name, out var range))

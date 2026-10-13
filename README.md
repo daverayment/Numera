@@ -91,17 +91,38 @@ if (!result.IsFinite)
 }
 ```
 
-### 4. Error Diagnostics
-When evaluation fails (e.g. syntax errors, unknown functions, or division by zero), `TryEvaluate` returns `false` with a structured `EvaluationDiagnostic`:
+### 4. Error Diagnostics & Exceptions
+When an expression cannot be evaluated (e.g. syntax errors, unknown functions, or division by zero), Numera provides structured diagnostic details via either `TryEvaluate` or `Evaluate`:
+
+#### Option A: The Try Pattern (Recommended)
+`TryEvaluate` returns `false` with a structured `EvaluationDiagnostic` rather than throwing exceptions for evaluation failures:
 
 ```csharp
 if (!Calculator.TryEvaluate(input, out var result, out var diagnostic))
 {
-    // Use diagnostic.Code for programmatic decisions or localisation:
-    Console.WriteLine($"Error ({diagnostic.Code}): {diagnostic.Message}");
+    // diagnostic provides Code, Message, Position, and Length for UI highlighting or localization:
+    Console.WriteLine($"Error at index {diagnostic.Position} ({diagnostic.Code}): {diagnostic.Message}");
 }
 ```
-*(Use `Calculator.Evaluate(input)` if you prefer exceptions instead of boolean status returns.)*
+
+#### Option B: The Exception Pattern
+If you prefer traditional exception handling, `Calculator.Evaluate` throws domain exceptions inheriting from `NumeraException` (`ExpressionException` for syntax/math errors, and `CalculationLimitException` for safety limits).
+
+Every `NumeraException` exposes the structured `Diagnostic` property, and wrapped math runtime failures preserve their underlying cause in `InnerException`:
+
+```csharp
+try
+{
+    var result = Calculator.Evaluate(input);
+    Console.WriteLine($"Result: {result}");
+}
+catch (NumeraException ex)
+{
+    // One catch block handles syntax errors, resource limits, and math runtime failures:
+    Console.WriteLine($"Error ({ex.Diagnostic.Code}): {ex.Message}");
+}
+```
+*(Standard developer errors, such as passing a `null` expression or an invalid `EvaluationOptions`, continue to throw `ArgumentNullException` and `ArgumentOutOfRangeException`.)*
 
 ## Under the Hood: Why Three Numeric Types?
 Notice in the examples above that Numera returns distinct **Integer**, **Decimal**, and **Double** representations rather than forcing all results into a single type.

@@ -379,7 +379,7 @@ internal sealed class ExpressionParser
 
         // Keep whole-number literals as arbitrary-precision integers. For literals with
         // a decimal point, prefer decimal to binary floating point; parsing may still
-        // round excess digits. Double is a fallback, not a guarantee of exactness.
+        // round excess digits. Double is a fallback for overflow or underflow to zero.
         if (!hasDecimal && BigInteger.TryParse(
             numberStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
         {
@@ -388,7 +388,13 @@ internal sealed class ExpressionParser
         else if (decimal.TryParse(
             numberStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var decValue))
         {
-            return new NumberValue(decValue);
+            // If decimal parsed to zero but the literal contains non-zero digits, the literal
+            // underflowed decimal's 28-29 digit scale limit. Fall through to double so the
+            // non-zero magnitude is preserved and expressions like 1 / 0.000...001 do not divide by zero.
+            if (decValue != 0m || numberStr.AsSpan().IndexOfAnyInRange('1', '9') < 0)
+            {
+                return new NumberValue(decValue);
+            }
         }
 
         if (double.TryParse(

@@ -56,24 +56,9 @@ public enum EvaluationError
 public sealed record EvaluationDiagnostic(EvaluationError Code, string Message, int? Position = null, int Length = 0);
 
 /// <summary>
-/// A malformed expression with a structured, nonlocalized diagnostic.
+/// A malformed expression or evaluation error with a structured diagnostic.
 /// </summary>
-public sealed class ExpressionException : FormatException
-{
-    /// <summary>
-    /// Structured diagnostic details identifying the error category, human-readable
-    /// message, and source location.
-    /// </summary>
-    public EvaluationDiagnostic Diagnostic { get; }
-
-    /// <summary>
-    /// Initializes a new instance of <see cref="ExpressionException"/> wrapping the given
-    /// evaluation diagnostic.
-    /// </summary>
-    /// <param name="diagnostic">The structured diagnostic describing the failure.</param>
-    public ExpressionException(EvaluationDiagnostic diagnostic)
-        : base((diagnostic ?? throw new ArgumentNullException(nameof(diagnostic))).Message)
-    {
-        Diagnostic = diagnostic;
-    }
-}
+/// <param name="diagnostic">The structured diagnostic describing the failure.</param>
+/// <param name="innerException">The optional underlying exception that caused the error.</param>
+public sealed class ExpressionException(EvaluationDiagnostic diagnostic, Exception? innerException = null)
+    : NumeraException(diagnostic, innerException);

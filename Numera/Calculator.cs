@@ -19,14 +19,9 @@ public static class Calculator
     /// <returns>The result of the evaluation as a <see cref="NumberValue"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
     /// null.</exception>
-    /// <exception cref="ExpressionException">Thrown if the expression contains syntax
-    /// errors, unknown functions, or invalid arguments.</exception>
-    /// <exception cref="CalculationLimitException">Thrown if the expression exceeds
-    /// computational safety limits.</exception>
-    /// <exception cref="DivideByZeroException">Thrown if the expression attempts to
-    /// divide by zero.</exception>
-    /// <exception cref="OverflowException">Thrown if a numeric overflow occurs during
-    /// evaluation.</exception>
+    /// <exception cref="NumeraException">Thrown if the expression contains syntax errors,
+    /// unknown functions, invalid arguments, division by zero, or exceeds computational limits.
+    /// Check <see cref="NumeraException.Diagnostic"/> for structured failure details.</exception>
     /// <remarks>
     /// To evaluate an expression without throwing exceptions for expected
     /// failures, use <see cref="TryEvaluate"/>.
@@ -36,7 +31,23 @@ public static class Calculator
         ArgumentNullException.ThrowIfNull(expression);
         options ??= new EvaluationOptions();
         options.Validate();
-        return new ExpressionParser(expression, options).Evaluate();
+
+        try
+        {
+            return new ExpressionParser(expression, options).Evaluate();
+        }
+        catch (DivideByZeroException exception)
+        {
+            throw new ExpressionException(
+                new EvaluationDiagnostic(EvaluationError.DivisionByZero, exception.Message), exception);
+        }
+        catch (OverflowException exception)
+        {
+            // Arithmetic operators handle their own decimal-to-double fallback. Any
+            // overflow that still escapes evaluation is reported as a failure here.
+            throw new ExpressionException(
+                new EvaluationDiagnostic(EvaluationError.NumericOverflow, exception.Message), exception);
+        }
     }
 
     /// <summary>
@@ -68,23 +79,9 @@ public static class Calculator
             diagnostic = null;
             return true;
         }
-        catch (ExpressionException exception)
+        catch (NumeraException exception)
         {
             diagnostic = exception.Diagnostic;
-        }
-        catch (CalculationLimitException exception)
-        {
-            diagnostic = new EvaluationDiagnostic(EvaluationError.LimitExceeded, exception.Message);
-        }
-        catch (DivideByZeroException exception)
-        {
-            diagnostic = new EvaluationDiagnostic(EvaluationError.DivisionByZero, exception.Message);
-        }
-        catch (OverflowException exception)
-        {
-            // Arithmetic operators handle their own decimal-to-double fallback. Any
-            // overflow that still escapes evaluation is reported as a failure here.
-            diagnostic = new EvaluationDiagnostic(EvaluationError.NumericOverflow, exception.Message);
         }
 
         value = default;

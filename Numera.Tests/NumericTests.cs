@@ -224,10 +224,33 @@ public class NumericTests
         Assert.AreEqual(NumberValue.DataType.Double, overflowSum.Type);
         Assert.IsTrue(overflowSum.IsFinite);
 
-        // Multiplication overflow
+        // Multiplication overflow.
         var overflowProd = Calculator.Evaluate("79228162514264337593543950335 * 2.0");
         Assert.AreEqual(NumberValue.DataType.Double, overflowProd.Type);
         Assert.IsTrue(overflowProd.IsFinite);
+    }
+
+    [TestMethod]
+    public void DecimalLiteralUnderflowToZeroFallsBackToDouble()
+    {
+        // 0.00000000000000000000000000001 (29 decimal places) underflows decimal to 0m.
+        // It should fall back to double rather than silently becoming zero or triggering
+        // division by zero.
+        var underflowLiteral = Calculator.Evaluate("0.00000000000000000000000000001");
+        Assert.AreEqual(NumberValue.DataType.Double, underflowLiteral.Type);
+        Assert.AreNotEqual(0.0, underflowLiteral.DblVal);
+        Assert.AreEqual(1e-29, underflowLiteral.DblVal, 1e-35);
+
+        // Division by an underflowing fraction must not trigger division by zero.
+        var divisionResult = Calculator.Evaluate("1 / 0.00000000000000000000000000001");
+        Assert.AreEqual(NumberValue.DataType.Double, divisionResult.Type);
+        Assert.IsTrue(divisionResult.IsFinite);
+        Assert.AreEqual(1e29, divisionResult.DblVal, 1e20);
+
+        // Genuine zero with a decimal point remains Decimal.
+        var genuineZero = Calculator.Evaluate("0.00");
+        Assert.AreEqual(NumberValue.DataType.Decimal, genuineZero.Type);
+        Assert.AreEqual(0m, genuineZero.DecVal);
     }
 
     [TestMethod]
