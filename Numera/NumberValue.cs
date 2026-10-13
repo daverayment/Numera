@@ -16,6 +16,10 @@ namespace Numera;
 /// </remarks>
 public readonly struct NumberValue : IFormattable
 {
+    /// <summary>
+    /// Identifies the underlying active representation stored in a
+    /// <see cref="NumberValue"/>.
+    /// </summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1720:Identifier contains type name", Justification = "The enum names are descriptive of their usage, which does not conflict with type names.")]
     public enum DataType
     {
@@ -43,12 +47,34 @@ public readonly struct NumberValue : IFormattable
     /// </summary>
     public DataType Type { get; }
 
+    /// <summary>
+    /// Gets the stored <see cref="BigInteger"/> value when <see cref="Type"/> is
+    /// <see cref="DataType.Integer"/>;
+    /// otherwise default.
+    /// </summary>
     public BigInteger IntVal { get; }
 
+    /// <summary>
+    /// Gets the stored <see cref="decimal"/> value when <see cref="Type"/> is
+    /// <see cref="DataType.Decimal"/>;
+    /// otherwise default.
+    /// </summary>
     public decimal DecVal { get; }
 
+    /// <summary>
+    /// Gets the stored <see cref="double"/> value when <see cref="Type"/> is
+    /// <see cref="DataType.Double"/>;
+    /// otherwise default.
+    /// </summary>
     public double DblVal { get; }
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="NumberValue"/> holding an exact
+    /// arbitrary-precision integer.
+    /// </summary>
+    /// <param name="value">The integer value to store.</param>
+    /// <exception cref="CalculationLimitException">Thrown if the magnitude exceeds the
+    /// configured bit ceiling.</exception>
     public NumberValue(BigInteger value)
     {
         if (BigInteger.Abs(value).GetBitLength() > CalculationLimits.MaxIntegerBits)
@@ -62,6 +88,11 @@ public readonly struct NumberValue : IFormattable
         DblVal = default;
     }
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="NumberValue"/> holding a fixed-precision
+    /// decimal value.
+    /// </summary>
+    /// <param name="value">The decimal fraction or integer to store.</param>
     public NumberValue(decimal value)
     {
         Type = DataType.Decimal;
@@ -70,6 +101,11 @@ public readonly struct NumberValue : IFormattable
         DblVal = default;
     }
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="NumberValue"/> holding a double-precision
+    /// floating-point value.
+    /// </summary>
+    /// <param name="value">The 64-bit binary floating-point value to store.</param>
     public NumberValue(double value)
     {
         Type = DataType.Double;
@@ -170,6 +206,11 @@ public readonly struct NumberValue : IFormattable
         }
     }
 
+    /// <summary>
+    /// Negates the value, preserving the active numerical representation.
+    /// </summary>
+    /// <param name="value">The value to negate.</param>
+    /// <returns>A new <see cref="NumberValue"/> with the sign inverted.</returns>
     public static NumberValue operator -(NumberValue value) => value.Type switch
     {
         DataType.Integer => new NumberValue(-value.IntVal),
@@ -211,18 +252,41 @@ public readonly struct NumberValue : IFormattable
 
     // Logical results use decimal zero/one. Only zero is false, so NaN is truthy here.
     // These helpers receive both values; short-circuiting belongs to the parser.
+    /// <summary>
+    /// Performs a logical AND on two values, treating zero as false and all other
+    /// values (including NaN) as true.
+    /// Returns 1m for true or 0m for false.
+    /// </summary>
     public static NumberValue LogicalAnd(NumberValue a, NumberValue b) =>
         (!a.IsZero && !b.IsZero) ? new NumberValue(1m) : new NumberValue(0m);
 
+    /// <summary>
+    /// Performs a logical OR on two values, treating zero as false and all other
+    /// values (including NaN) as true.
+    /// Returns 1m for true or 0m for false.
+    /// </summary>
     public static NumberValue LogicalOr(NumberValue a, NumberValue b) =>
         (!a.IsZero || !b.IsZero) ? new NumberValue(1m) : new NumberValue(0m);
 
+    /// <summary>
+    /// Compares two values for equality using <see cref="Compare(NumberValue, NumberValue)"/>.
+    /// Returns 1m if equal, or 0m if unequal.
+    /// </summary>
     public static NumberValue AreEqual(NumberValue a, NumberValue b) =>
         Compare(a, b) == 0 ? new NumberValue(1m) : new NumberValue(0m);
 
+    /// <summary>
+    /// Compares two values for inequality using <see cref="Compare(NumberValue, NumberValue)"/>.
+    /// Returns 1m if unequal, or 0m if equal.
+    /// </summary>
     public static NumberValue AreNotEqual(NumberValue a, NumberValue b) =>
         Compare(a, b) != 0 ? new NumberValue(1m) : new NumberValue(0m);
 
+    /// <summary>
+    /// Adds two values, using exact integer arithmetic when both operands are integers,
+    /// decimal arithmetic for fixed-precision fractions, or promoting to double when
+    /// either operand is floating-point or on decimal overflow.
+    /// </summary>
     public static NumberValue operator +(NumberValue a, NumberValue b)
     {
         // If either value is a double, the entire operation is promoted to double.
@@ -230,7 +294,7 @@ public readonly struct NumberValue : IFormattable
         {
             return new NumberValue(a.AsDouble() + b.AsDouble());
         }
-        
+
         // If both values are integers, perform exact integer addition.
         if (a.Type is DataType.Integer && b.Type is DataType.Integer)
         {
@@ -251,6 +315,11 @@ public readonly struct NumberValue : IFormattable
         }
     }
 
+    /// <summary>
+    /// Subtracts the right operand from the left operand, maintaining exact integer
+    /// arithmetic or decimal fractions where possible, and falling back to double if
+    /// either operand is floating-point or on decimal overflow.
+    /// </summary>
     public static NumberValue operator -(NumberValue a, NumberValue b)
     {
         if (a.Type is DataType.Double || b.Type is DataType.Double)
@@ -275,6 +344,11 @@ public readonly struct NumberValue : IFormattable
         }
     }
 
+    /// <summary>
+    /// Multiplies two values, maintaining exact integer arithmetic or decimal fractions
+    /// where possible, and falling back to double if either operand is floating-point or
+    /// on decimal overflow.
+    /// </summary>
     public static NumberValue operator *(NumberValue a, NumberValue b)
     {
         if (a.Type is DataType.Double || b.Type is DataType.Double)
@@ -299,6 +373,13 @@ public readonly struct NumberValue : IFormattable
         }
     }
 
+    /// <summary>
+    /// Divides two values. Preserves exact integers when the quotient divides evenly,
+    /// uses decimal arithmetic for representable fractional quotients, and falls back to
+    /// double on decimal overflow or floating-point operands.
+    /// </summary>
+    /// <exception cref="DivideByZeroException">Thrown when the denominator evaluates to
+    /// zero.</exception>
     public static NumberValue operator /(NumberValue a, NumberValue b)
     {
         if (b.IsZero)
@@ -332,6 +413,13 @@ public readonly struct NumberValue : IFormattable
         }
     }
 
+    /// <summary>
+    /// Computes the remainder of dividing two values, preserving exact integer remainder
+    /// when both operands are integers, decimal remainder where representable, or double
+    /// remainder otherwise.
+    /// </summary>
+    /// <exception cref="DivideByZeroException">Thrown when the denominator evaluates to
+    /// zero.</exception>
     public static NumberValue operator %(NumberValue a, NumberValue b)
     {
         if (b.IsZero)
@@ -380,7 +468,8 @@ public readonly struct NumberValue : IFormattable
 
                 // This lower bound rejects powers that must exceed the bit ceiling
                 // before allocating them. The result constructor enforces the final size.
-                if (magnitude > BigInteger.One && ((magnitude.GetBitLength() - 1) * (int)exponent) + 1 > CalculationLimits.MaxIntegerBits)
+                if (magnitude > BigInteger.One &&
+                    ((magnitude.GetBitLength() - 1) * (int)exponent) + 1 > CalculationLimits.MaxIntegerBits)
                 {
                     throw new CalculationLimitException();
                 }

@@ -1,9 +1,10 @@
 <Solution>
   <Folder Name="/Solution Items/">
+    <File Path="assets/FxGear128x128.png" />
     <File Path="LICENSE" />
     <File Path="README.md" />
   </Folder>
-  <Project Path="Numera/Numera.csproj" />
   <Project Path="MinimalCalc/MinimalCalc.csproj" Id="9f2a1b8e-8246-4ee2-a47d-b226c9db8467" />
   <Project Path="Numera.Tests/Numera.Tests.csproj" />
+  <Project Path="Numera/Numera.csproj" />
 </Solution>
