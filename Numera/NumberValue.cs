@@ -269,6 +269,22 @@ public readonly struct NumberValue : IFormattable
         (!a.IsZero || !b.IsZero) ? new NumberValue(1m) : new NumberValue(0m);
 
     /// <summary>
+    /// Performs a logical XOR on two values, treating zero as false and all other
+    /// values (including NaN) as true.
+    /// Returns 1m if exactly one operand is true, or 0m otherwise.
+    /// </summary>
+    public static NumberValue LogicalXor(NumberValue a, NumberValue b) =>
+        (!a.IsZero ^ !b.IsZero) ? new NumberValue(1m) : new NumberValue(0m);
+
+    /// <summary>
+    /// Performs a logical NOT on a value, treating zero as false and all other
+    /// values (including NaN) as true.
+    /// Returns 1m if the operand is zero (false), or 0m otherwise.
+    /// </summary>
+    public static NumberValue LogicalNot(NumberValue a) =>
+        a.IsZero ? new NumberValue(1m) : new NumberValue(0m);
+
+    /// <summary>
     /// Compares two values for equality using <see cref="Compare(NumberValue, NumberValue)"/>.
     /// Returns 1m if equal, or 0m if unequal.
     /// </summary>
@@ -281,6 +297,38 @@ public readonly struct NumberValue : IFormattable
     /// </summary>
     public static NumberValue AreNotEqual(NumberValue a, NumberValue b) =>
         Compare(a, b) != 0 ? new NumberValue(1m) : new NumberValue(0m);
+
+    /// <summary>
+    /// Compares if the left operand is strictly less than the right operand using
+    /// <see cref="Compare(NumberValue, NumberValue)"/>.
+    /// Returns 1m if less, or 0m otherwise.
+    /// </summary>
+    public static NumberValue LessThan(NumberValue a, NumberValue b) =>
+        Compare(a, b) < 0 ? new NumberValue(1m) : new NumberValue(0m);
+
+    /// <summary>
+    /// Compares if the left operand is less than or equal to the right operand using
+    /// <see cref="Compare(NumberValue, NumberValue)"/>.
+    /// Returns 1m if less than or equal, or 0m otherwise.
+    /// </summary>
+    public static NumberValue LessThanOrEqual(NumberValue a, NumberValue b) =>
+        Compare(a, b) <= 0 ? new NumberValue(1m) : new NumberValue(0m);
+
+    /// <summary>
+    /// Compares if the left operand is strictly greater than the right operand using
+    /// <see cref="Compare(NumberValue, NumberValue)"/>.
+    /// Returns 1m if greater, or 0m otherwise.
+    /// </summary>
+    public static NumberValue GreaterThan(NumberValue a, NumberValue b) =>
+        Compare(a, b) > 0 ? new NumberValue(1m) : new NumberValue(0m);
+
+    /// <summary>
+    /// Compares if the left operand is greater than or equal to the right operand using
+    /// <see cref="Compare(NumberValue, NumberValue)"/>.
+    /// Returns 1m if greater than or equal, or 0m otherwise.
+    /// </summary>
+    public static NumberValue GreaterThanOrEqual(NumberValue a, NumberValue b) =>
+        Compare(a, b) >= 0 ? new NumberValue(1m) : new NumberValue(0m);
 
     /// <summary>
     /// Adds two values, using exact integer arithmetic when both operands are integers,

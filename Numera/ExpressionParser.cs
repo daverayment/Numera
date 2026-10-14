@@ -8,9 +8,9 @@ namespace Numera;
 /// abstract syntax tree. Each instance owns the parsing state for a single evaluation.
 /// </summary>
 /// <remarks>
-/// Precedence, from lowest to highest, is OR, AND, equality, addition/subtraction,
-/// multiplication/division/remainder, unary signs, and exponentiation. Grouping and
-/// function arguments restart at the lowest precedence.
+/// Precedence, from lowest to highest, is OR, XOR, AND, equality, relational,
+/// addition/subtraction, multiplication/division/remainder, unary signs/negation,
+/// and exponentiation. Grouping and function arguments restart at the lowest precedence.
 /// </remarks>
 internal sealed class ExpressionParser
 {
@@ -58,25 +58,59 @@ internal sealed class ExpressionParser
     // execution are skipped. Returned values on that path are not evaluation results.
     private NumberValue ParseLogical(bool evaluate = true)
     {
-        // Logical OR has the lower precedence, so AND is evaluated first.
+        // Recursive descent starts at the loosest-binding level (lowest precedence)
+        // and descends toward tighter-binding levels:
+        // ParseLogical (OR) -> ParseLogicalXor (XOR) -> ParseLogicalAnd (AND) -> ParseEquality -> ...
+        // A method delegates to the next level for its operands, so the deeper levels
+        // (AND) are evaluated before the outer levels (OR).
+        var left = ParseLogicalXor(evaluate);
+        while (true)
+        {
+            SkipWhitespace();
+            if (Peek() == '|' && Peek(1) == '|')
+            {
+                Consume();
+                Consume();
+                var right = ParseLogicalXor(evaluate && left.IsZero);
+                if (evaluate)
+                {
+                    left = NumberValue.LogicalOr(left, right);
+                }
+            }
+            else if (MatchKeyword("or"))
+            {
+                var right = ParseLogicalXor(evaluate && left.IsZero);
+                if (evaluate)
+                {
+                    left = NumberValue.LogicalOr(left, right);
+                }
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return left;
+    }
+
+    private NumberValue ParseLogicalXor(bool evaluate)
+    {
         var left = ParseLogicalAnd(evaluate);
         while (true)
         {
             SkipWhitespace();
-            if (Peek() != '|' || Peek(1) != '|')
+            if (MatchKeyword("xor"))
+            {
+                var right = ParseLogicalAnd(evaluate);
+                if (evaluate)
+                {
+                    left = NumberValue.LogicalXor(left, right);
+                }
+            }
+            else
             {
                 break;
-            }
-
-            Consume();
-            Consume();
-
-            // Short-circuit evaluation: if the left side is already true (non-zero), the
-            // right side is parsed but not evaluated.
-            var right = ParseLogicalAnd(evaluate && left.IsZero);
-            if (evaluate)
-            {
-                left = NumberValue.LogicalOr(left, right);
             }
         }
 
@@ -89,17 +123,27 @@ internal sealed class ExpressionParser
         while (true)
         {
             SkipWhitespace();
-            if (Peek() != '&' || Peek(1) != '&')
+            if (Peek() == '&' && Peek(1) == '&')
+            {
+                Consume();
+                Consume();
+                var right = ParseEquality(evaluate && !left.IsZero);
+                if (evaluate)
+                {
+                    left = NumberValue.LogicalAnd(left, right);
+                }
+            }
+            else if (MatchKeyword("and"))
+            {
+                var right = ParseEquality(evaluate && !left.IsZero);
+                if (evaluate)
+                {
+                    left = NumberValue.LogicalAnd(left, right);
+                }
+            }
+            else
             {
                 break;
-            }
-
-            Consume();
-            Consume();
-            var right = ParseEquality(evaluate && !left.IsZero);
-            if (evaluate)
-            {
-                left = NumberValue.LogicalAnd(left, right);
             }
         }
 
@@ -110,7 +154,7 @@ internal sealed class ExpressionParser
     {
         // Equality chains fold left, comparing each Boolean result with the next operand;
         // they are not interpreted as a conjunction of pairwise comparisons.
-        var left = ParseExpression(evaluate);
+        var left = ParseRelational(evaluate);
         while (true)
         {
             SkipWhitespace();
@@ -118,20 +162,73 @@ internal sealed class ExpressionParser
             {
                 Consume();
                 Consume();
-                var right = ParseExpression(evaluate);
+                var right = ParseRelational(evaluate);
                 if (evaluate)
                 {
                     left = NumberValue.AreEqual(left, right);
                 }
             }
-            else if (Peek() == '~' && Peek(1) == '=')
+            else if ((Peek() == '~' || Peek() == '!') && Peek(1) == '=')
+            {
+                Consume();
+                Consume();
+                var right = ParseRelational(evaluate);
+                if (evaluate)
+                {
+                    left = NumberValue.AreNotEqual(left, right);
+                }
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return left;
+    }
+
+    private NumberValue ParseRelational(bool evaluate)
+    {
+        var left = ParseExpression(evaluate);
+        while (true)
+        {
+            SkipWhitespace();
+            if (Peek() == '<' && Peek(1) == '=')
             {
                 Consume();
                 Consume();
                 var right = ParseExpression(evaluate);
                 if (evaluate)
                 {
-                    left = NumberValue.AreNotEqual(left, right);
+                    left = NumberValue.LessThanOrEqual(left, right);
+                }
+            }
+            else if (Peek() == '>' && Peek(1) == '=')
+            {
+                Consume();
+                Consume();
+                var right = ParseExpression(evaluate);
+                if (evaluate)
+                {
+                    left = NumberValue.GreaterThanOrEqual(left, right);
+                }
+            }
+            else if (Peek() == '<')
+            {
+                Consume();
+                var right = ParseExpression(evaluate);
+                if (evaluate)
+                {
+                    left = NumberValue.LessThan(left, right);
+                }
+            }
+            else if (Peek() == '>')
+            {
+                Consume();
+                var right = ParseExpression(evaluate);
+                if (evaluate)
+                {
+                    left = NumberValue.GreaterThan(left, right);
                 }
             }
             else
@@ -241,6 +338,17 @@ internal sealed class ExpressionParser
             {
                 Consume();
                 return ParseUnary(evaluate);
+            }
+            else if (Peek() == '!')
+            {
+                Consume();
+                var value = ParseUnary(evaluate);
+                return evaluate ? NumberValue.LogicalNot(value) : default;
+            }
+            else if (MatchKeyword("not"))
+            {
+                var value = ParseUnary(evaluate);
+                return evaluate ? NumberValue.LogicalNot(value) : default;
             }
 
             // Powers bind more tightly than a leading sign: -2^2 means -(2^2).
@@ -976,5 +1084,36 @@ internal sealed class ExpressionParser
         {
             _pos++;
         }
+    }
+
+    /// <summary>
+    /// Matches a whole-word keyword case-insensitively and advances the cursor past it if found.
+    /// Ensures the match is delimited and not merely a prefix of a longer identifier.
+    /// </summary>
+    private bool MatchKeyword(string keyword)
+    {
+        var len = keyword.Length;
+        if (_pos + len > _input.Length)
+        {
+            return false;
+        }
+
+        if (!_input.AsSpan(_pos, len).Equals(keyword, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // Must be delimited: next character cannot be letter, digit, or underscore.
+        if (_pos + len < _input.Length)
+        {
+            var next = _input[_pos + len];
+            if (char.IsLetterOrDigit(next) || next == '_')
+            {
+                return false;
+            }
+        }
+
+        _pos += len;
+        return true;
     }
 }

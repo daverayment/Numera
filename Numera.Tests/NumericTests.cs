@@ -492,4 +492,52 @@ public class NumericTests
         };
         Assert.AreEqual(expected, val, 1e-12);
     }
+
+    [TestMethod]
+    [DataRow("3 < 5", "1")]
+    [DataRow("5 < 3", "0")]
+    [DataRow("3 <= 3", "1")]
+    [DataRow("3 <= 2", "0")]
+    [DataRow("5 > 3", "1")]
+    [DataRow("3 > 5", "0")]
+    [DataRow("5 >= 5", "1")]
+    [DataRow("4 >= 5", "0")]
+    [DataRow("3 != 4", "1")]
+    [DataRow("3 != 3", "0")]
+    [DataRow("3 ~= 4", "1")]
+    [DataRow("3 == 3", "1")]
+    public void RelationalAndEqualityOperatorsEvaluateCorrectly(string expression, string expected)
+    {
+        var result = Calculator.Evaluate(expression);
+        Assert.AreEqual(expected, result.DecVal.ToString(CultureInfo.InvariantCulture));
+    }
+
+    [TestMethod]
+    [DataRow("1 and 1", "1")]
+    [DataRow("1 and 0", "0")]
+    [DataRow("0 or 1", "1")]
+    [DataRow("0 or 0", "0")]
+    [DataRow("1 xor 0", "1")]
+    [DataRow("1 xor 1", "0")]
+    [DataRow("0 xor 0", "0")]
+    [DataRow("!0", "1")]
+    [DataRow("!1", "0")]
+    [DataRow("not 0", "1")]
+    [DataRow("not 1", "0")]
+    [DataRow("not (3 > 5)", "1")]
+    [DataRow("2 + 3 < 10 and 4 * 2 == 8", "1")]
+    public void LogicalOperatorsAndKeywordsEvaluateCorrectly(string expression, string expected)
+    {
+        var result = Calculator.Evaluate(expression);
+        Assert.AreEqual(expected, result.DecVal.ToString(CultureInfo.InvariantCulture));
+    }
+
+    [TestMethod]
+    [DataRow("1 or sqrt(-1)", "1")]
+    [DataRow("0 and sqrt(-1)", "0")]
+    public void LogicalKeywordsShortCircuitEvaluation(string expression, string expected)
+    {
+        var result = Calculator.Evaluate(expression);
+        Assert.AreEqual(expected, result.DecVal.ToString(CultureInfo.InvariantCulture));
+    }
 }

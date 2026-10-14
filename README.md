@@ -172,7 +172,29 @@ Numera implements a standard Recursive Descent parser with the following capabil
 
 - **Grouping:** Parentheses `()` and brackets `[]` for grouping expressions. Matching brackets/parentheses are required; unbalanced grouping is a syntax error.
 
-- **Equality and Logical Operators:** `==`, `~=`, `&&`, and `||`. Zero is false; other values, including `NaN`, are treated as true. AND binds more tightly than OR. Short-circuit evaluation validates skipped branches for syntax and identifier validity without evaluating their expressions. Equality chains are evaluated left to right: `a == b == c` compares the zero-or-one result of `a == b` with `c`.
+- **Relational and Equality Operators:**
+  - Comparisons: `<`, `<=`, `>`, `>=`, `==`, `!=`, and `~=`.
+  - Results evaluate to `1` (true) or `0` (false) via exact comparison.
+  - Equality chains fold left-to-right (`a == b == c` compares the Boolean result of `a == b` with `c`).
+
+- **Logical Operators:**
+  - Disjunction: `||` or `or` (short-circuiting).
+  - Conjunction: `&&` or `and` (short-circuiting).
+  - Exclusive OR: `xor`.
+  - Unary negation: `!` or `not`.
+  - Truthiness: Zero (`0`) is false; all non-zero numbers (including `NaN` and infinity) are true.
+  - Short-circuiting skips evaluating right-hand branches when the outcome is already known, while still checking syntax.
+
+- **Operator Precedence (highest to lowest):**
+  1. Exponentiation (`^`, right-associative)
+  2. Unary negation and signs (`!`, `not`, `+`, `-`)
+  3. Multiplication, division, remainder (`*`, `/`, `%`)
+  4. Addition and subtraction (`+`, `-`)`
+  5. Relational comparisons (`<`, `<=`, `>`, `>=`)
+  6. Equality and inequality (`==`, `!=`, `~=`)
+  7. `&&`, `and`
+  8. `xor`
+  9. `||`, `or`
 
 - **Constants:** `pi` (or `π`) and `e`.
 
