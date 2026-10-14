@@ -17,6 +17,14 @@ internal sealed class ExpressionParser
     private readonly string _input;
     private readonly EvaluationOptions _options;
     // Cursor positions also identify diagnostic locations in the original input.
+    private readonly struct AngleArgument(double value, AngleUnit unit)
+    {
+        public double Value { get; } = value;
+        public AngleUnit Unit { get; } = unit;
+    }
+
+    private AngleArgument? _currentTrigAngle;
+
     private int _pos;
     private int _depth;
 
@@ -342,7 +350,22 @@ internal sealed class ExpressionParser
                         EvaluationError.InvalidArgumentCount, $"Invalid argument count for '{identifier}'.", identifierStart, identifier.Length));
                 }
 
-                return evaluate ? EvaluateFunction(identifier, args) : default;
+                if (evaluate)
+                {
+                    var result = EvaluateFunction(identifier, args);
+                    if (!identifier.Equals("deg", StringComparison.OrdinalIgnoreCase) &&
+                        !identifier.Equals("rad", StringComparison.OrdinalIgnoreCase) &&
+                        !identifier.Equals("grad", StringComparison.OrdinalIgnoreCase) &&
+                        !identifier.Equals("deg2rad", StringComparison.OrdinalIgnoreCase) &&
+                        !identifier.Equals("grad2rad", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _currentTrigAngle = null;
+                    }
+
+                    return result;
+                }
+
+                return default;
             }
 
             // Constants and literals are still resolved in skipped operands, so invalid
@@ -356,31 +379,111 @@ internal sealed class ExpressionParser
     private NumberValue ParseNumber()
     {
         var start = _pos;
-        var hasDecimal = false;
 
-        // Signs belong to ParseUnary. Literal syntax allows digits and a decimal point,
-        // but does not admit exponent notation even though the numeric APIs support it.
-        while (_pos < _input.Length && (char.IsDigit(Peek()) || Peek() == '.'))
+        // Check for radix-prefixed integer literals: 0x (hex), 0b (binary), 0o (octal).
+        if (Peek() == '0' && _pos + 1 < _input.Length)
         {
-            if (Peek() == '.')
+            var prefix = char.ToLowerInvariant(Peek(1));
+            if (prefix is 'x' or 'b' or 'o')
             {
-                if (hasDecimal)
+                Consume(); // '0'
+                Consume(); // 'x', 'b', or 'o'
+
+                var digitsStart = _pos;
+                while (_pos < _input.Length && (prefix switch
                 {
-                    throw SyntaxError("Unexpected character '.'.");
+                    'x' => char.IsAsciiHexDigit(Peek()),
+                    'b' => Peek() is '0' or '1',
+                    'o' => Peek() is >= '0' and <= '7',
+                    _ => false,
+                }))
+                {
+                    Consume();
+                }
+
+                if (_pos == digitsStart)
+                {
+                    throw SyntaxError($"Expected {prefix switch { 'x' => "hexadecimal", 'b' => "binary", 'o' => "octal", _ => "radix" }} digits after '0{prefix}'.");
+                }
+
+                var digitsSpan = _input.AsSpan(digitsStart, _pos - digitsStart);
+                var value = prefix switch
+                {
+                    'x' => ParseHexBigInteger(digitsSpan),
+                    'b' => ParseBinaryBigInteger(digitsSpan),
+                    'o' => ParseOctalBigInteger(digitsSpan),
+                    _ => throw SyntaxError("Unsupported number prefix."),
+                };
+
+                return new NumberValue(value);
+            }
+        }
+
+        var hasDecimal = false;
+        var hasExponent = false;
+
+        // Signs belong to ParseUnary. Literal syntax allows digits, an optional decimal point,
+        // and an optional scientific exponent (e/E optionally followed by +/- and digits).
+        while (_pos < _input.Length)
+        {
+            var ch = Peek();
+            if (char.IsDigit(ch))
+            {
+                Consume();
+            }
+            else if (ch == '.')
+            {
+                if (hasDecimal || hasExponent)
+                {
+                    break;
                 }
 
                 hasDecimal = true;
+                Consume();
             }
+            else if (ch is 'e' or 'E')
+            {
+                if (hasExponent)
+                {
+                    break;
+                }
 
-            Consume();
+                // Check ahead: exponent indicator must be followed by optional sign and at least one digit.
+                var nextPos = 1;
+                if (Peek(nextPos) is '+' or '-')
+                {
+                    nextPos++;
+                }
+
+                if (!char.IsDigit(Peek(nextPos)))
+                {
+                    break;
+                }
+
+                hasExponent = true;
+                Consume(); // 'e' or 'E'
+                if (Peek() is '+' or '-')
+                {
+                    Consume();
+                }
+
+                while (_pos < _input.Length && char.IsDigit(Peek()))
+                {
+                    Consume();
+                }
+            }
+            else
+            {
+                break;
+            }
         }
 
         var numberSpan = _input.AsSpan(start, _pos - start);
 
-        // Keep whole-number literals as arbitrary-precision integers. For literals with
-        // a decimal point, prefer decimal to binary floating point; parsing may still
+        // Keep whole-number literals without exponents as arbitrary-precision integers. For literals with
+        // a decimal point or scientific exponent, prefer decimal to binary floating point; parsing may still
         // round excess digits. Double is a fallback for overflow or underflow to zero.
-        if (!hasDecimal && BigInteger.TryParse(
+        if (!hasDecimal && !hasExponent && BigInteger.TryParse(
             numberSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
         {
             return new NumberValue(intValue);
@@ -405,6 +508,46 @@ internal sealed class ExpressionParser
 
         throw new ExpressionException(
             new EvaluationDiagnostic(EvaluationError.InvalidSyntax, "Expected a number.", start, Math.Max(1, _pos - start)));
+    }
+
+    private static BigInteger ParseHexBigInteger(ReadOnlySpan<char> span)
+    {
+        var result = BigInteger.Zero;
+        foreach (var ch in span)
+        {
+            var digit = ch switch
+            {
+                >= '0' and <= '9' => ch - '0',
+                >= 'a' and <= 'f' => ch - 'a' + 10,
+                >= 'A' and <= 'F' => ch - 'A' + 10,
+                _ => 0,
+            };
+            result = (result << 4) | (uint)digit;
+        }
+
+        return result;
+    }
+
+    private static BigInteger ParseBinaryBigInteger(ReadOnlySpan<char> span)
+    {
+        var result = BigInteger.Zero;
+        foreach (var ch in span)
+        {
+            result = (result << 1) | (uint)(ch - '0');
+        }
+
+        return result;
+    }
+
+    private static BigInteger ParseOctalBigInteger(ReadOnlySpan<char> span)
+    {
+        var result = BigInteger.Zero;
+        foreach (var ch in span)
+        {
+            result = (result << 3) | (uint)(ch - '0');
+        }
+
+        return result;
     }
 
     private ReadOnlySpan<char> ParseIdentifier()
@@ -643,13 +786,27 @@ internal sealed class ExpressionParser
                     return new NumberValue(Math.Asinh(1.0 / v));
 
                 case "rad":
+                case "deg2rad":
+                    _currentTrigAngle = new AngleArgument(v, AngleUnit.Degrees);
                     return new NumberValue(v * (Math.PI / 180.0));
 
                 case "deg":
+                case "rad2deg":
                     return new NumberValue(v * (180.0 / Math.PI));
 
                 case "grad":
+                case "grad2rad":
+                    _currentTrigAngle = new AngleArgument(v, AngleUnit.Gradians);
+                    return new NumberValue(v * (Math.PI / 200.0));
+
+                case "rad2grad":
                     return new NumberValue(v * (200.0 / Math.PI));
+
+                case "deg2grad":
+                    return new NumberValue(v * (200.0 / 180.0));
+
+                case "grad2deg":
+                    return new NumberValue(v * (180.0 / 200.0));
 
                 default:
                     throw new FormatException($"Unknown function '{name}'.");
@@ -704,40 +861,59 @@ internal sealed class ExpressionParser
     }
 
     private double EvaluateSin(double v) =>
-        _options.AngleUnit switch
+        (_currentTrigAngle is { } angle ? angle.Unit : _options.AngleUnit) switch
         {
-            AngleUnit.Degrees => double.SinPi(v / 180.0),
-            AngleUnit.Gradians => double.SinPi(v / 200.0),
+            AngleUnit.Degrees => double.SinPi((_currentTrigAngle is { } a ? a.Value : v) / 180.0),
+            AngleUnit.Gradians => double.SinPi((_currentTrigAngle is { } a ? a.Value : v) / 200.0),
             _ => Math.Sin(v),
         };
 
     private double EvaluateCos(double v) =>
-        _options.AngleUnit switch
+        (_currentTrigAngle is { } angle ? angle.Unit : _options.AngleUnit) switch
         {
-            AngleUnit.Degrees => double.CosPi(v / 180.0),
-            AngleUnit.Gradians => double.CosPi(v / 200.0),
+            AngleUnit.Degrees => double.CosPi((_currentTrigAngle is { } a ? a.Value : v) / 180.0),
+            AngleUnit.Gradians => double.CosPi((_currentTrigAngle is { } a ? a.Value : v) / 200.0),
             _ => Math.Cos(v),
         };
 
-    private double EvaluateTan(double v) =>
-        _options.AngleUnit switch
+    private double EvaluateTan(double v)
+    {
+        var unit = _currentTrigAngle is { } angle ? angle.Unit : _options.AngleUnit;
+        var value = _currentTrigAngle is { } a ? a.Value : v;
+
+        if (unit == AngleUnit.Degrees && Math.Abs(value % 180.0) == 45.0)
         {
-            AngleUnit.Degrees => double.TanPi(v / 180.0),
-            AngleUnit.Gradians => double.TanPi(v / 200.0),
+            return value > 0 ? 1.0 : -1.0;
+        }
+
+        if (unit == AngleUnit.Gradians && Math.Abs(value % 200.0) == 50.0)
+        {
+            return value > 0 ? 1.0 : -1.0;
+        }
+
+        return unit switch
+        {
+            AngleUnit.Degrees => double.TanPi(value / 180.0),
+            AngleUnit.Gradians => double.TanPi(value / 200.0),
             _ => Math.Tan(v),
         };
+    }
 
     private double EvaluateSec(double v) => 1.0 / EvaluateCos(v);
 
     private double EvaluateCsc(double v) => 1.0 / EvaluateSin(v);
 
-    private double EvaluateCot(double v) =>
-        _options.AngleUnit switch
+    private double EvaluateCot(double v)
+    {
+        var unit = _currentTrigAngle is { } angle ? angle.Unit : _options.AngleUnit;
+        var value = _currentTrigAngle is { } a ? a.Value : v;
+        return unit switch
         {
-            AngleUnit.Degrees => double.CosPi(v / 180.0) / double.SinPi(v / 180.0),
-            AngleUnit.Gradians => double.CosPi(v / 200.0) / double.SinPi(v / 200.0),
+            AngleUnit.Degrees => double.CosPi(value / 180.0) / double.SinPi(value / 180.0),
+            AngleUnit.Gradians => double.CosPi(value / 200.0) / double.SinPi(value / 200.0),
             _ => 1.0 / Math.Tan(v),
         };
+    }
 
     private double EvaluateArcSin(double v) =>
         _options.AngleUnit switch

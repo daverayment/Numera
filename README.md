@@ -38,6 +38,7 @@ Try entering:
 * `101 + pi` *(Double fallback for transcendental constants)*
 * `max(10, min(20, 7, 9))` *(Variadic functions and nesting)*
 * `1 / 0` or `sqrt(-1)` *(Clean error diagnostics and non-finite number handling)*
+* `0b10101011 - 0xAA` *(Support for multiple integer literal formats, such as binary and hexadecimal)*
 
 ## Working with Results
 
@@ -178,10 +179,15 @@ Numera implements a standard Recursive Descent parser with the following capabil
 - **Functions:**
   - **Trigonometry:** `sin`, `cos`, `tan`, `arcsin`, `arccos`, `arctan`, `cot`, `sec`, `csc`, `arccot`, `arcsec`, `arccsc` (operates in radians by default, or degrees/gradians via `EvaluationOptions.AngleUnit`).
   - **Hyperbolic:** `sinh`, `cosh`, `tanh`, `arsinh`, `arcosh`, `artanh`, `coth`, `sech`, `csch`, `arcoth`, `arsech`, `arcsch`.
-  - **Angle Conversion:** `rad(degrees)` converts degrees to radians; `deg(radians)` converts radians to degrees; `grad(radians)` converts radians to gradians (200 gradians = π radians).
+  - **Angle Conversion:** `rad(degrees)` or `deg2rad(degrees)` converts degrees to radians; `deg(radians)` or `rad2deg(radians)` converts radians to degrees; `grad(gradians)` or `grad2rad(gradians)` converts gradians to radians; plus explicit cross-conversions `deg2grad`, `rad2grad`, and `grad2deg`. When nested directly inside trigonometric functions, `rad(x)`/`deg2rad(x)` and `grad(x)`/`grad2rad(x)` preserve exact cardinal values without float-rounding distortion.
   - **Logarithms/Roots:** `log` (base 10), `log2`, `log10`, `ln` (natural), `logn(value, base)`, `sqrt`, `root(value, root)`.
   - **General:** `min`, `max`, `abs`, `round`, `ceil`, `floor`, `sign`/`sgn`, `factorial`.
   - **Random:** `rand()` returns a double in [0,1); `randi(n)` returns an integer in [0,n).
+
+- **Literal Formats:**
+  - Standard decimal and integer numbers.
+  - Scientific notation: e.g. `1e6`, `2.5e-3`, `1.23E+10`.
+  - Radix-prefixed exact integers: `0x...` (hexadecimal), `0b...` (binary), `0o...` (octal).
 
 - **Function behaviour and conventions:**
   - Function and constant names are case-insensitive.
@@ -191,7 +197,7 @@ Numera implements a standard Recursive Descent parser with the following capabil
 
 Unary signs bind less tightly than powers: `-2^2` means `-(2^2)`, while `2^-3` permits a negative exponent.
 
-Numera input requires `.` as the decimal point and `,` as the argument separator, regardless of the current culture. It does not support localised input, digit-grouping separators, implicit multiplication, postfix factorial, scientific notation, or base-prefixed literals. The caller is responsible for any transformations to support those features.
+Numera input requires `.` as the decimal point and `,` as the argument separator, regardless of the current culture. It does not support localised input, digit-grouping separators, implicit multiplication, or postfix factorial. The caller is responsible for any transformations to support those features.
 
 ## Computational Safety and Limits
 To safeguard against resource exhaustion when evaluating untrusted user input, Numera enforces sensible computational ceilings by default:

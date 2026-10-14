@@ -422,4 +422,74 @@ public class NumericTests
         Assert.AreEqual(200.0, Calculator.Evaluate("arccos(-1)", gradOptions).DblVal, 0.0);
         Assert.AreEqual(50.0, Calculator.Evaluate("arctan(1)", gradOptions).DblVal, 0.0);
     }
+
+    [TestMethod]
+    [DataRow("sin(rad(90))", 1.0)]
+    [DataRow("sin(deg2rad(90))", 1.0)]
+    [DataRow("sin(rad(180))", 0.0)]
+    [DataRow("sin(rad(270))", -1.0)]
+    [DataRow("cos(rad(0))", 1.0)]
+    [DataRow("cos(rad(90))", 0.0)]
+    [DataRow("cos(rad(180))", -1.0)]
+    [DataRow("tan(rad(45))", 1.0)]
+    [DataRow("tan(rad(180))", 0.0)]
+    [DataRow("sin(grad(100))", 1.0)]
+    [DataRow("sin(grad2rad(100))", 1.0)]
+    [DataRow("cos(grad(200))", -1.0)]
+    [DataRow("tan(grad(50))", 1.0)]
+    public void TrigonometricFunctionsPreserveExactPrecisionWithRadAndGradHelpers(string expression, double expected)
+    {
+        var result = Calculator.Evaluate(expression);
+        Assert.AreEqual(NumberValue.DataType.Double, result.Type);
+        Assert.AreEqual(expected, result.DblVal, 0.0);
+    }
+
+    [TestMethod]
+    [DataRow("rad2deg(pi)", 180.0)]
+    [DataRow("deg(pi)", 180.0)]
+    [DataRow("deg2rad(180)", Math.PI)]
+    [DataRow("rad(180)", Math.PI)]
+    [DataRow("deg2grad(180)", 200.0)]
+    [DataRow("grad2deg(200)", 180.0)]
+    [DataRow("grad2rad(200)", Math.PI)]
+    [DataRow("rad2grad(pi)", 200.0)]
+    public void AngleConversionHelpersProduceCorrectValues(string expression, double expected)
+    {
+        var result = Calculator.Evaluate(expression);
+        Assert.AreEqual(expected, result.DblVal, 1e-12);
+    }
+
+    [TestMethod]
+    [DataRow("0x10", "16")]
+    [DataRow("0xFF", "255")]
+    [DataRow("0x123456789ABCDEF0", "1311768467463790320")]
+    [DataRow("0b1010", "10")]
+    [DataRow("0b11111111", "255")]
+    [DataRow("0o77", "63")]
+    [DataRow("0o100", "64")]
+    public void NonDecimalLiteralsParseAsExactIntegers(string expression, string expected)
+    {
+        var result = Calculator.Evaluate(expression);
+        Assert.AreEqual(NumberValue.DataType.Integer, result.Type);
+        Assert.AreEqual(expected, result.IntVal.ToString(CultureInfo.InvariantCulture));
+    }
+
+    [TestMethod]
+    [DataRow("1e3", 1000.0)]
+    [DataRow("1.5e2", 150.0)]
+    [DataRow("2.5E-3", 0.0025)]
+    [DataRow("1e-5", 0.00001)]
+    [DataRow("1.23e+4", 12300.0)]
+    public void ScientificNotationParsesCorrectly(string expression, double expected)
+    {
+        var result = Calculator.Evaluate(expression);
+        var val = result.Type switch
+        {
+            NumberValue.DataType.Decimal => (double)result.DecVal,
+            NumberValue.DataType.Double => result.DblVal,
+            NumberValue.DataType.Integer => (double)result.IntVal,
+            _ => throw new InvalidOperationException(),
+        };
+        Assert.AreEqual(expected, val, 1e-12);
+    }
 }
