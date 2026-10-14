@@ -9,8 +9,9 @@ namespace Numera;
 /// </summary>
 /// <remarks>
 /// Precedence, from lowest to highest, is OR, XOR, AND, equality, relational,
-/// addition/subtraction, multiplication/division/remainder, unary signs/negation,
-/// and exponentiation. Grouping and function arguments restart at the lowest precedence.
+/// bitwise shift (&lt;&lt;, &gt;&gt;), addition/subtraction, multiplication/division/
+/// remainder, unary signs/negation, and exponentiation. Grouping and function arguments
+/// restart at the lowest precedence.
 /// </remarks>
 internal sealed class ExpressionParser
 {
@@ -189,7 +190,7 @@ internal sealed class ExpressionParser
 
     private NumberValue ParseRelational(bool evaluate)
     {
-        var left = ParseExpression(evaluate);
+        var left = ParseShift(evaluate);
         while (true)
         {
             SkipWhitespace();
@@ -197,7 +198,7 @@ internal sealed class ExpressionParser
             {
                 Consume();
                 Consume();
-                var right = ParseExpression(evaluate);
+                var right = ParseShift(evaluate);
                 if (evaluate)
                 {
                     left = NumberValue.LessThanOrEqual(left, right);
@@ -207,28 +208,63 @@ internal sealed class ExpressionParser
             {
                 Consume();
                 Consume();
-                var right = ParseExpression(evaluate);
+                var right = ParseShift(evaluate);
                 if (evaluate)
                 {
                     left = NumberValue.GreaterThanOrEqual(left, right);
                 }
             }
-            else if (Peek() == '<')
+            else if (Peek() == '<' && Peek(1) != '<')
             {
                 Consume();
-                var right = ParseExpression(evaluate);
+                var right = ParseShift(evaluate);
                 if (evaluate)
                 {
                     left = NumberValue.LessThan(left, right);
                 }
             }
-            else if (Peek() == '>')
+            else if (Peek() == '>' && Peek(1) != '>')
             {
+                Consume();
+                var right = ParseShift(evaluate);
+                if (evaluate)
+                {
+                    left = NumberValue.GreaterThan(left, right);
+                }
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return left;
+    }
+
+    private NumberValue ParseShift(bool evaluate)
+    {
+        var left = ParseExpression(evaluate);
+        while (true)
+        {
+            SkipWhitespace();
+            if (Peek() == '<' && Peek(1) == '<')
+            {
+                Consume();
                 Consume();
                 var right = ParseExpression(evaluate);
                 if (evaluate)
                 {
-                    left = NumberValue.GreaterThan(left, right);
+                    left = NumberValue.ShiftLeft(left, right);
+                }
+            }
+            else if (Peek() == '>' && Peek(1) == '>')
+            {
+                Consume();
+                Consume();
+                var right = ParseExpression(evaluate);
+                if (evaluate)
+                {
+                    left = NumberValue.ShiftRight(left, right);
                 }
             }
             else
@@ -749,6 +785,9 @@ internal sealed class ExpressionParser
                 case "cbrt":
                     return new NumberValue(Math.Cbrt(v));
 
+                case "bnot":
+                    return NumberValue.BitwiseNot(args[0]);
+
                 case "exp":
                     return new NumberValue(Math.Exp(v));
 
@@ -766,26 +805,49 @@ internal sealed class ExpressionParser
                     return new NumberValue(Math.Abs(v));
 
                 case "log":
+                case "log10":
+                    if (v <= 0)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "Logarithm is undefined for non-positive values."));
+                    }
                     return new NumberValue(Math.Log10(v));
 
                 case "log2":
+                    if (v <= 0)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "Logarithm is undefined for non-positive values."));
+                    }
                     return new NumberValue(Math.Log2(v));
 
-                case "log10":
-                    return new NumberValue(Math.Log10(v));
-
                 case "ln":
+                    if (v <= 0)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "Natural logarithm is undefined for non-positive values."));
+                    }
                     return new NumberValue(Math.Log(v));
 
                 case "sqrt":
+                    if (v < 0)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "Square root of a negative number has no real solution."));
+                    }
                     return new NumberValue(Math.Sqrt(v));
 
                 case "factorial":
-                    // Domain errors yield NaN; valid but prohibitively expensive inputs
-                    // fail with a calculation limit before the multiplication loop.
-                    if (!args[0].TryGetInteger(out var factorialArgument) || factorialArgument < 0)
+                    if (!args[0].TryGetInteger(out var factorialArgument))
                     {
-                        return new NumberValue(double.NaN);
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.IntegerRequired, "Factorial requires an integer argument."));
+                    }
+
+                    if (factorialArgument < 0)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.ArgumentOutOfRange, "Factorial is undefined for negative integers."));
                     }
 
                     if (factorialArgument > CalculationLimits.MaxFactorialArgument)
@@ -838,9 +900,16 @@ internal sealed class ExpressionParser
                     return new NumberValue(Math.Round(v, MidpointRounding.AwayFromZero));
 
                 case "randi":
-                    if (!args[0].TryGetInteger(out var randomUpperBound) || randomUpperBound <= 0 || randomUpperBound > long.MaxValue)
+                    if (!args[0].TryGetInteger(out var randomUpperBound))
                     {
-                        return new NumberValue(double.NaN);
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.IntegerRequired, "randi requires an integer bound."));
+                    }
+
+                    if (randomUpperBound <= 0 || randomUpperBound > long.MaxValue)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.ArgumentOutOfRange, "randi bound must be a positive integer within valid limits."));
                     }
 
                     return new NumberValue((BigInteger)Random.Shared.NextInt64((long)randomUpperBound));
@@ -855,9 +924,19 @@ internal sealed class ExpressionParser
                     return new NumberValue(EvaluateTan(v));
 
                 case "arcsin":
+                    if (v < -1.0 || v > 1.0)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "arcsin argument must be between -1 and 1."));
+                    }
                     return new NumberValue(EvaluateArcSin(v));
 
                 case "arccos":
+                    if (v < -1.0 || v > 1.0)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "arccos argument must be between -1 and 1."));
+                    }
                     return new NumberValue(EvaluateArcCos(v));
 
                 case "arctan":
@@ -876,9 +955,19 @@ internal sealed class ExpressionParser
                     return new NumberValue(EvaluateArcCot(v));
 
                 case "arcsec":
+                    if (Math.Abs(v) < 1.0)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "arcsec argument magnitude must be at least 1."));
+                    }
                     return new NumberValue(EvaluateArcSec(v));
 
                 case "arccsc":
+                    if (Math.Abs(v) < 1.0)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "arccsc argument magnitude must be at least 1."));
+                    }
                     return new NumberValue(EvaluateArcCsc(v));
 
                 case "sinh":
@@ -894,9 +983,19 @@ internal sealed class ExpressionParser
                     return new NumberValue(Math.Asinh(v));
 
                 case "arcosh":
+                    if (v < 1.0)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "arcosh argument must be at least 1."));
+                    }
                     return new NumberValue(Math.Acosh(v));
 
                 case "artanh":
+                    if (v <= -1.0 || v >= 1.0)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "artanh argument must be strictly between -1 and 1."));
+                    }
                     return new NumberValue(Math.Atanh(v));
 
                 case "coth":
@@ -909,12 +1008,27 @@ internal sealed class ExpressionParser
                     return new NumberValue(1.0 / Math.Sinh(v));
 
                 case "arcoth":
+                    if (Math.Abs(v) <= 1.0)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "arcoth argument magnitude must be strictly greater than 1."));
+                    }
                     return new NumberValue(Math.Atanh(1.0 / v));
 
                 case "arsech":
+                    if (v <= 0.0 || v > 1.0)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "arsech argument must be in the range (0, 1]."));
+                    }
                     return new NumberValue(Math.Acosh(1.0 / v));
 
                 case "arcsch":
+                    if (v == 0.0)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "arcsch argument cannot be zero."));
+                    }
                     return new NumberValue(Math.Asinh(1.0 / v));
 
                 case "rad":
@@ -953,7 +1067,14 @@ internal sealed class ExpressionParser
                     return NumberValue.Pow(args[0], args[1]);
 
                 case "logn":
-                    return new NumberValue(Math.Log(args[0].AsDouble(), args[1].AsDouble()));
+                    var logVal = args[0].AsDouble();
+                    var logBase = args[1].AsDouble();
+                    if (logVal <= 0.0 || logBase <= 0.0 || logBase == 1.0)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "logn requires positive arguments and base cannot be 1."));
+                    }
+                    return new NumberValue(Math.Log(logVal, logBase));
 
                 case "atan2":
                     var y = args[0].AsDouble();
@@ -966,14 +1087,39 @@ internal sealed class ExpressionParser
                 case "root":
                     var baseVal = args[0].AsDouble();
                     var rootVal = args[1].AsDouble();
-                    if (baseVal < 0 && Math.Abs(rootVal % 2) == 1)
+                    if (rootVal == 0.0)
                     {
-                        // Math.Pow with a negative base and a fractional exponent yields
-                        // NaN. Odd integer roots have a real branch: root(-8, 3) = -2.
-                        return new NumberValue(-Math.Pow(-baseVal, 1.0 / rootVal));
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "Root degree cannot be zero."));
+                    }
+                    if (baseVal < 0)
+                    {
+                        if (Math.Abs(rootVal % 2) == 1)
+                        {
+                            // Odd integer roots have a real branch: root(-8, 3) = -2.
+                            return new NumberValue(-Math.Pow(-baseVal, 1.0 / rootVal));
+                        }
+
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "Even root of a negative number has no real solution."));
                     }
 
                     return new NumberValue(Math.Pow(baseVal, 1.0 / rootVal));
+
+                case "shl":
+                    return NumberValue.ShiftLeft(args[0], args[1]);
+
+                case "shr":
+                    return NumberValue.ShiftRight(args[0], args[1]);
+
+                case "band":
+                    return NumberValue.BitwiseAnd(args[0], args[1]);
+
+                case "bor":
+                    return NumberValue.BitwiseOr(args[0], args[1]);
+
+                case "bxor":
+                    return NumberValue.BitwiseXor(args[0], args[1]);
 
                 default:
                     throw new FormatException($"Unknown function '{name}'.");
@@ -1031,7 +1177,8 @@ internal sealed class ExpressionParser
     {
         if (NumberValue.Compare(min, max) > 0)
         {
-            return new NumberValue(double.NaN);
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.ArgumentOutOfRange, "Clamp minimum cannot be greater than maximum."));
         }
 
         if (NumberValue.Compare(val, min) < 0)

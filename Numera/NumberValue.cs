@@ -285,6 +285,128 @@ public readonly struct NumberValue : IFormattable
         a.IsZero ? new NumberValue(1m) : new NumberValue(0m);
 
     /// <summary>
+    /// Performs a bitwise shift-left on integer operands, enforcing the maximum bit
+    /// ceiling.
+    /// </summary>
+    /// <exception cref="ExpressionException">Thrown if an operand is not an integer or
+    /// the shift count is negative.</exception>
+    /// <exception cref="CalculationLimitException">Thrown if the shift amount exceeds the
+    /// configured bit ceiling.</exception>
+    public static NumberValue ShiftLeft(NumberValue a, NumberValue b)
+    {
+        if (!a.TryGetInteger(out var val) || !b.TryGetInteger(out var count))
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.IntegerRequired, "Bitwise shift requires integer operands."));
+        }
+
+        if (count < BigInteger.Zero)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.ArgumentOutOfRange, "Shift count cannot be negative."));
+        }
+
+        if (count > CalculationLimits.MaxIntegerBits)
+        {
+            throw new CalculationLimitException();
+        }
+
+        var shift = (int)count;
+        if (!val.IsZero)
+        {
+            var bitLength = BigInteger.Abs(val).GetBitLength();
+            if (bitLength + shift > CalculationLimits.MaxIntegerBits)
+            {
+                throw new CalculationLimitException();
+            }
+        }
+
+        return new NumberValue(val << shift);
+    }
+
+    /// <summary>
+    /// Performs an arithmetic bitwise shift-right on integer operands.
+    /// </summary>
+    /// <exception cref="ExpressionException">Thrown if an operand is not an integer or the shift count is negative.</exception>
+    public static NumberValue ShiftRight(NumberValue a, NumberValue b)
+    {
+        if (!a.TryGetInteger(out var val) || !b.TryGetInteger(out var count))
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.IntegerRequired, "Bitwise shift requires integer operands."));
+        }
+
+        if (count < BigInteger.Zero)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.ArgumentOutOfRange, "Shift count cannot be negative."));
+        }
+
+        var shift = count > CalculationLimits.MaxIntegerBits ? CalculationLimits.MaxIntegerBits : (int)count;
+        return new NumberValue(val >> shift);
+    }
+
+    /// <summary>
+    /// Performs a bitwise AND on integer operands.
+    /// </summary>
+    /// <exception cref="ExpressionException">Thrown if either operand is not an integer.</exception>
+    public static NumberValue BitwiseAnd(NumberValue a, NumberValue b)
+    {
+        if (!a.TryGetInteger(out var intA) || !b.TryGetInteger(out var intB))
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.IntegerRequired, "Bitwise AND requires integer operands."));
+        }
+
+        return new NumberValue(intA & intB);
+    }
+
+    /// <summary>
+    /// Performs a bitwise OR on integer operands.
+    /// </summary>
+    /// <exception cref="ExpressionException">Thrown if either operand is not an integer.</exception>
+    public static NumberValue BitwiseOr(NumberValue a, NumberValue b)
+    {
+        if (!a.TryGetInteger(out var intA) || !b.TryGetInteger(out var intB))
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.IntegerRequired, "Bitwise OR requires integer operands."));
+        }
+
+        return new NumberValue(intA | intB);
+    }
+
+    /// <summary>
+    /// Performs a bitwise XOR on integer operands.
+    /// </summary>
+    /// <exception cref="ExpressionException">Thrown if either operand is not an integer.</exception>
+    public static NumberValue BitwiseXor(NumberValue a, NumberValue b)
+    {
+        if (!a.TryGetInteger(out var intA) || !b.TryGetInteger(out var intB))
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.IntegerRequired, "Bitwise XOR requires integer operands."));
+        }
+
+        return new NumberValue(intA ^ intB);
+    }
+
+    /// <summary>
+    /// Performs a bitwise one's complement (NOT) on an integer operand.
+    /// </summary>
+    /// <exception cref="ExpressionException">Thrown if the operand is not an integer.</exception>
+    public static NumberValue BitwiseNot(NumberValue a)
+    {
+        if (!a.TryGetInteger(out var val))
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.IntegerRequired, "Bitwise NOT requires an integer operand."));
+        }
+
+        return new NumberValue(~val);
+    }
+
+    /// <summary>
     /// Compares two values for equality using <see cref="Compare(NumberValue, NumberValue)"/>.
     /// Returns 1m if equal, or 0m if unequal.
     /// </summary>

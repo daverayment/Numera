@@ -81,19 +81,18 @@ switch (result.Type)
 *(If you just need a standard `double` and can tolerate potential precision loss on large integers or decimals, `result.AsDouble()` provides a convenient conversion.)*
 
 ### 3. Handling Non-Finite Numbers
-Expressions like `sqrt(-1)` or `exp(1000)` evaluate successfully to `double.NaN` and `double.PositiveInfinity`:
+Operations that overflow 64-bit float representation (such as `exp(1000)`) produce `double.PositiveInfinity` or `double.NegativeInfinity`:
 
 ```csharp
 if (!result.IsFinite)
 {
-    // Distinguish undefined operations (NaN) from overflow (Infinity).
-    string message = result.IsNaN ? "Undefined" : "Overflow";
-    Console.WriteLine(message);
+    // Distinguish overflow or non-finite float results:
+    Console.WriteLine("Float overflow / non-finite value");
 }
 ```
 
 ### 4. Error Diagnostics & Exceptions
-When an expression cannot be evaluated (e.g. syntax errors, unknown functions, or division by zero), Numera provides structured diagnostic details via either `TryEvaluate` or `Evaluate`:
+When an expression cannot be evaluated (e.g. syntax errors, unknown functions, division by zero, invalid domains, or missing integer operands), Numera provides structured diagnostic details via either `TryEvaluate` or `Evaluate`:
 
 #### Option A: The Try Pattern (Recommended)
 `TryEvaluate` returns `false` with a structured `EvaluationDiagnostic` rather than throwing exceptions for evaluation failures:
@@ -189,12 +188,13 @@ Numera implements a standard Recursive Descent parser with the following capabil
   1. Exponentiation (`^`, right-associative)
   2. Unary negation and signs (`!`, `not`, `+`, `-`)
   3. Multiplication, division, remainder (`*`, `/`, `%`)
-  4. Addition and subtraction (`+`, `-`)`
-  5. Relational comparisons (`<`, `<=`, `>`, `>=`)
-  6. Equality and inequality (`==`, `!=`, `~=`)
-  7. `&&`, `and`
-  8. `xor`
-  9. `||`, `or`
+  4. Addition and subtraction (`+`, `-`)
+  5. Bitwise shift (`<<`, `>>`)
+  6. Relational comparisons (`<`, `<=`, `>`, `>=`)
+  7. Equality and inequality (`==`, `!=`, `~=`)
+  8. `&&`, `and`
+  9. `xor`
+  10. `||`, `or`
 
 - **Constants:** `pi` (or `π`) and `e`.
 
@@ -204,6 +204,7 @@ Numera implements a standard Recursive Descent parser with the following capabil
   - **Angle Conversion:** `rad(degrees)` or `deg2rad(degrees)` converts degrees to radians; `deg(radians)` or `rad2deg(radians)` converts radians to degrees; `grad(gradians)` or `grad2rad(gradians)` converts gradians to radians; plus explicit cross-conversions `deg2grad`, `rad2grad`, and `grad2deg`. When nested directly inside trigonometric functions, `rad(x)`/`deg2rad(x)` and `grad(x)`/`grad2rad(x)` preserve exact cardinal values without float-rounding distortion.
   - **Logarithms/Roots:** `log` (base 10), `log2`, `log10`, `ln` (natural), `logn(value, base)`, `sqrt`, `cbrt`, `root(value, root)`.
   - **General:** `min`, `max`, `avg`, `clamp(val, min, max)`, `abs`, `round`, `ceil`, `floor`, `trunc`, `frac`, `sign`/`sgn`, `factorial`, `hypot(x, y)`, `lerp(a, b, t)`.
+  - **Bitwise:** `shl(val, count)`, `shr(val, count)`, `band(a, b)`, `bor(a, b)`, `bxor(a, b)`, `bnot(a)`. Require exact integer operands and evaluate via arbitrary-precision integers.
   - **Random:** `rand()` returns a double in [0,1); `randi(n)` returns an integer in [0,n).
 
 - **Literal Formats:**
@@ -215,7 +216,10 @@ Numera implements a standard Recursive Descent parser with the following capabil
   - Function and constant names are case-insensitive.
   - `min` and `max` are variadic (accepting one or more arguments).
   - `round` rounds to the nearest whole number (midpoint away from zero).
-  - Invalid domain arguments (such as negative factorials or invalid `randi` bounds) evaluate to `NaN`.
+  - Invalid or undefined calculations fail evaluation with specific diagnostic codes:
+    - **Mathematically undefined results** (e.g. `sqrt(-1)` or `log(0)`) report `UndefinedMathResult`.
+    - **Fractions where whole numbers are required** (e.g. `1.5 << 2` or `factorial(2.5)`) report `IntegerRequired`.
+    - **Out-of-range inputs** (e.g. `factorial(-5)` or negative shift counts like `1 << -1`) report `ArgumentOutOfRange`.
 
 Unary signs bind less tightly than powers: `-2^2` means `-(2^2)`, while `2^-3` permits a negative exponent.
 

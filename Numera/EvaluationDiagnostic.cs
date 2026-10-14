@@ -42,6 +42,22 @@ public enum EvaluationError
     /// A numerical operation exceeded the representable bounds of the arithmetic type.
     /// </summary>
     NumericOverflow,
+
+    /// <summary>
+    /// An operation requires integer operands, but received a non-integer or fractional
+    /// value.
+    /// </summary>
+    IntegerRequired,
+
+    /// <summary>
+    /// An argument value is outside the permitted numerical range for the operation.
+    /// </summary>
+    ArgumentOutOfRange,
+
+    /// <summary>
+    /// A mathematical function has no defined real-valued result for the given argument.
+    /// </summary>
+    UndefinedMathResult,
 }
 
 /// <summary>

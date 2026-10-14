@@ -121,7 +121,7 @@ public class NumericTests
     [TestMethod]
     public void NonFiniteResultsRemainAvailableToConsumers()
     {
-        var nan = Calculator.Evaluate("sqrt(-7)");
+        var nan = new NumberValue(double.NaN);
         Assert.AreEqual(NumberValue.DataType.Double, nan.Type);
         Assert.IsTrue(nan.IsNaN);
         Assert.IsFalse(nan.IsFinite);
@@ -254,7 +254,7 @@ public class NumericTests
     }
 
     [TestMethod]
-    [DataRow("sign(sqrt(-1))", NumberValue.DataType.Decimal, "0")]
+    [DataRow("sign(0)", NumberValue.DataType.Integer, "0")]
     [DataRow("sign(-42)", NumberValue.DataType.Integer, "-1")]
     [DataRow("sign(-42.5)", NumberValue.DataType.Decimal, "-1")]
     [DataRow("abs(-12345678901234567890)", NumberValue.DataType.Integer, "12345678901234567890")]
@@ -281,15 +281,33 @@ public class NumericTests
     }
 
     [TestMethod]
-    [DataRow("factorial(-1)")]
-    [DataRow("factorial(2.5)")]
-    [DataRow("root(-16, 2)")]
-    [DataRow("randi(-5)")]
-    public void MathDomainErrorsReturnNaN(string expression)
+    [DataRow("factorial(-1)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("factorial(2.5)", EvaluationError.IntegerRequired)]
+    [DataRow("root(-16, 2)", EvaluationError.UndefinedMathResult)]
+    [DataRow("randi(-5)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("randi(0)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("randi(1.5)", EvaluationError.IntegerRequired)]
+    [DataRow("sqrt(-4)", EvaluationError.UndefinedMathResult)]
+    [DataRow("log(-10)", EvaluationError.UndefinedMathResult)]
+    [DataRow("log(0)", EvaluationError.UndefinedMathResult)]
+    [DataRow("ln(-1)", EvaluationError.UndefinedMathResult)]
+    [DataRow("log2(0)", EvaluationError.UndefinedMathResult)]
+    [DataRow("logn(-8, 2)", EvaluationError.UndefinedMathResult)]
+    [DataRow("logn(8, 1)", EvaluationError.UndefinedMathResult)]
+    [DataRow("arcsin(2)", EvaluationError.UndefinedMathResult)]
+    [DataRow("arccos(-1.5)", EvaluationError.UndefinedMathResult)]
+    [DataRow("arcosh(0.5)", EvaluationError.UndefinedMathResult)]
+    [DataRow("artanh(1)", EvaluationError.UndefinedMathResult)]
+    [DataRow("root(8, 0)", EvaluationError.UndefinedMathResult)]
+    [DataRow("clamp(5, 10, 2)", EvaluationError.ArgumentOutOfRange)]
+    public void MathDomainErrorsProduceStructuredDiagnostics(string expression, EvaluationError expectedError)
     {
-        var result = Calculator.Evaluate(expression);
-        Assert.AreEqual(NumberValue.DataType.Double, result.Type);
-        Assert.IsTrue(result.IsNaN);
+        Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic));
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(expectedError, diagnostic.Code);
+
+        var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate(expression));
+        Assert.AreEqual(expectedError, ex.Diagnostic.Code);
     }
 
     [TestMethod]
@@ -608,5 +626,71 @@ public class NumericTests
         var gradOptions = new EvaluationOptions { AngleUnit = AngleUnit.Gradians };
         var gradResult = Calculator.Evaluate("atan2(1, 1)", gradOptions);
         Assert.AreEqual(50.0, gradResult.DblVal, 0.0);
+    }
+
+    [TestMethod]
+    [DataRow("1 << 4", "16")]
+    [DataRow("16 >> 2", "4")]
+    [DataRow("0xFF << 8", "65280")]
+    [DataRow("0b1010 << 1", "20")]
+    [DataRow("0o77 >> 1", "31")]
+    [DataRow("shl(1, 10)", "1024")]
+    [DataRow("shr(1024, 5)", "32")]
+    [DataRow("band(0xFF, 0x0F)", "15")]
+    [DataRow("bor(0xF0, 0x0F)", "255")]
+    [DataRow("bxor(0xAA, 0x55)", "255")]
+    [DataRow("bnot(0)", "-1")]
+    [DataRow("bnot(-1)", "0")]
+    public void BitwiseOperationsEvaluateCorrectly(string expression, string expected)
+    {
+        var result = Calculator.Evaluate(expression);
+        Assert.AreEqual(NumberValue.DataType.Integer, result.Type);
+        Assert.AreEqual(expected, result.IntVal.ToString(CultureInfo.InvariantCulture));
+    }
+
+    [TestMethod]
+    [DataRow("1 + 2 << 3", "24")]       // (1 + 2) << 3 = 3 << 3 = 24 (additive binds tighter than shift)
+    [DataRow("1 << 2 + 1", "8")]        // 1 << (2 + 1) = 1 << 3 = 8
+    [DataRow("1 << 4 < 20", "1")]       // (1 << 4) < 20 = 16 < 20 = 1 (shift binds tighter than relational)
+    [DataRow("1 << 4 == 16", "1")]      // (1 << 4) == 16 = 1 (shift binds tighter than equality)
+    [DataRow("32 >> 2 + 1", "4")]       // 32 >> (2 + 1) = 32 >> 3 = 4
+    public void BitwiseShiftPrecedenceIsCorrect(string expression, string expected)
+    {
+        var result = Calculator.Evaluate(expression);
+        var actual = result.Type switch
+        {
+            NumberValue.DataType.Integer => result.IntVal.ToString(CultureInfo.InvariantCulture),
+            NumberValue.DataType.Decimal => result.DecVal.ToString(CultureInfo.InvariantCulture),
+            _ => result.DblVal.ToString(CultureInfo.InvariantCulture),
+        };
+        Assert.AreEqual(expected, actual);
+    }
+
+    [TestMethod]
+    [DataRow("1 << -1", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("1 >> -2", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("shl(1, -1)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("shr(1, -2)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("1.5 << 2", EvaluationError.IntegerRequired)]
+    [DataRow("1 << 2.5", EvaluationError.IntegerRequired)]
+    [DataRow("band(1.5, 2)", EvaluationError.IntegerRequired)]
+    [DataRow("bor(1, 2.5)", EvaluationError.IntegerRequired)]
+    [DataRow("bxor(1.5, 2.5)", EvaluationError.IntegerRequired)]
+    [DataRow("bnot(1.5)", EvaluationError.IntegerRequired)]
+    public void BitwiseInvalidDomainProducesStructuredDiagnostics(string expression, EvaluationError expectedError)
+    {
+        Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic));
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(expectedError, diagnostic.Code);
+
+        var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate(expression));
+        Assert.AreEqual(expectedError, ex.Diagnostic.Code);
+    }
+
+    [TestMethod]
+    public void ShiftLeftEnforcesBitCeiling()
+    {
+        // 1 << 16385 must exceed MaxIntegerBits (16384)
+        Assert.Throws<CalculationLimitException>(() => Calculator.Evaluate("1 << 16385"));
     }
 }

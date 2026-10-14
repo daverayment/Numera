@@ -70,6 +70,12 @@ internal static class FunctionArity
         { "frac", (1, 1) },
         { "cbrt", (1, 1) },
         { "lerp", (3, 3) },
+        { "shl", (2, 2) },
+        { "shr", (2, 2) },
+        { "band", (2, 2) },
+        { "bor", (2, 2) },
+        { "bxor", (2, 2) },
+        { "bnot", (1, 1) },
     };
 
     internal static bool TryGet(string name, out FunctionSignature signature)

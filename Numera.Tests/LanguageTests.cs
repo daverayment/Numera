@@ -40,6 +40,11 @@ public class LanguageTests
     [DataRow("0 && absent", EvaluationError.UnknownConstant)]
     [DataRow("min(7,)", EvaluationError.InvalidSyntax)]
     [DataRow("9/0", EvaluationError.DivisionByZero)]
+    [DataRow("sqrt(-1)", EvaluationError.UndefinedMathResult)]
+    [DataRow("factorial(1.2)", EvaluationError.IntegerRequired)]
+    [DataRow("factorial(-5)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("1 << -1", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("1.5 << 2", EvaluationError.IntegerRequired)]
     public void ExpectedFailuresHaveStableDiagnosticCodes(string input, EvaluationError code)
     {
         // Skipped operands still require valid syntax, names, and arity. Assert categories
