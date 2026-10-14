@@ -62,6 +62,14 @@ internal static class FunctionArity
         { "rad2grad", (1, 1) },
         { "deg2grad", (1, 1) },
         { "grad2deg", (1, 1) },
+        { "atan2", (2, 2) },
+        { "hypot", (2, 2) },
+        { "clamp", (3, 3) },
+        { "avg", (1, null) },
+        { "trunc", (1, 1) },
+        { "frac", (1, 1) },
+        { "cbrt", (1, 1) },
+        { "lerp", (3, 3) },
     };
 
     internal static bool TryGet(string name, out FunctionSignature signature)

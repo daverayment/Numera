@@ -199,11 +199,11 @@ Numera implements a standard Recursive Descent parser with the following capabil
 - **Constants:** `pi` (or `π`) and `e`.
 
 - **Functions:**
-  - **Trigonometry:** `sin`, `cos`, `tan`, `arcsin`, `arccos`, `arctan`, `cot`, `sec`, `csc`, `arccot`, `arcsec`, `arccsc` (operates in radians by default, or degrees/gradians via `EvaluationOptions.AngleUnit`).
+  - **Trigonometry:** `sin`, `cos`, `tan`, `arcsin`, `arccos`, `arctan`, `atan2(y, x)`, `cot`, `sec`, `csc`, `arccot`, `arcsec`, `arccsc` (operates in radians by default, or degrees/gradians via `EvaluationOptions.AngleUnit`).
   - **Hyperbolic:** `sinh`, `cosh`, `tanh`, `arsinh`, `arcosh`, `artanh`, `coth`, `sech`, `csch`, `arcoth`, `arsech`, `arcsch`.
   - **Angle Conversion:** `rad(degrees)` or `deg2rad(degrees)` converts degrees to radians; `deg(radians)` or `rad2deg(radians)` converts radians to degrees; `grad(gradians)` or `grad2rad(gradians)` converts gradians to radians; plus explicit cross-conversions `deg2grad`, `rad2grad`, and `grad2deg`. When nested directly inside trigonometric functions, `rad(x)`/`deg2rad(x)` and `grad(x)`/`grad2rad(x)` preserve exact cardinal values without float-rounding distortion.
-  - **Logarithms/Roots:** `log` (base 10), `log2`, `log10`, `ln` (natural), `logn(value, base)`, `sqrt`, `root(value, root)`.
-  - **General:** `min`, `max`, `abs`, `round`, `ceil`, `floor`, `sign`/`sgn`, `factorial`.
+  - **Logarithms/Roots:** `log` (base 10), `log2`, `log10`, `ln` (natural), `logn(value, base)`, `sqrt`, `cbrt`, `root(value, root)`.
+  - **General:** `min`, `max`, `avg`, `clamp(val, min, max)`, `abs`, `round`, `ceil`, `floor`, `trunc`, `frac`, `sign`/`sgn`, `factorial`, `hypot(x, y)`, `lerp(a, b, t)`.
   - **Random:** `rand()` returns a double in [0,1); `randi(n)` returns an integer in [0,n).
 
 - **Literal Formats:**

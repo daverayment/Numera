@@ -696,6 +696,11 @@ internal sealed class ExpressionParser
             return EvaluateMinMax(args, lower is "min");
         }
 
+        if (lower is "avg")
+        {
+            return EvaluateAvg(args);
+        }
+
         if (args.Count == 0)
         {
             // rand is the only registered zero-argument function.
@@ -724,6 +729,25 @@ internal sealed class ExpressionParser
                         NumberValue.DataType.Decimal => new NumberValue(Math.Floor(args[0].DecVal)),
                         _ => new NumberValue(Math.Floor(v)),
                     };
+
+                case "trunc":
+                    return args[0].Type switch
+                    {
+                        NumberValue.DataType.Integer => args[0],
+                        NumberValue.DataType.Decimal => new NumberValue(decimal.Truncate(args[0].DecVal)),
+                        _ => new NumberValue(Math.Truncate(v)),
+                    };
+
+                case "frac":
+                    return args[0].Type switch
+                    {
+                        NumberValue.DataType.Integer => new NumberValue(0m),
+                        NumberValue.DataType.Decimal => new NumberValue(args[0].DecVal - decimal.Truncate(args[0].DecVal)),
+                        _ => new NumberValue(v - Math.Truncate(v)),
+                    };
+
+                case "cbrt":
+                    return new NumberValue(Math.Cbrt(v));
 
                 case "exp":
                     return new NumberValue(Math.Exp(v));
@@ -931,6 +955,14 @@ internal sealed class ExpressionParser
                 case "logn":
                     return new NumberValue(Math.Log(args[0].AsDouble(), args[1].AsDouble()));
 
+                case "atan2":
+                    var y = args[0].AsDouble();
+                    var x = args[1].AsDouble();
+                    return new NumberValue(EvaluateArcTan2(y, x));
+
+                case "hypot":
+                    return new NumberValue(Math.Sqrt(args[0].AsDouble() * args[0].AsDouble() + args[1].AsDouble() * args[1].AsDouble()));
+
                 case "root":
                     var baseVal = args[0].AsDouble();
                     var rootVal = args[1].AsDouble();
@@ -942,6 +974,22 @@ internal sealed class ExpressionParser
                     }
 
                     return new NumberValue(Math.Pow(baseVal, 1.0 / rootVal));
+
+                default:
+                    throw new FormatException($"Unknown function '{name}'.");
+            }
+        }
+
+        if (args.Count == 3)
+        {
+            switch (lower)
+            {
+                case "clamp":
+                    return EvaluateClamp(args[0], args[1], args[2]);
+
+                case "lerp":
+                    // a + t * (b - a)
+                    return args[0] + (args[2] * (args[1] - args[0]));
 
                 default:
                     throw new FormatException($"Unknown function '{name}'.");
@@ -966,6 +1014,37 @@ internal sealed class ExpressionParser
         }
 
         return result;
+    }
+
+    private static NumberValue EvaluateAvg(List<NumberValue> args)
+    {
+        var sum = args[0];
+        for (var i = 1; i < args.Count; i++)
+        {
+            sum += args[i];
+        }
+
+        return sum / new NumberValue((BigInteger)args.Count);
+    }
+
+    private static NumberValue EvaluateClamp(NumberValue val, NumberValue min, NumberValue max)
+    {
+        if (NumberValue.Compare(min, max) > 0)
+        {
+            return new NumberValue(double.NaN);
+        }
+
+        if (NumberValue.Compare(val, min) < 0)
+        {
+            return min;
+        }
+
+        if (NumberValue.Compare(val, max) > 0)
+        {
+            return max;
+        }
+
+        return val;
     }
 
     private double EvaluateSin(double v) =>
@@ -1045,6 +1124,14 @@ internal sealed class ExpressionParser
             AngleUnit.Degrees => double.AtanPi(v) * 180.0,
             AngleUnit.Gradians => double.AtanPi(v) * 200.0,
             _ => Math.Atan(v),
+        };
+
+    private double EvaluateArcTan2(double y, double x) =>
+        _options.AngleUnit switch
+        {
+            AngleUnit.Degrees => double.Atan2Pi(y, x) * 180.0,
+            AngleUnit.Gradians => double.Atan2Pi(y, x) * 200.0,
+            _ => Math.Atan2(y, x),
         };
 
     private double EvaluateArcCot(double v) =>

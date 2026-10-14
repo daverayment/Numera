@@ -540,4 +540,73 @@ public class NumericTests
         var result = Calculator.Evaluate(expression);
         Assert.AreEqual(expected, result.DecVal.ToString(CultureInfo.InvariantCulture));
     }
+
+    [TestMethod]
+    [DataRow("trunc(3.7)", "3")]
+    [DataRow("trunc(-3.7)", "-3")]
+    [DataRow("trunc(5)", "5")]
+    [DataRow("frac(3.75)", "0.75")]
+    [DataRow("frac(-3.75)", "-0.75")]
+    [DataRow("frac(5)", "0")]
+    public void TruncAndFracPreserveRepresentationAndValues(string expression, string expected)
+    {
+        var result = Calculator.Evaluate(expression);
+        var str = result.Type == NumberValue.DataType.Integer
+            ? result.IntVal.ToString(CultureInfo.InvariantCulture)
+            : result.DecVal.ToString(CultureInfo.InvariantCulture);
+        Assert.AreEqual(expected, str);
+    }
+
+    [TestMethod]
+    [DataRow("hypot(3, 4)", 5.0)]
+    [DataRow("hypot(5, 12)", 13.0)]
+    [DataRow("cbrt(27)", 3.0)]
+    [DataRow("cbrt(-8)", -2.0)]
+    [DataRow("lerp(10, 20, 0.5)", 15.0)]
+    [DataRow("lerp(0, 100, 0.25)", 25.0)]
+    public void MathUtilitiesEvaluateCorrectly(string expression, double expected)
+    {
+        var result = Calculator.Evaluate(expression);
+        var actual = result.Type switch
+        {
+            NumberValue.DataType.Decimal => (double)result.DecVal,
+            NumberValue.DataType.Integer => (double)result.IntVal,
+            _ => result.DblVal,
+        };
+        Assert.AreEqual(expected, actual, 1e-12);
+    }
+
+    [TestMethod]
+    [DataRow("clamp(5, 1, 10)", "5")]
+    [DataRow("clamp(-2, 0, 10)", "0")]
+    [DataRow("clamp(15, 0, 10)", "10")]
+    [DataRow("clamp(3.5, 1.0, 5.0)", "3.5")]
+    [DataRow("avg(10, 20, 30)", "20")]
+    [DataRow("avg(2, 4)", "3")]
+    public void ClampAndAvgEvaluateCorrectly(string expression, string expected)
+    {
+        var result = Calculator.Evaluate(expression);
+        var str = result.Type switch
+        {
+            NumberValue.DataType.Integer => result.IntVal.ToString(CultureInfo.InvariantCulture),
+            NumberValue.DataType.Decimal => result.DecVal.ToString(CultureInfo.InvariantCulture),
+            _ => result.DblVal.ToString(CultureInfo.InvariantCulture),
+        };
+        Assert.AreEqual(expected, str);
+    }
+
+    [TestMethod]
+    public void Atan2RespectsAngleUnit()
+    {
+        var radResult = Calculator.Evaluate("atan2(1, 1)");
+        Assert.AreEqual(Math.PI / 4.0, radResult.DblVal, 1e-12);
+
+        var degOptions = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
+        var degResult = Calculator.Evaluate("atan2(1, 1)", degOptions);
+        Assert.AreEqual(45.0, degResult.DblVal, 0.0);
+
+        var gradOptions = new EvaluationOptions { AngleUnit = AngleUnit.Gradians };
+        var gradResult = Calculator.Evaluate("atan2(1, 1)", gradOptions);
+        Assert.AreEqual(50.0, gradResult.DblVal, 0.0);
+    }
 }
