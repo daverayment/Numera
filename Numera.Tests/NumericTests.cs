@@ -372,4 +372,54 @@ public class NumericTests
         var intVal = new NumberValue(new BigInteger(1000000));
         Assert.AreEqual("1.000.000", intVal.ToString("N0", germanCulture));
     }
+
+    [TestMethod]
+    [DataRow("sin(0)", 0.0)]
+    [DataRow("sin(90)", 1.0)]
+    [DataRow("sin(180)", 0.0)]
+    [DataRow("sin(270)", -1.0)]
+    [DataRow("sin(360)", 0.0)]
+    [DataRow("cos(0)", 1.0)]
+    [DataRow("cos(90)", 0.0)]
+    [DataRow("cos(180)", -1.0)]
+    [DataRow("cos(270)", 0.0)]
+    [DataRow("cos(360)", 1.0)]
+    [DataRow("tan(0)", 0.0)]
+    [DataRow("tan(45)", 1.0)]
+    [DataRow("tan(180)", 0.0)]
+    [DataRow("tan(225)", 1.0)]
+    public void TrigonometricFunctionsInDegreesModeEvaluateExactCardinalValues(string expression, double expected)
+    {
+        var options = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
+        var result = Calculator.Evaluate(expression, options);
+
+        Assert.AreEqual(NumberValue.DataType.Double, result.Type);
+        Assert.AreEqual(expected, result.DblVal, 1e-15);
+    }
+
+    [TestMethod]
+    public void TrigonometricFunctionsSupportGradiansMode()
+    {
+        var options = new EvaluationOptions { AngleUnit = AngleUnit.Gradians };
+        Assert.AreEqual(1.0, Calculator.Evaluate("sin(100)", options).DblVal, 1e-15);
+        Assert.AreEqual(0.0, Calculator.Evaluate("cos(100)", options).DblVal, 1e-15);
+        Assert.AreEqual(1.0, Calculator.Evaluate("tan(50)", options).DblVal, 1e-15);
+    }
+
+    [TestMethod]
+    public void InverseTrigonometricFunctionsRespectAngleUnit()
+    {
+        var degOptions = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
+        Assert.AreEqual(90.0, Calculator.Evaluate("arcsin(1)", degOptions).DblVal, 0.0);
+        Assert.AreEqual(30.0, Calculator.Evaluate("arcsin(0.5)", degOptions).DblVal, 1e-14);
+        Assert.AreEqual(180.0, Calculator.Evaluate("arccos(-1)", degOptions).DblVal, 0.0);
+        Assert.AreEqual(90.0, Calculator.Evaluate("arccos(0)", degOptions).DblVal, 0.0);
+        Assert.AreEqual(45.0, Calculator.Evaluate("arctan(1)", degOptions).DblVal, 0.0);
+        Assert.AreEqual(0.0, Calculator.Evaluate("arctan(0)", degOptions).DblVal, 0.0);
+
+        var gradOptions = new EvaluationOptions { AngleUnit = AngleUnit.Gradians };
+        Assert.AreEqual(100.0, Calculator.Evaluate("arcsin(1)", gradOptions).DblVal, 0.0);
+        Assert.AreEqual(200.0, Calculator.Evaluate("arccos(-1)", gradOptions).DblVal, 0.0);
+        Assert.AreEqual(50.0, Calculator.Evaluate("arctan(1)", gradOptions).DblVal, 0.0);
+    }
 }

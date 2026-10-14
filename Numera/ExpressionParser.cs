@@ -434,7 +434,7 @@ internal sealed class ExpressionParser
             new EvaluationDiagnostic(EvaluationError.UnknownConstant, $"Unknown constant '{name}'.", _pos - name.Length, name.Length));
     }
 
-    private static NumberValue EvaluateFunction(ReadOnlySpan<char> name, List<NumberValue> args)
+    private NumberValue EvaluateFunction(ReadOnlySpan<char> name, List<NumberValue> args)
     {
         Span<char> lower = stackalloc char[name.Length];
         name.ToLowerInvariant(lower);
@@ -571,40 +571,40 @@ internal sealed class ExpressionParser
                     return new NumberValue((BigInteger)Random.Shared.NextInt64((long)randomUpperBound));
 
                 case "sin":
-                    return new NumberValue(Math.Sin(v));
+                    return new NumberValue(EvaluateSin(v));
 
                 case "cos":
-                    return new NumberValue(Math.Cos(v));
+                    return new NumberValue(EvaluateCos(v));
 
                 case "tan":
-                    return new NumberValue(Math.Tan(v));
+                    return new NumberValue(EvaluateTan(v));
 
                 case "arcsin":
-                    return new NumberValue(Math.Asin(v));
+                    return new NumberValue(EvaluateArcSin(v));
 
                 case "arccos":
-                    return new NumberValue(Math.Acos(v));
+                    return new NumberValue(EvaluateArcCos(v));
 
                 case "arctan":
-                    return new NumberValue(Math.Atan(v));
+                    return new NumberValue(EvaluateArcTan(v));
 
                 case "cot":
-                    return new NumberValue(1.0 / Math.Tan(v));
+                    return new NumberValue(EvaluateCot(v));
 
                 case "sec":
-                    return new NumberValue(1.0 / Math.Cos(v));
+                    return new NumberValue(EvaluateSec(v));
 
                 case "csc":
-                    return new NumberValue(1.0 / Math.Sin(v));
+                    return new NumberValue(EvaluateCsc(v));
 
                 case "arccot":
-                    return new NumberValue(Math.Atan2(1.0, v));
+                    return new NumberValue(EvaluateArcCot(v));
 
                 case "arcsec":
-                    return new NumberValue(Math.Acos(1.0 / v));
+                    return new NumberValue(EvaluateArcSec(v));
 
                 case "arccsc":
-                    return new NumberValue(Math.Asin(1.0 / v));
+                    return new NumberValue(EvaluateArcCsc(v));
 
                 case "sinh":
                     return new NumberValue(Math.Sinh(v));
@@ -702,6 +702,90 @@ internal sealed class ExpressionParser
 
         return result;
     }
+
+    private double EvaluateSin(double v) =>
+        _options.AngleUnit switch
+        {
+            AngleUnit.Degrees => double.SinPi(v / 180.0),
+            AngleUnit.Gradians => double.SinPi(v / 200.0),
+            _ => Math.Sin(v),
+        };
+
+    private double EvaluateCos(double v) =>
+        _options.AngleUnit switch
+        {
+            AngleUnit.Degrees => double.CosPi(v / 180.0),
+            AngleUnit.Gradians => double.CosPi(v / 200.0),
+            _ => Math.Cos(v),
+        };
+
+    private double EvaluateTan(double v) =>
+        _options.AngleUnit switch
+        {
+            AngleUnit.Degrees => double.TanPi(v / 180.0),
+            AngleUnit.Gradians => double.TanPi(v / 200.0),
+            _ => Math.Tan(v),
+        };
+
+    private double EvaluateSec(double v) => 1.0 / EvaluateCos(v);
+
+    private double EvaluateCsc(double v) => 1.0 / EvaluateSin(v);
+
+    private double EvaluateCot(double v) =>
+        _options.AngleUnit switch
+        {
+            AngleUnit.Degrees => double.CosPi(v / 180.0) / double.SinPi(v / 180.0),
+            AngleUnit.Gradians => double.CosPi(v / 200.0) / double.SinPi(v / 200.0),
+            _ => 1.0 / Math.Tan(v),
+        };
+
+    private double EvaluateArcSin(double v) =>
+        _options.AngleUnit switch
+        {
+            AngleUnit.Degrees => double.AsinPi(v) * 180.0,
+            AngleUnit.Gradians => double.AsinPi(v) * 200.0,
+            _ => Math.Asin(v),
+        };
+
+    private double EvaluateArcCos(double v) =>
+        _options.AngleUnit switch
+        {
+            AngleUnit.Degrees => double.AcosPi(v) * 180.0,
+            AngleUnit.Gradians => double.AcosPi(v) * 200.0,
+            _ => Math.Acos(v),
+        };
+
+    private double EvaluateArcTan(double v) =>
+        _options.AngleUnit switch
+        {
+            AngleUnit.Degrees => double.AtanPi(v) * 180.0,
+            AngleUnit.Gradians => double.AtanPi(v) * 200.0,
+            _ => Math.Atan(v),
+        };
+
+    private double EvaluateArcCot(double v) =>
+        _options.AngleUnit switch
+        {
+            AngleUnit.Degrees => double.Atan2Pi(1.0, v) * 180.0,
+            AngleUnit.Gradians => double.Atan2Pi(1.0, v) * 200.0,
+            _ => Math.Atan2(1.0, v),
+        };
+
+    private double EvaluateArcSec(double v) =>
+        _options.AngleUnit switch
+        {
+            AngleUnit.Degrees => double.AcosPi(1.0 / v) * 180.0,
+            AngleUnit.Gradians => double.AcosPi(1.0 / v) * 200.0,
+            _ => Math.Acos(1.0 / v),
+        };
+
+    private double EvaluateArcCsc(double v) =>
+        _options.AngleUnit switch
+        {
+            AngleUnit.Degrees => double.AsinPi(1.0 / v) * 180.0,
+            AngleUnit.Gradians => double.AsinPi(1.0 / v) * 200.0,
+            _ => Math.Asin(1.0 / v),
+        };
 
     private ExpressionException SyntaxError(string message) =>
         new(new EvaluationDiagnostic(EvaluationError.InvalidSyntax, message, _pos, _pos < _input.Length ? 1 : 0));

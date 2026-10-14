@@ -16,8 +16,19 @@ public sealed record EvaluationOptions
     /// </summary>
     public int MaxNestingDepth { get; init; } = CalculationLimits.MaxNestingDepth;
 
+    /// <summary>
+    /// The angular measurement unit applied to trigonometric functions.
+    /// Defaults to <see cref="AngleUnit.Radians"/>.
+    /// </summary>
+    public AngleUnit AngleUnit { get; init; } = AngleUnit.Radians;
+
     internal void Validate()
     {
+        if (!Enum.IsDefined(AngleUnit))
+        {
+            throw new ArgumentOutOfRangeException(nameof(AngleUnit));
+        }
+
         // Options may reduce work for a caller, but cannot bypass the engine's ceilings.
         if (MaxInputLength is < 1 or > CalculationLimits.MaxInputLength)
         {

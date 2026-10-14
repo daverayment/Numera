@@ -124,6 +124,27 @@ catch (NumeraException ex)
 ```
 *(Standard developer errors, such as passing a `null` expression or an invalid `EvaluationOptions`, continue to throw `ArgumentNullException` and `ArgumentOutOfRangeException`.)*
 
+### 5. Configuring Angle Modes (Degrees, Radians, Gradians)
+By default, trigonometric functions operate in radians (`AngleUnit.Radians`). If your application or UI calculator operates in degrees or gradians, configure `EvaluationOptions.AngleUnit`:
+
+```csharp
+var options = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
+
+// Degree calculations use .NET IEEE 754 pi-scaled intrinsics, giving exact cardinal results:
+var sin90 = Calculator.Evaluate("sin(90)", options);    // 1.0 (exact)
+var sin180 = Calculator.Evaluate("sin(180)", options);  // 0.0 (exact, not 1.22e-16)
+var cos90 = Calculator.Evaluate("cos(90)", options);    // 0.0 (exact)
+var tan45 = Calculator.Evaluate("tan(45)", options);    // 1.0 (exact)
+
+// Inverse trigonometric functions also return results in the configured unit:
+var angle = Calculator.Evaluate("arcsin(1)", options);  // 90.0 (exact)
+```
+
+Supported units are:
+* `AngleUnit.Radians` (default)
+* `AngleUnit.Degrees` (360° per revolution; exact cardinal values for multiples of 90°/180°)
+* `AngleUnit.Gradians` (400 gon per revolution)
+
 ## Under the Hood: Why Three Numeric Types?
 Notice in the examples above that Numera returns distinct **Integer**, **Decimal**, and **Double** representations rather than forcing all results into a single type.
 
@@ -155,7 +176,7 @@ Numera implements a standard Recursive Descent parser with the following capabil
 - **Constants:** `pi` (or `π`) and `e`.
 
 - **Functions:**
-  - **Trigonometry (Radians):** `sin`, `cos`, `tan`, `arcsin`, `arccos`, `arctan`, `cot`, `sec`, `csc`, `arccot`, `arcsec`, `arccsc`.
+  - **Trigonometry:** `sin`, `cos`, `tan`, `arcsin`, `arccos`, `arctan`, `cot`, `sec`, `csc`, `arccot`, `arcsec`, `arccsc` (operates in radians by default, or degrees/gradians via `EvaluationOptions.AngleUnit`).
   - **Hyperbolic:** `sinh`, `cosh`, `tanh`, `arsinh`, `arcosh`, `artanh`, `coth`, `sech`, `csch`, `arcoth`, `arsech`, `arcsch`.
   - **Angle Conversion:** `rad(degrees)` converts degrees to radians; `deg(radians)` converts radians to degrees; `grad(radians)` converts radians to gradians (200 gradians = π radians).
   - **Logarithms/Roots:** `log` (base 10), `log2`, `log10`, `ln` (natural), `logn(value, base)`, `sqrt`, `root(value, root)`.
