@@ -881,4 +881,40 @@ public class NumericTests
         var result = Calculator.Evaluate(expression);
         Assert.AreEqual(expected, result.DecVal.ToString(CultureInfo.InvariantCulture));
     }
+
+    [TestMethod]
+    public void NonCardinalLargeAnglesMaintainPrecisionWithCenteredRemainderReduction()
+    {
+        // 360,000,030 degrees is 1,000,000 full revolutions + 30 degrees.
+        // Direct (360000030.0 / 180.0) consumes significand bits on the integer quotient,
+        // whereas Math.IEEERemainder(v, 360.0) reduces to 30.0 degrees before division,
+        // yielding exact sin(30 deg) = 0.5.
+        var degOptions = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
+        var sinResult = Calculator.Evaluate("sin(360000030)", degOptions);
+        Assert.AreEqual(0.5, sinResult.DblVal, 1e-15);
+
+        // 360,000,060 degrees -> 60 degrees; cos(60 deg) = 0.5
+        var cosResult = Calculator.Evaluate("cos(360000060)", degOptions);
+        Assert.AreEqual(0.5, cosResult.DblVal, 1e-15);
+
+        // 400,000,050 gradians is 1,000,000 revolutions + 50 gradians (45 degrees).
+        // Beyond MaxSnappingRevolutions (100.0 revs), it falls back to double.TanPi with reduced remainder.
+        var gradOptions = new EvaluationOptions { AngleUnit = AngleUnit.Gradians };
+        var tanGradResult = Calculator.Evaluate("tan(400000050)", gradOptions);
+        Assert.AreEqual(1.0, tanGradResult.DblVal, 1e-15);
+
+        // Non-cardinal angle with many revolutions in degrees:
+        // 360000000 + 37 degrees -> evaluates identically to sin(37 deg) without revolution offset
+        var baseSin = Calculator.Evaluate("sin(37)", degOptions);
+        var largeSin = Calculator.Evaluate("sin(360000037)", degOptions);
+        Assert.AreEqual(baseSin.DblVal, largeSin.DblVal, 1e-15);
+
+        var baseCos = Calculator.Evaluate("cos(37)", degOptions);
+        var largeCos = Calculator.Evaluate("cos(360000037)", degOptions);
+        Assert.AreEqual(baseCos.DblVal, largeCos.DblVal, 1e-15);
+
+        var baseTan = Calculator.Evaluate("tan(37)", degOptions);
+        var largeTan = Calculator.Evaluate("tan(360000037)", degOptions);
+        Assert.AreEqual(baseTan.DblVal, largeTan.DblVal, 1e-15);
+    }
 }

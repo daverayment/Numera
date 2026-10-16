@@ -1191,20 +1191,36 @@ internal sealed class ExpressionParser
     /// <summary>
     /// Normalizes an angle into multiples of 45 degrees (pi/4 radians, 50 gradians)
     /// across all supported angle units within a bounded revolution ceiling.
-    /// Used by all trigonometric functions to ensure exact cardinal values and detect asymptotes.
+    /// Used by all trigonometric functions to ensure exact cardinal values and detect
+    /// asymptotes.
     /// </summary>
     private bool TryGetQuarterTurn(double v, out long step45)
     {
-        var (k, rev) = _options.AngleUnit switch
+        if (!double.IsFinite(v))
         {
-            AngleUnit.Degrees => (v / 45.0, v / 360.0),
-            AngleUnit.Gradians => (v / 50.0, v / 400.0),
-            _ => (4.0 * (v / Math.PI), v / (2.0 * Math.PI)),
+            step45 = 0;
+            return false;
+        }
+
+        var (revSize, stepSize) = _options.AngleUnit switch
+        {
+            AngleUnit.Degrees => (360.0, 45.0),
+            AngleUnit.Gradians => (400.0, 50.0),
+            _ => (2.0 * Math.PI, Math.PI / 4.0),
         };
 
-        if (Math.Abs(rev) <= MaxSnappingRevolutions)
+        // Magnitude check first: only angles within MaxSnappingRevolutions have sufficient
+        // precision to guard against false-positive snaps.
+        if (Math.Abs(v) <= MaxSnappingRevolutions * revSize)
         {
+            // Centered reduction to [-180, 180] degrees, [-200, 200] gradians, or
+            // [-pi, pi] radians preserves full significand precision near cardinal
+            // points. Guarantees k is within [-4, 4] for a 45-degree step size, keeping
+            // ULP noise floor well below CardinalEpsilon (1e-12).
+            double reduced = Math.IEEERemainder(v, revSize);
+            double k = reduced / stepSize;
             var roundK = Math.Round(k);
+
             if (Math.Abs(k - roundK) < CardinalEpsilon)
             {
                 step45 = (long)roundK;
@@ -1233,8 +1249,8 @@ internal sealed class ExpressionParser
 
         return _options.AngleUnit switch
         {
-            AngleUnit.Degrees => double.SinPi(v / 180.0),
-            AngleUnit.Gradians => double.SinPi(v / 200.0),
+            AngleUnit.Degrees => double.SinPi(Math.IEEERemainder(v, 360.0) / 180.0),
+            AngleUnit.Gradians => double.SinPi(Math.IEEERemainder(v, 400.0) / 200.0),
             _ => Math.Sin(v),
         };
     }
@@ -1255,8 +1271,8 @@ internal sealed class ExpressionParser
 
         return _options.AngleUnit switch
         {
-            AngleUnit.Degrees => double.CosPi(v / 180.0),
-            AngleUnit.Gradians => double.CosPi(v / 200.0),
+            AngleUnit.Degrees => double.CosPi(Math.IEEERemainder(v, 360.0) / 180.0),
+            AngleUnit.Gradians => double.CosPi(Math.IEEERemainder(v, 400.0) / 200.0),
             _ => Math.Cos(v),
         };
     }
@@ -1278,8 +1294,8 @@ internal sealed class ExpressionParser
 
         return _options.AngleUnit switch
         {
-            AngleUnit.Degrees => double.TanPi(v / 180.0),
-            AngleUnit.Gradians => double.TanPi(v / 200.0),
+            AngleUnit.Degrees => double.TanPi(Math.IEEERemainder(v, 360.0) / 180.0),
+            AngleUnit.Gradians => double.TanPi(Math.IEEERemainder(v, 400.0) / 200.0),
             _ => Math.Tan(v),
         };
     }
