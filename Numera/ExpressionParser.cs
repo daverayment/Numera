@@ -8,26 +8,30 @@ namespace Numera;
 /// abstract syntax tree. Each instance owns the parsing state for a single evaluation.
 /// </summary>
 /// <remarks>
-/// Precedence, from lowest to highest, is OR, XOR, AND, equality, relational,
-/// bitwise shift (&lt;&lt;, &gt;&gt;), addition/subtraction, multiplication/division/
-/// remainder, unary signs/negation, and exponentiation. Grouping and function arguments
-/// restart at the lowest precedence.
+/// Precedence, from lowest to highest, is OR, XOR, AND, chained comparison
+/// (equality and relational), bitwise shift (&lt;&lt;, &gt;&gt;), addition/subtraction,
+/// multiplication/division/remainder, unary signs/negation, and exponentiation.
+/// Grouping and function arguments restart at the lowest precedence.
 /// </remarks>
 internal sealed class ExpressionParser
 {
     private readonly string _input;
     private readonly EvaluationOptions _options;
     // Cursor positions also identify diagnostic locations in the original input.
-    private readonly struct AngleArgument(double value, AngleUnit unit)
-    {
-        public double Value { get; } = value;
-        public AngleUnit Unit { get; } = unit;
-    }
-
-    private AngleArgument? _currentTrigAngle;
 
     private int _pos;
     private int _depth;
+
+    private enum ComparisonOp
+    {
+        None,
+        Equal,
+        NotEqual,
+        LessThan,
+        LessThanOrEqual,
+        GreaterThan,
+        GreaterThanOrEqual,
+    }
 
     public ExpressionParser(string input, EvaluationOptions options)
     {
@@ -120,7 +124,7 @@ internal sealed class ExpressionParser
 
     private NumberValue ParseLogicalAnd(bool evaluate)
     {
-        var left = ParseEquality(evaluate);
+        var left = ParseComparison(evaluate);
         while (true)
         {
             SkipWhitespace();
@@ -128,7 +132,7 @@ internal sealed class ExpressionParser
             {
                 Consume();
                 Consume();
-                var right = ParseEquality(evaluate && !left.IsZero);
+                var right = ParseComparison(evaluate && !left.IsZero);
                 if (evaluate)
                 {
                     left = NumberValue.LogicalAnd(left, right);
@@ -136,7 +140,7 @@ internal sealed class ExpressionParser
             }
             else if (MatchKeyword("and"))
             {
-                var right = ParseEquality(evaluate && !left.IsZero);
+                var right = ParseComparison(evaluate && !left.IsZero);
                 if (evaluate)
                 {
                     left = NumberValue.LogicalAnd(left, right);
@@ -151,94 +155,91 @@ internal sealed class ExpressionParser
         return left;
     }
 
-    private NumberValue ParseEquality(bool evaluate)
-    {
-        // Equality chains fold left, comparing each Boolean result with the next operand;
-        // they are not interpreted as a conjunction of pairwise comparisons.
-        var left = ParseRelational(evaluate);
-        while (true)
-        {
-            SkipWhitespace();
-            if (Peek() == '=' && Peek(1) == '=')
-            {
-                Consume();
-                Consume();
-                var right = ParseRelational(evaluate);
-                if (evaluate)
-                {
-                    left = NumberValue.AreEqual(left, right);
-                }
-            }
-            else if ((Peek() == '~' || Peek() == '!') && Peek(1) == '=')
-            {
-                Consume();
-                Consume();
-                var right = ParseRelational(evaluate);
-                if (evaluate)
-                {
-                    left = NumberValue.AreNotEqual(left, right);
-                }
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        return left;
-    }
-
-    private NumberValue ParseRelational(bool evaluate)
+    private NumberValue ParseComparison(bool evaluate)
     {
         var left = ParseShift(evaluate);
+        bool hasComparison = false;
+        bool allPassed = true;
+
         while (true)
         {
             SkipWhitespace();
-            if (Peek() == '<' && Peek(1) == '=')
-            {
-                Consume();
-                Consume();
-                var right = ParseShift(evaluate);
-                if (evaluate)
-                {
-                    left = NumberValue.LessThanOrEqual(left, right);
-                }
-            }
-            else if (Peek() == '>' && Peek(1) == '=')
-            {
-                Consume();
-                Consume();
-                var right = ParseShift(evaluate);
-                if (evaluate)
-                {
-                    left = NumberValue.GreaterThanOrEqual(left, right);
-                }
-            }
-            else if (Peek() == '<' && Peek(1) != '<')
-            {
-                Consume();
-                var right = ParseShift(evaluate);
-                if (evaluate)
-                {
-                    left = NumberValue.LessThan(left, right);
-                }
-            }
-            else if (Peek() == '>' && Peek(1) != '>')
-            {
-                Consume();
-                var right = ParseShift(evaluate);
-                if (evaluate)
-                {
-                    left = NumberValue.GreaterThan(left, right);
-                }
-            }
-            else
+            var op = MatchComparisonOperator();
+            if (op == ComparisonOp.None)
             {
                 break;
             }
+
+            hasComparison = true;
+
+            // Short-circuit. If a previous comparison failed, skip the next operand and
+            // comparison evaluation to avoid unnecessary work and potential exceptions
+            // (e.g. division by zero).
+            bool evaluateCurrent = evaluate && allPassed;
+            var right = ParseShift(evaluateCurrent);
+
+            if (evaluateCurrent)
+            {
+                if (!EvaluateComparison(op, left, right))
+                {
+                    allPassed = false;
+                }
+            }
+
+            // For chained comparisons, the right operand becomes the left operand for the
+            // next comparison.
+            left = right;
         }
 
-        return left;
+        if (!hasComparison)
+        {
+            return left;
+        }
+
+        return allPassed ? new NumberValue(1m) : new NumberValue(0m);
+    }
+
+    private static bool EvaluateComparison(ComparisonOp op, NumberValue left, NumberValue right)
+    {
+        int cmp = NumberValue.Compare(left, right);
+        return op switch
+        {
+            ComparisonOp.Equal => cmp == 0,
+            ComparisonOp.NotEqual => cmp != 0,
+            ComparisonOp.LessThan => cmp < 0,
+            ComparisonOp.LessThanOrEqual => cmp <= 0,
+            ComparisonOp.GreaterThan => cmp > 0,
+            ComparisonOp.GreaterThanOrEqual => cmp >= 0,
+            _ => false,
+        };
+    }
+
+    private ComparisonOp MatchComparisonOperator()
+    {
+        ComparisonOp op = Peek() switch
+        {
+            '=' when Peek(1) == '=' => ComparisonOp.Equal,
+            '!' when Peek(1) == '=' => ComparisonOp.NotEqual,
+            '~' when Peek(1) == '=' => ComparisonOp.NotEqual,
+            '<' when Peek(1) == '=' => ComparisonOp.LessThanOrEqual,
+            '>' when Peek(1) == '=' => ComparisonOp.GreaterThanOrEqual,
+            '<' => ComparisonOp.LessThan,
+            '>' => ComparisonOp.GreaterThan,
+            _ => ComparisonOp.None,
+        };
+
+        if (op == ComparisonOp.None)
+        {
+            return ComparisonOp.None;
+        }
+
+        Consume();
+        if (op is ComparisonOp.Equal or ComparisonOp.NotEqual or ComparisonOp.LessThanOrEqual or ComparisonOp.GreaterThanOrEqual)
+        {
+            Consume();
+        }
+
+        return op;
     }
 
     private NumberValue ParseShift(bool evaluate)
@@ -496,17 +497,7 @@ internal sealed class ExpressionParser
 
                 if (evaluate)
                 {
-                    var result = EvaluateFunction(identifier, args);
-                    if (!identifier.Equals("deg", StringComparison.OrdinalIgnoreCase) &&
-                        !identifier.Equals("rad", StringComparison.OrdinalIgnoreCase) &&
-                        !identifier.Equals("grad", StringComparison.OrdinalIgnoreCase) &&
-                        !identifier.Equals("deg2rad", StringComparison.OrdinalIgnoreCase) &&
-                        !identifier.Equals("grad2rad", StringComparison.OrdinalIgnoreCase))
-                    {
-                        _currentTrigAngle = null;
-                    }
-
-                    return result;
+                    return EvaluateFunction(identifier, args);
                 }
 
                 return default;
@@ -697,7 +688,7 @@ internal sealed class ExpressionParser
     private ReadOnlySpan<char> ParseIdentifier()
     {
         var start = _pos;
-        while (_pos < _input.Length && (char.IsLetterOrDigit(Peek()) || Peek() == 'π'))
+        while (_pos < _input.Length && (char.IsLetterOrDigit(Peek()) || Peek() == 'π' || Peek() == 'Π'))
         {
             Consume();
         }
@@ -707,7 +698,7 @@ internal sealed class ExpressionParser
 
     private NumberValue EvaluateConstant(ReadOnlySpan<char> name)
     {
-        if (name.Equals("pi", StringComparison.OrdinalIgnoreCase) || name.SequenceEqual("π"))
+        if (name.Equals("pi", StringComparison.OrdinalIgnoreCase) || name.SequenceEqual("π") || name.SequenceEqual("Π"))
         {
             return new NumberValue(Math.PI);
         }
@@ -1033,7 +1024,6 @@ internal sealed class ExpressionParser
 
                 case "rad":
                 case "deg2rad":
-                    _currentTrigAngle = new AngleArgument(v, AngleUnit.Degrees);
                     return new NumberValue(v * (Math.PI / 180.0));
 
                 case "deg":
@@ -1042,7 +1032,6 @@ internal sealed class ExpressionParser
 
                 case "grad":
                 case "grad2rad":
-                    _currentTrigAngle = new AngleArgument(v, AngleUnit.Gradians);
                     return new NumberValue(v * (Math.PI / 200.0));
 
                 case "rad2grad":
@@ -1194,59 +1183,154 @@ internal sealed class ExpressionParser
         return val;
     }
 
-    private double EvaluateSin(double v) =>
-        (_currentTrigAngle is { } angle ? angle.Unit : _options.AngleUnit) switch
+    // 100 revolutions (800 quarter-turns) provides ample range for practical angular calculations
+    // while keeping error accumulation from IEEE 754 float representation well within CardinalEpsilon (1e-12).
+    private const double MaxSnappingRevolutions = 100.0;
+    private const double CardinalEpsilon = 1e-12;
+
+    /// <summary>
+    /// Normalizes an angle into multiples of 45 degrees (pi/4 radians, 50 gradians)
+    /// across all supported angle units within a bounded revolution ceiling.
+    /// Used by all trigonometric functions to ensure exact cardinal values and detect asymptotes.
+    /// </summary>
+    private bool TryGetQuarterTurn(double v, out long step45)
+    {
+        var (k, rev) = _options.AngleUnit switch
         {
-            AngleUnit.Degrees => double.SinPi((_currentTrigAngle is { } a ? a.Value : v) / 180.0),
-            AngleUnit.Gradians => double.SinPi((_currentTrigAngle is { } a ? a.Value : v) / 200.0),
-            _ => Math.Sin(v),
+            AngleUnit.Degrees => (v / 45.0, v / 360.0),
+            AngleUnit.Gradians => (v / 50.0, v / 400.0),
+            _ => (4.0 * (v / Math.PI), v / (2.0 * Math.PI)),
         };
 
-    private double EvaluateCos(double v) =>
-        (_currentTrigAngle is { } angle ? angle.Unit : _options.AngleUnit) switch
+        if (Math.Abs(rev) <= MaxSnappingRevolutions)
         {
-            AngleUnit.Degrees => double.CosPi((_currentTrigAngle is { } a ? a.Value : v) / 180.0),
-            AngleUnit.Gradians => double.CosPi((_currentTrigAngle is { } a ? a.Value : v) / 200.0),
+            var roundK = Math.Round(k);
+            if (Math.Abs(k - roundK) < CardinalEpsilon)
+            {
+                step45 = (long)roundK;
+                return true;
+            }
+        }
+
+        step45 = 0;
+        return false;
+    }
+
+    private double EvaluateSin(double v)
+    {
+        // A 90-degree step occurs whenever step45 is even.
+        if (TryGetQuarterTurn(v, out var step45) && (step45 % 2 == 0))
+        {
+            return (((step45 / 2 % 4) + 4) % 4) switch
+            {
+                0 => 0.0,
+                1 => 1.0,
+                2 => 0.0,
+                3 => -1.0,
+                _ => 0.0,
+            };
+        }
+
+        return _options.AngleUnit switch
+        {
+            AngleUnit.Degrees => double.SinPi(v / 180.0),
+            AngleUnit.Gradians => double.SinPi(v / 200.0),
+            _ => Math.Sin(v),
+        };
+    }
+
+    private double EvaluateCos(double v)
+    {
+        if (TryGetQuarterTurn(v, out var step45) && (step45 % 2 == 0))
+        {
+            return (((step45 / 2 % 4) + 4) % 4) switch
+            {
+                0 => 1.0,
+                1 => 0.0,
+                2 => -1.0,
+                3 => 0.0,
+                _ => 0.0,
+            };
+        }
+
+        return _options.AngleUnit switch
+        {
+            AngleUnit.Degrees => double.CosPi(v / 180.0),
+            AngleUnit.Gradians => double.CosPi(v / 200.0),
             _ => Math.Cos(v),
         };
+    }
 
     private double EvaluateTan(double v)
     {
-        var unit = _currentTrigAngle is { } angle ? angle.Unit : _options.AngleUnit;
-        var value = _currentTrigAngle is { } a ? a.Value : v;
-
-        if (unit == AngleUnit.Degrees && Math.Abs(value % 180.0) == 45.0)
+        if (TryGetQuarterTurn(v, out var step45))
         {
-            return value > 0 ? 1.0 : -1.0;
+            return (((step45 % 4) + 4) % 4) switch
+            {
+                0 => 0.0,
+                1 => 1.0,
+                2 => throw new ExpressionException(new EvaluationDiagnostic(
+                    EvaluationError.UndefinedMathResult, "Tangent is undefined at odd multiples of 90 degrees (pi/2).")),
+                3 => -1.0,
+                _ => 0.0,
+            };
         }
 
-        if (unit == AngleUnit.Gradians && Math.Abs(value % 200.0) == 50.0)
+        return _options.AngleUnit switch
         {
-            return value > 0 ? 1.0 : -1.0;
-        }
-
-        return unit switch
-        {
-            AngleUnit.Degrees => double.TanPi(value / 180.0),
-            AngleUnit.Gradians => double.TanPi(value / 200.0),
+            AngleUnit.Degrees => double.TanPi(v / 180.0),
+            AngleUnit.Gradians => double.TanPi(v / 200.0),
             _ => Math.Tan(v),
         };
     }
 
-    private double EvaluateSec(double v) => 1.0 / EvaluateCos(v);
-
-    private double EvaluateCsc(double v) => 1.0 / EvaluateSin(v);
-
     private double EvaluateCot(double v)
     {
-        var unit = _currentTrigAngle is { } angle ? angle.Unit : _options.AngleUnit;
-        var value = _currentTrigAngle is { } a ? a.Value : v;
-        return unit switch
+        if (TryGetQuarterTurn(v, out var step45))
         {
-            AngleUnit.Degrees => double.CosPi(value / 180.0) / double.SinPi(value / 180.0),
-            AngleUnit.Gradians => double.CosPi(value / 200.0) / double.SinPi(value / 200.0),
-            _ => 1.0 / Math.Tan(v),
-        };
+            return (((step45 % 4) + 4) % 4) switch
+            {
+                0 => throw new ExpressionException(new EvaluationDiagnostic(
+                    EvaluationError.UndefinedMathResult, "Cotangent is undefined at multiples of 180 degrees (pi).")),
+                1 => 1.0,
+                2 => 0.0,
+                3 => -1.0,
+                _ => 0.0,
+            };
+        }
+
+        var sin = EvaluateSin(v);
+        if (sin == 0.0)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UndefinedMathResult, "Cotangent is undefined where sine is zero."));
+        }
+
+        return EvaluateCos(v) / sin;
+    }
+
+    private double EvaluateSec(double v)
+    {
+        var cos = EvaluateCos(v);
+        if (cos == 0.0)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UndefinedMathResult, "Secant is undefined where cosine is zero."));
+        }
+
+        return 1.0 / cos;
+    }
+
+    private double EvaluateCsc(double v)
+    {
+        var sin = EvaluateSin(v);
+        if (sin == 0.0)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UndefinedMathResult, "Cosecant is undefined where sine is zero."));
+        }
+
+        return 1.0 / sin;
     }
 
     private double EvaluateArcSin(double v) =>

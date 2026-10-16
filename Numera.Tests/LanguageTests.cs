@@ -152,16 +152,47 @@ public class LanguageTests
     }
 
     [TestMethod]
-    public void EqualityChainsFoldLeft()
+    public void ComparisonChainsFollowMathematicalConjunctiveSemanticsRatherThanProgrammingLanguagePrecedence()
     {
-        // 2 == 2 is 1. Then 1 == 1 is 1.
-        Assert.AreEqual(1m, Calculator.Evaluate("2 == 2 == 1").DecVal);
+        // In languages like C/C++/C#, `<` binds tighter than `==`, so:
+        // `1 < 2 == 1` evaluates to `(1 < 2) == 1` -> `true == 1` -> true (1).
+        // Under conjunctive chaining, all comparison operators share equal precedence:
+        // `1 < 2 == 1` means `(1 < 2) and (2 == 1)` -> true and false -> false (0).
+        Assert.AreEqual(0m, Calculator.Evaluate("1 < 2 == 1").DecVal);
 
-        // 2 == 3 is 0. Then 0 == 0 is 1.
-        Assert.AreEqual(1m, Calculator.Evaluate("2 == 3 == 0").DecVal);
+        // Similarly:
+        // C# `2 > 1 == 1` -> `(2 > 1) == 1` -> 1
+        // Numera: `2 > 1 and 1 == 1` -> 1
+        Assert.AreEqual(1m, Calculator.Evaluate("2 > 1 == 1").DecVal);
 
-        // 2 == 2 is 1. Then 1 == 3 is 0.
-        Assert.AreEqual(0m, Calculator.Evaluate("2 == 2 == 3").DecVal);
+        // C# `1 < 3 == 2` -> `(1 < 3) == 2` -> `1 == 2` -> 0
+        // Numera: `1 < 3 and 3 == 2` -> false -> 0
+        Assert.AreEqual(0m, Calculator.Evaluate("1 < 3 == 2").DecVal);
+
+        // Mixed relational & equality chains:
+        // `0 < 5 == 5 < 10` -> `0 < 5 and 5 == 5 and 5 < 10` -> 1
+        Assert.AreEqual(1m, Calculator.Evaluate("0 < 5 == 5 < 10").DecVal);
+
+        // `0 < 5 == 6 < 10` -> `0 < 5 and 5 == 6 ...` -> 0
+        Assert.AreEqual(0m, Calculator.Evaluate("0 < 5 == 6 < 10").DecVal);
+
+        // Under traditional left-fold equality:
+        // `2 == 2 == 1` was `(2 == 2) == 1` -> `1 == 1` -> 1.
+        // Under conjunctive chaining:
+        // `2 == 2 == 1` means `2 == 2 and 2 == 1` -> 0.
+        Assert.AreEqual(0m, Calculator.Evaluate("2 == 2 == 1").DecVal);
+
+        // `2 == 3 == 0` was `(2 == 3) == 0` -> `0 == 0` -> 1.
+        // Under conjunctive chaining: `2 == 3 and 3 == 0` -> 0.
+        Assert.AreEqual(0m, Calculator.Evaluate("2 == 3 == 0").DecVal);
+
+        // `2 == 2 == 2` is 1.
+        Assert.AreEqual(1m, Calculator.Evaluate("2 == 2 == 2").DecVal);
+
+        // Users can still explicitly group if they want boolean-as-number comparisons:
+        Assert.AreEqual(1m, Calculator.Evaluate("(1 < 2) == 1").DecVal);
+        Assert.AreEqual(1m, Calculator.Evaluate("(2 == 2) == 1").DecVal);
+        Assert.AreEqual(1m, Calculator.Evaluate("(2 == 3) == 0").DecVal);
     }
 
     [TestMethod]

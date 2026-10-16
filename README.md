@@ -4,7 +4,7 @@
 
 # Numera
 
-A lightweight mathematical expression evaluator for **.NET 10**, written in portable C# and with no third-party dependencies.
+A lightweight mathematical expression evaluator for **.NET 10**, written in portable C# with no third-party dependencies.
 
 Numera dynamically balances exact integer, high-precision decimal, and standard floating-point arithmetic for each operation. It is designed for applications that need trustworthy expression evaluation without the weight of a full symbolic math engine.
 
@@ -196,12 +196,12 @@ Numera implements a standard Recursive Descent parser with the following capabil
   9. `xor`
   10. `||`, `or`
 
-- **Constants:** `pi` (or `π`) and `e`.
+- **Constants:** `pi` (or `π`, `Π`) and `e`.
 
 - **Functions:**
   - **Trigonometry:** `sin`, `cos`, `tan`, `arcsin`, `arccos`, `arctan`, `atan2(y, x)`, `cot`, `sec`, `csc`, `arccot`, `arcsec`, `arccsc` (operates in radians by default, or degrees/gradians via `EvaluationOptions.AngleUnit`).
   - **Hyperbolic:** `sinh`, `cosh`, `tanh`, `arsinh`, `arcosh`, `artanh`, `coth`, `sech`, `csch`, `arcoth`, `arsech`, `arcsch`.
-  - **Angle Conversion:** `rad(degrees)` or `deg2rad(degrees)` converts degrees to radians; `deg(radians)` or `rad2deg(radians)` converts radians to degrees; `grad(gradians)` or `grad2rad(gradians)` converts gradians to radians; plus explicit cross-conversions `deg2grad`, `rad2grad`, and `grad2deg`. When nested directly inside trigonometric functions, `rad(x)`/`deg2rad(x)` and `grad(x)`/`grad2rad(x)` preserve exact cardinal values without float-rounding distortion.
+  - **Angle Conversion:** `rad(degrees)` or `deg2rad(degrees)` converts degrees to radians; `deg(radians)` or `rad2deg(radians)` converts radians to degrees; `grad(gradians)` or `grad2rad(gradians)` converts gradians to radians; plus explicit cross-conversions `deg2grad`, `rad2grad`, and `grad2deg`.
   - **Logarithms/Roots:** `log` (base 10), `log2`, `log10`, `ln` (natural), `logn(value, base)`, `sqrt`, `cbrt`, `root(value, root)`.
   - **General:** `min`, `max`, `avg`, `clamp(val, min, max)`, `abs`, `round`, `ceil`, `floor`, `trunc`, `frac`, `sign`/`sgn`, `factorial`, `hypot(x, y)`, `lerp(a, b, t)`.
   - **Bitwise:** `shl(val, count)`, `shr(val, count)`, `band(a, b)`, `bor(a, b)`, `bxor(a, b)`, `bnot(a)`. Require exact integer operands and evaluate via arbitrary-precision integers.

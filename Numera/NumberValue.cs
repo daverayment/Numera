@@ -247,7 +247,18 @@ public readonly struct NumberValue : IFormattable
             return a.DecVal.CompareTo(b.DecVal);
         }
 
-        return a.AsDouble().CompareTo(b.AsDouble());
+        var dblA = a.AsDouble();
+        var dblB = b.AsDouble();
+
+        // In IEEE 754 arithmetic, +0.0 == -0.0 is true. Double.CompareTo introduces
+        // a total order where -0.0 < +0.0, which causes 0.0 > -0.0 to evaluate to true.
+        // We ensure standard equality before falling back to CompareTo (for NaN ordering).
+        if (dblA == dblB)
+        {
+            return 0;
+        }
+
+        return dblA.CompareTo(dblB);
     }
 
     // Logical results use decimal zero/one. Only zero is false, so NaN is truthy here.
@@ -623,9 +634,12 @@ public readonly struct NumberValue : IFormattable
     /// Uses bounded integer exponentiation for an integer base and a nonnegative whole
     /// exponent. Other cases use Math.Pow, including negative integer exponents.
     /// </summary>
+    /// <exception cref="DivideByZeroException">Thrown if zero is raised to a negative power.</exception>
+    /// <exception cref="ExpressionException">Thrown if a negative base is raised to a fractional power.</exception>
     public static NumberValue Pow(NumberValue baseVal, NumberValue expVal)
     {
-        if (expVal.TryGetInteger(out var exponent))
+        var hasIntExp = expVal.TryGetInteger(out var exponent);
+        if (hasIntExp)
         {
             if (BigInteger.Abs(exponent) > CalculationLimits.MaxExponentMagnitude)
             {
@@ -648,7 +662,23 @@ public readonly struct NumberValue : IFormattable
             }
         }
 
-        return new NumberValue(Math.Pow(baseVal.AsDouble(), expVal.AsDouble()));
+        var b = baseVal.AsDouble();
+        var e = expVal.AsDouble();
+
+        // 0 raised to a negative power represents division by zero: 0^-n = 1 / 0^n.
+        if (baseVal.IsZero && e < 0.0)
+        {
+            throw new DivideByZeroException("Cannot raise zero to a negative power.");
+        }
+
+        // Negative base raised to a non-integer power yields a complex result without a real value.
+        if (b < 0.0 && !hasIntExp)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UndefinedMathResult, "Negative base with a fractional exponent has no real solution."));
+        }
+
+        return new NumberValue(Math.Pow(b, e));
     }
 
     private static int CompareIntegerAndDecimal(BigInteger integer, decimal value)

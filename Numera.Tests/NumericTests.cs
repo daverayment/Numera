@@ -300,6 +300,14 @@ public class NumericTests
     [DataRow("artanh(1)", EvaluationError.UndefinedMathResult)]
     [DataRow("root(8, 0)", EvaluationError.UndefinedMathResult)]
     [DataRow("clamp(5, 10, 2)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("(-4)^0.5", EvaluationError.UndefinedMathResult)]
+    [DataRow("pow(-4, 0.5)", EvaluationError.UndefinedMathResult)]
+    [DataRow("0^-1", EvaluationError.DivisionByZero)]
+    [DataRow("pow(0, -1)", EvaluationError.DivisionByZero)]
+    [DataRow("tan(pi/2)", EvaluationError.UndefinedMathResult)]
+    [DataRow("tan(3*pi/2)", EvaluationError.UndefinedMathResult)]
+    [DataRow("cot(0)", EvaluationError.UndefinedMathResult)]
+    [DataRow("cot(pi)", EvaluationError.UndefinedMathResult)]
     public void MathDomainErrorsProduceStructuredDiagnostics(string expression, EvaluationError expectedError)
     {
         Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic));
@@ -412,7 +420,7 @@ public class NumericTests
         var result = Calculator.Evaluate(expression, options);
 
         Assert.AreEqual(NumberValue.DataType.Double, result.Type);
-        Assert.AreEqual(expected, result.DblVal, 1e-15);
+        Assert.AreEqual(expected, result.DblVal, 0.0);
     }
 
     [TestMethod]
@@ -524,6 +532,12 @@ public class NumericTests
     [DataRow("3 != 3", "0")]
     [DataRow("3 ~= 4", "1")]
     [DataRow("3 == 3", "1")]
+    [DataRow("0.0 == -0.0", "1")]
+    [DataRow("0.0 != -0.0", "0")]
+    [DataRow("0.0 > -0.0", "0")]
+    [DataRow("0.0 < -0.0", "0")]
+    [DataRow("0.0 >= -0.0", "1")]
+    [DataRow("0.0 <= -0.0", "1")]
     public void RelationalAndEqualityOperatorsEvaluateCorrectly(string expression, string expected)
     {
         var result = Calculator.Evaluate(expression);
@@ -692,5 +706,179 @@ public class NumericTests
     {
         // 1 << 16385 must exceed MaxIntegerBits (16384)
         Assert.Throws<CalculationLimitException>(() => Calculator.Evaluate("1 << 16385"));
+    }
+
+    [TestMethod]
+    [DataRow("tan(90)", EvaluationError.UndefinedMathResult)]
+    [DataRow("tan(270)", EvaluationError.UndefinedMathResult)]
+    [DataRow("cot(0)", EvaluationError.UndefinedMathResult)]
+    [DataRow("cot(180)", EvaluationError.UndefinedMathResult)]
+    [DataRow("sec(90)", EvaluationError.UndefinedMathResult)]
+    [DataRow("sec(270)", EvaluationError.UndefinedMathResult)]
+    [DataRow("csc(0)", EvaluationError.UndefinedMathResult)]
+    [DataRow("csc(180)", EvaluationError.UndefinedMathResult)]
+    public void TangentAndCotangentSingularitiesInDegreesModeProduceDiagnostics(string expression, EvaluationError expectedError)
+    {
+        var degOptions = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
+        Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic, degOptions));
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(expectedError, diagnostic.Code);
+
+        var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate(expression, degOptions));
+        Assert.AreEqual(expectedError, ex.Diagnostic.Code);
+    }
+
+    [TestMethod]
+    [DataRow("cot(rad(90))", 0.0)]
+    [DataRow("cot(pi/2)", 0.0)]
+    [DataRow("tan(pi/4)", 1.0)]
+    [DataRow("tan(-pi/4)", -1.0)]
+    [DataRow("sin(pi)", 0.0)]
+    [DataRow("cos(pi/2)", 0.0)]
+    [DataRow("cos(3*pi/2)", 0.0)]
+    public void RadiansModePreservesExactCardinalValuesForPiMultiples(string expression, double expected)
+    {
+        var result = Calculator.Evaluate(expression);
+        Assert.AreEqual(NumberValue.DataType.Double, result.Type);
+        Assert.AreEqual(expected, result.DblVal, 0.0);
+    }
+
+    [TestMethod]
+    [DataRow("tan(100)", EvaluationError.UndefinedMathResult)]
+    [DataRow("tan(300)", EvaluationError.UndefinedMathResult)]
+    [DataRow("cot(0)", EvaluationError.UndefinedMathResult)]
+    [DataRow("cot(200)", EvaluationError.UndefinedMathResult)]
+    [DataRow("sec(100)", EvaluationError.UndefinedMathResult)]
+    [DataRow("sec(300)", EvaluationError.UndefinedMathResult)]
+    [DataRow("csc(0)", EvaluationError.UndefinedMathResult)]
+    [DataRow("csc(200)", EvaluationError.UndefinedMathResult)]
+    public void ReciprocalTrigonometricSingularitiesInGradiansModeProduceDiagnostics(string expression, EvaluationError expectedError)
+    {
+        var gradOptions = new EvaluationOptions { AngleUnit = AngleUnit.Gradians };
+        Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic, gradOptions));
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(expectedError, diagnostic.Code);
+
+        var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate(expression, gradOptions));
+        Assert.AreEqual(expectedError, ex.Diagnostic.Code);
+    }
+
+    [TestMethod]
+    [DataRow("sec(pi/2)", EvaluationError.UndefinedMathResult)]
+    [DataRow("sec(3*pi/2)", EvaluationError.UndefinedMathResult)]
+    [DataRow("csc(0)", EvaluationError.UndefinedMathResult)]
+    [DataRow("csc(pi)", EvaluationError.UndefinedMathResult)]
+    [DataRow("tan(rad(90))", EvaluationError.UndefinedMathResult)]
+    [DataRow("cot(rad(180))", EvaluationError.UndefinedMathResult)]
+    public void RadianAsymptotesAndConvertedSingularitiesProduceDiagnostics(string expression, EvaluationError expectedError)
+    {
+        Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic));
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(expectedError, diagnostic.Code);
+
+        var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate(expression));
+        Assert.AreEqual(expectedError, ex.Diagnostic.Code);
+    }
+
+    [TestMethod]
+    [DataRow("sin(180)")]
+    [DataRow("sin(360)")]
+    [DataRow("sin(pi)")]
+    [DataRow("cos(90)")]
+    [DataRow("cos(270)")]
+    [DataRow("cos(pi/2)")]
+    [DataRow("tan(180)")]
+    [DataRow("cot(90)")]
+    public void TrigonometricCardinalZerosProducePositiveZero(string expression)
+    {
+        var degOptions = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
+        var options = expression.Contains("pi") ? null : degOptions;
+        var result = Calculator.Evaluate(expression, options);
+
+        Assert.AreEqual(0.0, result.DblVal, 0.0);
+        Assert.AreEqual(0L, BitConverter.DoubleToInt64Bits(result.DblVal), $"{expression} must evaluate to +0.0, not -0.0.");
+    }
+
+    [TestMethod]
+    [DataRow("sin(100)", 1.0)]
+    [DataRow("sin(200)", 0.0)]
+    [DataRow("sin(300)", -1.0)]
+    [DataRow("cos(100)", 0.0)]
+    [DataRow("cos(200)", -1.0)]
+    [DataRow("cos(400)", 1.0)]
+    [DataRow("tan(50)", 1.0)]
+    [DataRow("tan(150)", -1.0)]
+    [DataRow("cot(50)", 1.0)]
+    [DataRow("cot(100)", 0.0)]
+    [DataRow("sec(200)", -1.0)]
+    [DataRow("csc(100)", 1.0)]
+    public void GradiansModeEvaluatesExactCardinalValues(string expression, double expected)
+    {
+        var gradOptions = new EvaluationOptions { AngleUnit = AngleUnit.Gradians };
+        var result = Calculator.Evaluate(expression, gradOptions);
+        Assert.AreEqual(NumberValue.DataType.Double, result.Type);
+        Assert.AreEqual(expected, result.DblVal, 0.0);
+    }
+
+    [TestMethod]
+    [DataRow("cos(pi / 2)", 0.0)]
+    [DataRow("sin(pi)", 0.0)]
+    [DataRow("cot(pi / 2)", 0.0)]
+    [DataRow("tan(pi / 4)", 1.0)]
+    public void TrigCardinalSnappingIsExact(string expression, double expected)
+    {
+        var result = Calculator.Evaluate(expression);
+        Assert.AreEqual(expected, result.DblVal, 0.0);
+    }
+
+    [TestMethod]
+    [DataRow("tan(pi / 2)", EvaluationError.UndefinedMathResult)]
+    [DataRow("sec(pi / 2)", EvaluationError.UndefinedMathResult)]
+    [DataRow("cot(0)", EvaluationError.UndefinedMathResult)]
+    [DataRow("cot(pi)", EvaluationError.UndefinedMathResult)]
+    public void TrigAsymptotesThrowUndefinedResult(string expression, EvaluationError expected)
+    {
+        Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic));
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(expected, diagnostic.Code);
+    }
+
+    [TestMethod]
+    public void AvoidsClassicFloatingPointArtifacts()
+    {
+        // Decimal preservation
+        Assert.AreEqual(3.0m, Calculator.Evaluate("0.3 / 0.1").DecVal);
+        Assert.AreEqual(194.40m, Calculator.Evaluate("3033554.11 - 3033359.71").DecVal);
+        Assert.AreEqual(1m, Calculator.Evaluate("0.1 + 0.2 == 0.3").DecVal);
+
+        // Large Integer preservation
+        Assert.AreEqual(BigInteger.One << 64, Calculator.Evaluate("2^64").IntVal);
+        Assert.AreEqual(0m, Calculator.Evaluate("2^64 - 1 == 2^64").DecVal);
+
+        // Unary minus binds looser than exponentiation (-2^2 is -4, not +4)
+        Assert.AreEqual(new BigInteger(-4), Calculator.Evaluate("-2^2").IntVal);
+    }
+
+    [TestMethod]
+    [DataRow("5 == 5 == 5", "1")]
+    [DataRow("5 == 5 == 6", "0")]
+    [DataRow("1 == 1 == 1 == 1", "1")]
+    [DataRow("1 < 2 < 3", "1")]
+    [DataRow("1 < 3 < 2", "0")]
+    [DataRow("3 > 2 > 1", "1")]
+    [DataRow("1 <= 2 <= 2 < 3", "1")]
+    [DataRow("10 >= 5 >= 5 > 0", "1")]
+    [DataRow("1 < 2 <= 2 == 2 < 5", "1")]
+    [DataRow("1 != 2 != 3", "1")]
+    [DataRow("1 ~= 2 ~= 3", "1")]
+    [DataRow("1 != 2 != 1", "1")]
+    [DataRow("1 > 2 < (1 / 0)", "0")]
+    [DataRow("1 == 2 == (1 / 0)", "0")]
+    [DataRow("1 < 2 < 3 and 4 < 5 < 6", "1")]
+    [DataRow("1 < 5 < 3 or 2 < 4 < 6", "1")]
+    public void ChainedComparisonsEvaluateCorrectly(string expression, string expected)
+    {
+        var result = Calculator.Evaluate(expression);
+        Assert.AreEqual(expected, result.DecVal.ToString(CultureInfo.InvariantCulture));
     }
 }
