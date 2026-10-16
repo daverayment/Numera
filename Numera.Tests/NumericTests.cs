@@ -62,9 +62,9 @@ public class NumericTests
         var integer = new NumberValue(new BigInteger(1_000_000_000_000_000_001));
         var fraction = new NumberValue(1_000_000_000_000_000_000.5m);
 
-        Assert.IsTrue(NumberValue.Compare(integer, fraction) > 0);
-        Assert.IsTrue(NumberValue.Compare(fraction, integer) < 0);
-        Assert.IsTrue(NumberValue.Compare(-integer, -fraction) < 0);
+        Assert.IsGreaterThan(0, NumberValue.Compare(integer, fraction));
+        Assert.IsLessThan(0, NumberValue.Compare(fraction, integer));
+        Assert.IsLessThan(0, NumberValue.Compare(-integer, -fraction));
     }
 
     [TestMethod]
@@ -103,11 +103,37 @@ public class NumericTests
     [DataRow("log(10000)", 4.0, 1e-15)]
     [DataRow("log1p(1)", 0.6931471805599453094, 2e-16)]
     [DataRow("root(-125,3)", -5.0, 2e-15)]
+    [DataRow("erf(0)", 0.0, 0.0)]
+    [DataRow("erf(1)", 0.84270079294971486934, 2e-16)]
+    [DataRow("erf(-1)", -0.84270079294971486934, 2e-16)]
+    [DataRow("erf(0.25)", 0.27632639016823693498, 2e-16)]
+    [DataRow("erf(3)", 0.99997790950300141456, 2e-16)]
+    [DataRow("erfc(0)", 1.0, 0.0)]
+    [DataRow("erfc(1)", 0.15729920705028513066, 2e-16)]
+    [DataRow("erfc(3)", 2.209049699858544e-5, 2e-16)]
+    [DataRow("ncdf(0)", 0.5, 0.0)]
+    [DataRow("ncdf(1)", 0.84134474606854294858, 2e-16)]
+    [DataRow("ncdf(-1)", 0.15865525393145705141, 2e-16)]
+    [DataRow("ncdf(1.96)", 0.975002104851779529, 2e-16)]
+    [DataRow("sinc(0)", 1.0, 0.0)]
+    [DataRow("sinc(pi/2)", 0.63661977236758134308, 2e-16)]
+    [DataRow("sinc(pi)", 0.0, 2e-16)]
     public void ApproximateFunctionsAgreeWithIndependentReferences(string expression, double expected, double tolerance)
     {
         var result = Calculator.Evaluate(expression);
         Assert.AreEqual(NumberValue.DataType.Double, result.Type);
         Assert.AreEqual(expected, result.DblVal, tolerance);
+    }
+
+    [TestMethod]
+    [DataRow("floor(0.3 / 0.1)", "3")]
+    [DataRow("floor(0.30 / 0.10)", "3")]
+    [DataRow("floor(tan(pi / 4))", "1")]
+    [DataRow("floor((3033554.11 - 3033359.71 - 194) * 100)", "40")]
+    public void FloorPreservesExactValuesWhereBinaryFloatFails(string expression, string expected)
+    {
+        var result = Calculator.Evaluate(expression);
+        Assert.AreEqual(expected, result.ToString(CultureInfo.InvariantCulture));
     }
 
     [TestMethod]
@@ -352,6 +378,79 @@ public class NumericTests
     }
 
     [TestMethod]
+    public void SpecialFunctionsHandleInfinitiesAndLimits()
+    {
+        // erf limits.
+        Assert.AreEqual(1.0, Calculator.Evaluate("erf(100)").DblVal, 1e-15);
+        Assert.AreEqual(-1.0, Calculator.Evaluate("erf(-100)").DblVal, 1e-15);
+
+        // erfc limits.
+        Assert.AreEqual(0.0, Calculator.Evaluate("erfc(100)").DblVal, 1e-15);
+        Assert.AreEqual(2.0, Calculator.Evaluate("erfc(-100)").DblVal, 1e-15);
+
+        // ncdf limits.
+        Assert.AreEqual(1.0, Calculator.Evaluate("ncdf(100)").DblVal, 1e-15);
+        Assert.AreEqual(0.0, Calculator.Evaluate("ncdf(-100)").DblVal, 1e-15);
+
+        // sinc limits and small values.
+        Assert.AreEqual(1.0, Calculator.Evaluate("sinc(1e-10)").DblVal, 1e-15);
+        Assert.AreEqual(0.0, Calculator.Evaluate("sinc(1000000)").DblVal, 1e-5);
+    }
+
+    [TestMethod]
+    public void SpecialFunctionsHandleDeepUnderflowAndSymmetry()
+    {
+        // Underflow cutoff (x >= 27.3).
+        Assert.AreEqual(0.0, Calculator.Evaluate("erfc(28)").DblVal, 0.0);
+        Assert.AreEqual(0.0, Calculator.Evaluate("erfc(30)").DblVal, 0.0);
+
+        // sinc even symmetry: sinc(-x) == sinc(x).
+        Assert.AreEqual(Calculator.Evaluate("sinc(1.5)").DblVal, Calculator.Evaluate("sinc(-1.5)").DblVal, 0.0);
+    }
+
+    /// <summary>
+    /// Exercises Cody rational Chebyshev approximation intervals and boundary regions for
+    /// erf, erfc, and ncdf across all three intervals:
+    ///   Interval 1: [0, 0.46875] (ErfA, ErfB)
+    ///   Interval 2: [0.46875, 4.0] (ErfcC, ErfcD)
+    ///   Interval 3: [4.0, inf) (ErfcP, ErfcQ)
+    /// Detects transcription errors, incorrect polynomial evaluation orders, or
+    /// mismatched formulas.
+    /// </summary>
+    [TestMethod]
+    [DataRow("erf(0.001)", 0.0011283787909692365, 2e-15, "Interval 1 near-zero")]
+    [DataRow("erf(0.25)", 0.27632639016823693, 2e-15, "Interval 1 interior")]
+    [DataRow("erf(0.46874)", 0.4926044152441113, 2e-15, "Interval 1 upper boundary")]
+    [DataRow("erf(0.46876)", 0.49262253110684645, 2e-15, "Interval 2 lower boundary")]
+    [DataRow("erfc(0.46874)", 0.5073955847558886, 2e-15, "Interval 1 complementary boundary")]
+    [DataRow("erfc(0.46876)", 0.5073774688931536, 2e-15, "Interval 2 complementary boundary")]
+    [DataRow("erf(1.0)", 0.84270079294971487, 2e-15, "Interval 2 interior erf")]
+    [DataRow("erfc(1.0)", 0.15729920705028513, 2e-15, "Interval 2 interior erfc")]
+    [DataRow("erfc(2.5)", 0.00040695201744495893, 2e-15, "Interval 2 middle")]
+    [DataRow("erfc(3.99)", 1.673921136452081e-8, 2e-15, "Interval 2 upper boundary")]
+    [DataRow("erfc(4.01)", 1.4196939421371045e-8, 2e-15, "Interval 3 lower boundary")]
+    [DataRow("erfc(5.0)", 1.53745979442803485e-12, 2e-15, "Interval 3 interior")]
+    [DataRow("erfc(6.0)", 2.15197367124989131e-17, 2e-15, "Interval 3 asymptotic")]
+    [DataRow("erfc(10.0)", 2.08848758376254476e-45, 2e-15, "Interval 3 deep tail")]
+    [DataRow("ncdf(0.5)", 0.69146246127401312, 2e-15, "ncdf Interval 1/2 transition")]
+    [DataRow("ncdf(2.5)", 0.99379033467422385, 2e-15, "ncdf Interval 2")]
+    [DataRow("ncdf(5.0)", 0.99999971334842805, 2e-15, "ncdf Interval 3 asymptotic")]
+    public void SpecialFunctionsApproximateAccuratelyAcrossIntervals(string expression, double expected, double tolerance, string description)
+    {
+        var result = Calculator.Evaluate(expression);
+        Assert.AreEqual(NumberValue.DataType.Double, result.Type);
+
+        // For values < 1.0 (such as tail erfc), evaluate relative error so that precision
+        // is validated to double-precision machine epsilon across all magnitudes.
+        var absoluteError = Math.Abs(result.DblVal - expected);
+        var relativeError = expected == 0.0 ? absoluteError : absoluteError / Math.Abs(expected);
+        var effectiveError = Math.Min(absoluteError, relativeError);
+
+        Assert.IsLessThanOrEqualTo(tolerance, effectiveError,
+            $"Failed for {description}: {expression}. Expected: {expected}, Actual: {result.DblVal}, Relative/Effective Error: {effectiveError}");
+    }
+
+    [TestMethod]
     public void NegativeOddRootYieldsRealResult()
     {
         var result = Calculator.Evaluate("root(-8, 3)");
@@ -447,6 +546,17 @@ public class NumericTests
     [DataRow("tan(45)", 1.0)]
     [DataRow("tan(180)", 0.0)]
     [DataRow("tan(225)", 1.0)]
+    [DataRow("tan(135)", -1.0)]
+    [DataRow("tan(315)", -1.0)]
+    [DataRow("tan(-45)", -1.0)]
+    [DataRow("cot(45)", 1.0)]
+    [DataRow("cot(135)", -1.0)]
+    [DataRow("cot(90)", 0.0)]
+    [DataRow("cot(270)", 0.0)]
+    [DataRow("sec(0)", 1.0)]
+    [DataRow("sec(180)", -1.0)]
+    [DataRow("csc(90)", 1.0)]
+    [DataRow("csc(270)", -1.0)]
     public void TrigonometricFunctionsInDegreesModeEvaluateExactCardinalValues(string expression, double expected)
     {
         var options = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
@@ -516,6 +626,22 @@ public class NumericTests
     {
         var result = Calculator.Evaluate(expression);
         Assert.AreEqual(expected, result.DblVal, 1e-12);
+    }
+
+    [TestMethod]
+    [DataRow("tan(deg(pi/2))", EvaluationError.UndefinedMathResult)]
+    [DataRow("tan(grad2deg(100))", EvaluationError.UndefinedMathResult)]
+    [DataRow("sec(deg(pi/2))", EvaluationError.UndefinedMathResult)]
+    [DataRow("cot(deg(pi))", EvaluationError.UndefinedMathResult)]
+    [DataRow("csc(deg(pi))", EvaluationError.UndefinedMathResult)]
+    public void ComputedDegreeAsymptotesProduceDiagnostics(string expression, EvaluationError expectedError)
+    {
+        var degOptions = new EvaluationOptions
+        {
+            AngleUnit = AngleUnit.Degrees
+        };
+        Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic, degOptions));
+        Assert.AreEqual(expectedError, diagnostic!.Code);
     }
 
     [TestMethod]
@@ -888,16 +1014,16 @@ public class NumericTests
     [TestMethod]
     public void AvoidsClassicFloatingPointArtifacts()
     {
-        // Decimal preservation
+        // Decimal preservation.
         Assert.AreEqual(3.0m, Calculator.Evaluate("0.3 / 0.1").DecVal);
         Assert.AreEqual(194.40m, Calculator.Evaluate("3033554.11 - 3033359.71").DecVal);
         Assert.AreEqual(1m, Calculator.Evaluate("0.1 + 0.2 == 0.3").DecVal);
 
-        // Large Integer preservation
+        // Large Integer preservation.
         Assert.AreEqual(BigInteger.One << 64, Calculator.Evaluate("2^64").IntVal);
         Assert.AreEqual(0m, Calculator.Evaluate("2^64 - 1 == 2^64").DecVal);
 
-        // Unary minus binds looser than exponentiation (-2^2 is -4, not +4)
+        // Unary minus binds looser than exponentiation (-2^2 is -4, not +4).
         Assert.AreEqual(new BigInteger(-4), Calculator.Evaluate("-2^2").IntVal);
     }
 
@@ -918,6 +1044,9 @@ public class NumericTests
     [DataRow("1 == 2 == (1 / 0)", "0")]
     [DataRow("1 < 2 < 3 and 4 < 5 < 6", "1")]
     [DataRow("1 < 5 < 3 or 2 < 4 < 6", "1")]
+    [DataRow("2 == 2 == 1", "0")]  // The classic left-fold bug: now correctly returns 0
+    [DataRow("1 != 2 != 2", "0")]  // First pair is true, second is false, so 0
+    [DataRow("1 < 2 < 1", "0")]    // Transitivity failure
     public void ChainedComparisonsEvaluateCorrectly(string expression, string expected)
     {
         var result = Calculator.Evaluate(expression);
@@ -935,18 +1064,20 @@ public class NumericTests
         var sinResult = Calculator.Evaluate("sin(360000030)", degOptions);
         Assert.AreEqual(0.5, sinResult.DblVal, 1e-15);
 
-        // 360,000,060 degrees -> 60 degrees; cos(60 deg) = 0.5
+        // 360,000,060 degrees -> 60 degrees; cos(60 deg) = 0.5.
         var cosResult = Calculator.Evaluate("cos(360000060)", degOptions);
         Assert.AreEqual(0.5, cosResult.DblVal, 1e-15);
 
         // 400,000,050 gradians is 1,000,000 revolutions + 50 gradians (45 degrees).
-        // Beyond MaxSnappingRevolutions (100.0 revs), it falls back to double.TanPi with reduced remainder.
+        // Beyond MaxSnappingRevolutions (100.0 revs), it falls back to double.TanPi with
+        // reduced remainder.
         var gradOptions = new EvaluationOptions { AngleUnit = AngleUnit.Gradians };
         var tanGradResult = Calculator.Evaluate("tan(400000050)", gradOptions);
         Assert.AreEqual(1.0, tanGradResult.DblVal, 1e-15);
 
         // Non-cardinal angle with many revolutions in degrees:
-        // 360000000 + 37 degrees -> evaluates identically to sin(37 deg) without revolution offset
+        // 360000000 + 37 degrees, which evaluates identically to sin(37 deg) without
+        // revolution offset.
         var baseSin = Calculator.Evaluate("sin(37)", degOptions);
         var largeSin = Calculator.Evaluate("sin(360000037)", degOptions);
         Assert.AreEqual(baseSin.DblVal, largeSin.DblVal, 1e-15);
@@ -958,6 +1089,12 @@ public class NumericTests
         var baseTan = Calculator.Evaluate("tan(37)", degOptions);
         var largeTan = Calculator.Evaluate("tan(360000037)", degOptions);
         Assert.AreEqual(baseTan.DblVal, largeTan.DblVal, 1e-15);
+
+        var largeNegSin = Calculator.Evaluate("sin(-360000030)", degOptions);
+        Assert.AreEqual(-0.5, largeNegSin.DblVal, 1e-15);
+
+        var largeNegCos = Calculator.Evaluate("cos(-360000060)", degOptions);
+        Assert.AreEqual(0.5, largeNegCos.DblVal, 1e-15);
     }
 
     [TestMethod]

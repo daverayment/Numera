@@ -174,7 +174,9 @@ Numera implements a standard Recursive Descent parser with the following capabil
 - **Relational and Equality Operators:**
   - Comparisons: `<`, `<=`, `>`, `>=`, `==`, `!=`, and `~=`.
   - Results evaluate to `1` (true) or `0` (false) via exact comparison.
-  - Equality chains fold left-to-right (`a == b == c` compares the Boolean result of `a == b` with `c`).
+  - Chained comparisons evaluate conjunctively and short-circuit:
+    - `1 < x <= 10` evaluates as `1 < x and x <= 10`.
+    - `a == b == c` checks that all three values are equal (`a == b and b == c`), rather than folding into `(a == b) == c`. (Explicit parentheses like `(a == b) == c` can be used if comparing the Boolean outcome).
 
 - **Logical Operators:**
   - Disjunction: `||` or `or` (short-circuiting).
@@ -190,20 +192,20 @@ Numera implements a standard Recursive Descent parser with the following capabil
   3. Multiplication, division, remainder (`*`, `/`, `%`)
   4. Addition and subtraction (`+`, `-`)
   5. Bitwise shift (`<<`, `>>`)
-  6. Relational comparisons (`<`, `<=`, `>`, `>=`)
-  7. Equality and inequality (`==`, `!=`, `~=`)
-  8. `&&`, `and`
-  9. `xor`
-  10. `||`, `or`
+  6. Chained comparison and equality (`<`, `<=`, `>`, `>=`, `==`, `!=`, `~=`)
+  7. `&&`, `and`
+  8. `xor`
+  9. `||`, `or`
 
 - **Constants:** `pi` (or `π`, `Π`) and `e`.
 
 - **Functions:**
-  - **Trigonometry:** `sin`, `cos`, `tan`, `arcsin`, `arccos`, `arctan`, `atan2(y, x)`, `cot`, `sec`, `csc`, `arccot`, `arcsec`, `arccsc` (operates in radians by default, or degrees/gradians via `EvaluationOptions.AngleUnit`).
-  - **Hyperbolic:** `sinh`, `cosh`, `tanh`, `arsinh`, `arcosh`, `artanh`, `coth`, `sech`, `csch`, `arcoth`, `arsech`, `arcsch`.
+  - **Trigonometry:** `sin`, `cos`, `tan`, `arcsin`/`asin`, `arccos`/`acos`, `arctan`/`atan`, `atan2(y, x)`, `cot`, `sec`, `csc`, `arccot`, `arcsec`, `arccsc` (operates in radians by default, or degrees/gradians via `EvaluationOptions.AngleUnit`).
+  - **Hyperbolic:** `sinh`, `cosh`, `tanh`, `arsinh`/`asinh`, `arcosh`/`acosh`, `artanh`/`atanh`, `coth`, `sech`, `csch`, `arcoth`, `arsech`, `arcsch`.
   - **Angle Conversion:** `rad(degrees)` or `deg2rad(degrees)` converts degrees to radians; `deg(radians)` or `rad2deg(radians)` converts radians to degrees; `grad(gradians)` or `grad2rad(gradians)` converts gradians to radians; plus explicit cross-conversions `deg2grad`, `rad2grad`, and `grad2deg`.
-  - **Logarithms/Roots:** `log` (base 10), `log2`, `log10`, `ln` (natural), `logn(value, base)`, `sqrt`, `cbrt`, `root(value, root)`.
-  - **General:** `min`, `max`, `avg`, `clamp(val, min, max)`, `abs`, `round`, `ceil`, `floor`, `trunc`, `frac`, `sign`/`sgn`, `factorial`, `hypot(x, y)`, `lerp(a, b, t)`.
+  - **Logarithms/Roots:** `log` (base 10), `log2`, `log10`, `ln` (natural), `log1p` (ln(1 + x)), `expm1` (e^x - 1), `logn(value, base)`, `sqrt`, `cbrt`, `root(value, root)`.
+  - **Special & Probability:** `erf(x)` (error function), `erfc(x)` (complementary error function), `ncdf(x)` (standard normal cumulative distribution), `sinc(x)` (cardinal sine: sin(x)/x).
+  - **General:** `min`, `max`, `avg`, `sum`, `mul`, `mod(a, b)`, `clamp(val, min, max)`, `abs`, `round(val[, places])`, `ceil`, `floor`, `trunc`, `frac`, `sign`/`sgn`, `factorial`, `hypot(x, y)`, `lerp(a, b, t)`.
   - **Bitwise:** `shl(val, count)`, `shr(val, count)`, `band(a, b)`, `bor(a, b)`, `bxor(a, b)`, `bnot(a)`. Require exact integer operands and evaluate via arbitrary-precision integers.
   - **Random:** `rand()` returns a double in [0,1); `randi(n)` returns an integer in [0,n).
 
@@ -214,8 +216,8 @@ Numera implements a standard Recursive Descent parser with the following capabil
 
 - **Function behaviour and conventions:**
   - Function and constant names are case-insensitive.
-  - `min` and `max` are variadic (accepting one or more arguments).
-  - `round` rounds to the nearest whole number (midpoint away from zero).
+  - `min`, `max`, `avg`, `sum`, and `mul` are variadic (accepting one or more arguments).
+  - `round` rounds midpoint away from zero to the nearest whole number (`round(val)`), or to the specified number of decimal places (`round(val, places)` for 0–28 places).
   - Invalid or undefined calculations fail evaluation with specific diagnostic codes:
     - **Mathematically undefined results** (e.g. `sqrt(-1)` or `log(0)`) report `UndefinedMathResult`.
     - **Fractions where whole numbers are required** (e.g. `1.5 << 2` or `factorial(2.5)`) report `IntegerRequired`.

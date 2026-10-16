@@ -33,7 +33,8 @@ internal static class FunctionArity
                     or "coth" or "sech" or "csch" or "arcoth" or "arsech" or "arcsch"
                     or "rad" or "deg" or "grad" or "deg2rad" or "rad2deg" or "grad2rad"
                     or "rad2grad" or "deg2grad" or "grad2deg" or "trunc" or "frac"
-                    or "cbrt" or "bnot" => (1, 1),
+                    or "cbrt" or "bnot"
+                    or "erf" or "erfc" or "ncdf" or "sinc" => (1, 1),
 
                 "round" => (1, 2),
 

@@ -1070,6 +1070,18 @@ internal sealed class ExpressionParser
                 case "grad2deg":
                     return new NumberValue(v * (180.0 / 200.0));
 
+                case "erf":
+                    return new NumberValue(SpecialFunctions.Erf(v));
+
+                case "erfc":
+                    return new NumberValue(SpecialFunctions.Erfc(v));
+
+                case "ncdf":
+                    return new NumberValue(SpecialFunctions.NormalCdf(v));
+
+                case "sinc":
+                    return new NumberValue(SpecialFunctions.Sinc(v));
+
                 default:
                     throw new FormatException($"Unknown function '{name}'.");
             }
