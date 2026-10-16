@@ -11,6 +11,8 @@ public class SafetyTests
     [DataRow("2^10001")]
     [DataRow("2^(-10001)")]
     [DataRow("(2^10000)*(2^10000)")]
+    [DataRow("sum(2^16384, 2^16384)")]
+    [DataRow("mul(2^10000, 2^10000)")]
     public void ComputationLimitsProduceStructuredFailures(string expression)
     {
         Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic));

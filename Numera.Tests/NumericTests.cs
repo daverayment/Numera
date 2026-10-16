@@ -99,7 +99,9 @@ public class NumericTests
     [DataRow("ln(2)", 0.6931471805599453094, 2e-16)]
     [DataRow("sin(pi/6)", 0.5, 2e-16)]
     [DataRow("exp(1)", 2.7182818284590452354, 6e-16)]
+    [DataRow("expm1(1)", 1.7182818284590452354, 6e-16)]
     [DataRow("log(10000)", 4.0, 1e-15)]
+    [DataRow("log1p(1)", 0.6931471805599453094, 2e-16)]
     [DataRow("root(-125,3)", -5.0, 2e-15)]
     public void ApproximateFunctionsAgreeWithIndependentReferences(string expression, double expected, double tolerance)
     {
@@ -291,6 +293,9 @@ public class NumericTests
     [DataRow("log(-10)", EvaluationError.UndefinedMathResult)]
     [DataRow("log(0)", EvaluationError.UndefinedMathResult)]
     [DataRow("ln(-1)", EvaluationError.UndefinedMathResult)]
+    [DataRow("log1p(-1)", EvaluationError.UndefinedMathResult)]
+    [DataRow("log1p(-2)", EvaluationError.UndefinedMathResult)]
+    [DataRow("mod(10, 0)", EvaluationError.DivisionByZero)]
     [DataRow("log2(0)", EvaluationError.UndefinedMathResult)]
     [DataRow("logn(-8, 2)", EvaluationError.UndefinedMathResult)]
     [DataRow("logn(8, 1)", EvaluationError.UndefinedMathResult)]
@@ -615,6 +620,15 @@ public class NumericTests
     [DataRow("clamp(3.5, 1.0, 5.0)", "3.5")]
     [DataRow("avg(10, 20, 30)", "20")]
     [DataRow("avg(2, 4)", "3")]
+    [DataRow("sum(10, 20, 30)", "60")]
+    [DataRow("sum(42)", "42")]
+    [DataRow("sum(1.5, 2.5, 3.25)", "7.25")]
+    [DataRow("mul(2, 3, 4)", "24")]
+    [DataRow("mul(7)", "7")]
+    [DataRow("mul(1.5, 2, 4)", "12.0")]
+    [DataRow("mod(10, 3)", "1")]
+    [DataRow("mod(-10, 3)", "-1")]
+    [DataRow("mod(10.5, 3)", "1.5")]
     public void ClampAndAvgEvaluateCorrectly(string expression, string expected)
     {
         var result = Calculator.Evaluate(expression);
@@ -916,5 +930,39 @@ public class NumericTests
         var baseTan = Calculator.Evaluate("tan(37)", degOptions);
         var largeTan = Calculator.Evaluate("tan(360000037)", degOptions);
         Assert.AreEqual(baseTan.DblVal, largeTan.DblVal, 1e-15);
+    }
+
+    [TestMethod]
+    public void Expm1AndLog1pPreservePrecisionForSmallArguments()
+    {
+        // For x = 1e-5:
+        // Direct exp(x) - 1 loses lower precision bits due to subtracting 1.0,
+        // whereas expm1(x) and log1p(x) preserve full double precision.
+        double x = 1e-5;
+        var expm1Result = Calculator.Evaluate("expm1(1e-5)");
+        Assert.AreEqual(NumberValue.DataType.Double, expm1Result.Type);
+        Assert.AreEqual(double.ExpM1(x), expm1Result.DblVal, 0.0);
+
+        var log1pResult = Calculator.Evaluate("log1p(1e-5)");
+        Assert.AreEqual(NumberValue.DataType.Double, log1pResult.Type);
+        Assert.AreEqual(double.LogP1(x), log1pResult.DblVal, 0.0);
+
+        // At x = 0, expm1(0) == 0 and log1p(0) == 0 exactly.
+        Assert.AreEqual(0.0, Calculator.Evaluate("expm1(0)").DblVal, 0.0);
+        Assert.AreEqual(0.0, Calculator.Evaluate("log1p(0)").DblVal, 0.0);
+    }
+
+    [TestMethod]
+    [DataRow("asin(0.5)", "arcsin(0.5)")]
+    [DataRow("acos(0.5)", "arccos(0.5)")]
+    [DataRow("atan(1)", "arctan(1)")]
+    [DataRow("asinh(1)", "arsinh(1)")]
+    [DataRow("acosh(2)", "arcosh(2)")]
+    [DataRow("atanh(0.5)", "artanh(0.5)")]
+    public void InverseTrigAndHyperbolicSynonymsMatchCanonical(string aliasExpr, string canonicalExpr)
+    {
+        var aliasResult = Calculator.Evaluate(aliasExpr);
+        var canonicalResult = Calculator.Evaluate(canonicalExpr);
+        Assert.AreEqual(canonicalResult.DblVal, aliasResult.DblVal, 0.0);
     }
 }

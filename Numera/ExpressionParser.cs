@@ -728,6 +728,16 @@ internal sealed class ExpressionParser
             return EvaluateAvg(args);
         }
 
+        if (lower is "sum")
+        {
+            return EvaluateSum(args);
+        }
+
+        if (lower is "mul")
+        {
+            return EvaluateMul(args);
+        }
+
         if (args.Count == 0)
         {
             // rand is the only registered zero-argument function.
@@ -782,6 +792,9 @@ internal sealed class ExpressionParser
                 case "exp":
                     return new NumberValue(Math.Exp(v));
 
+                case "expm1":
+                    return new NumberValue(double.ExpM1(v));
+
                 case "abs":
                     if (args[0].Type is NumberValue.DataType.Integer)
                     {
@@ -819,6 +832,14 @@ internal sealed class ExpressionParser
                             EvaluationError.UndefinedMathResult, "Natural logarithm is undefined for non-positive values."));
                     }
                     return new NumberValue(Math.Log(v));
+
+                case "log1p":
+                    if (v <= -1.0)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "log1p argument must be strictly greater than -1."));
+                    }
+                    return new NumberValue(double.LogP1(v));
 
                 case "sqrt":
                     if (v < 0)
@@ -915,6 +936,7 @@ internal sealed class ExpressionParser
                     return new NumberValue(EvaluateTan(v));
 
                 case "arcsin":
+                case "asin":
                     if (v < -1.0 || v > 1.0)
                     {
                         throw new ExpressionException(new EvaluationDiagnostic(
@@ -923,6 +945,7 @@ internal sealed class ExpressionParser
                     return new NumberValue(EvaluateArcSin(v));
 
                 case "arccos":
+                case "acos":
                     if (v < -1.0 || v > 1.0)
                     {
                         throw new ExpressionException(new EvaluationDiagnostic(
@@ -931,6 +954,7 @@ internal sealed class ExpressionParser
                     return new NumberValue(EvaluateArcCos(v));
 
                 case "arctan":
+                case "atan":
                     return new NumberValue(EvaluateArcTan(v));
 
                 case "cot":
@@ -971,9 +995,11 @@ internal sealed class ExpressionParser
                     return new NumberValue(Math.Tanh(v));
 
                 case "arsinh":
+                case "asinh":
                     return new NumberValue(Math.Asinh(v));
 
                 case "arcosh":
+                case "acosh":
                     if (v < 1.0)
                     {
                         throw new ExpressionException(new EvaluationDiagnostic(
@@ -982,6 +1008,7 @@ internal sealed class ExpressionParser
                     return new NumberValue(Math.Acosh(v));
 
                 case "artanh":
+                case "atanh":
                     if (v <= -1.0 || v >= 1.0)
                     {
                         throw new ExpressionException(new EvaluationDiagnostic(
@@ -1073,6 +1100,9 @@ internal sealed class ExpressionParser
                 case "hypot":
                     return new NumberValue(Math.Sqrt(args[0].AsDouble() * args[0].AsDouble() + args[1].AsDouble() * args[1].AsDouble()));
 
+                case "mod":
+                    return args[0] % args[1];
+
                 case "root":
                     var baseVal = args[0].AsDouble();
                     var rootVal = args[1].AsDouble();
@@ -1160,6 +1190,28 @@ internal sealed class ExpressionParser
         }
 
         return sum / new NumberValue((BigInteger)args.Count);
+    }
+
+    private static NumberValue EvaluateSum(List<NumberValue> args)
+    {
+        var sum = args[0];
+        for (var i = 1; i < args.Count; i++)
+        {
+            sum += args[i];
+        }
+
+        return sum;
+    }
+
+    private static NumberValue EvaluateMul(List<NumberValue> args)
+    {
+        var product = args[0];
+        for (var i = 1; i < args.Count; i++)
+        {
+            product *= args[i];
+        }
+
+        return product;
     }
 
     private static NumberValue EvaluateClamp(NumberValue val, NumberValue min, NumberValue max)
