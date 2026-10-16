@@ -188,7 +188,7 @@ Numera implements a standard Recursive Descent parser with the following capabil
 
 - **Operator Precedence (highest to lowest):**
   1. Exponentiation (`^`, right-associative)
-  2. Unary negation and signs (`!`, `not`, `+`, `-`)
+  2. Unary negation, signs, and bitwise NOT (`!`, `not`, `~`, `+`, `-`)
   3. Multiplication, division, remainder (`*`, `/`, `%`)
   4. Addition and subtraction (`+`, `-`)
   5. Bitwise shift (`<<`, `>>`)
@@ -206,7 +206,7 @@ Numera implements a standard Recursive Descent parser with the following capabil
   - **Logarithms/Roots:** `log` (base 10), `log2`, `log10`, `ln` (natural), `log1p` (ln(1 + x)), `expm1` (e^x - 1), `logn(value, base)`, `sqrt`, `cbrt`, `root(value, root)`.
   - **Special & Probability:** `erf(x)` (error function), `erfc(x)` (complementary error function), `ncdf(x)` (standard normal cumulative distribution), `sinc(x)` (cardinal sine: sin(x)/x).
   - **General:** `min`, `max`, `avg`, `sum`, `mul`, `mod(a, b)`, `clamp(val, min, max)`, `abs`, `round(val[, places])`, `ceil`, `floor`, `trunc`, `frac`, `sign`/`sgn`, `factorial`, `hypot(x, y)`, `lerp(a, b, t)`.
-  - **Bitwise:** `shl(val, count)`, `shr(val, count)`, `band(a, b)`, `bor(a, b)`, `bxor(a, b)`, `bnot(a)`. Require exact integer operands and evaluate via arbitrary-precision integers.
+  - **Bitwise:** Operator `~` (unary bitwise NOT); functions `shl(val, count)`, `shr(val, count)`, `band(a, b)`, `bor(a, b)`, `bxor(a, b)`, `bnot(a)`. Require exact integer operands and evaluate via arbitrary-precision integers.
   - **Random:** `rand()` returns a double in [0,1); `randi(n)` returns an integer in [0,n).
 
 - **Literal Formats:**

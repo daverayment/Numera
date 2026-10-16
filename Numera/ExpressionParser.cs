@@ -201,6 +201,14 @@ internal sealed class ExpressionParser
 
     private static bool EvaluateComparison(ComparisonOp op, NumberValue left, NumberValue right)
     {
+        // IEEE 754 NaN comparison semantics:
+        // Any relational comparison or equality with NaN evaluates to false.
+        // Inequality (!= and ~=) with NaN evaluates to true.
+        if (left.IsNaN || right.IsNaN)
+        {
+            return op is ComparisonOp.NotEqual;
+        }
+
         int cmp = NumberValue.Compare(left, right);
         return op switch
         {
@@ -382,6 +390,12 @@ internal sealed class ExpressionParser
                 var value = ParseUnary(evaluate);
                 return evaluate ? NumberValue.LogicalNot(value) : default;
             }
+            else if (Peek() == '~')
+            {
+                Consume();
+                var value = ParseUnary(evaluate);
+                return evaluate ? NumberValue.BitwiseNot(value) : default;
+            }
             else if (MatchKeyword("not"))
             {
                 var value = ParseUnary(evaluate);
@@ -445,7 +459,7 @@ internal sealed class ExpressionParser
             return value;
         }
 
-        if (char.IsLetter(c) || c == 'π')
+        if (char.IsLetter(c) || c == '_' || c == 'π')
         {
             var identifierStart = _pos;
             var identifier = ParseIdentifier();
@@ -688,7 +702,7 @@ internal sealed class ExpressionParser
     private ReadOnlySpan<char> ParseIdentifier()
     {
         var start = _pos;
-        while (_pos < _input.Length && (char.IsLetterOrDigit(Peek()) || Peek() == 'π' || Peek() == 'Π'))
+        while (_pos < _input.Length && (char.IsLetterOrDigit(Peek()) || Peek() == '_' || Peek() == 'π' || Peek() == 'Π'))
         {
             Consume();
         }
@@ -1083,7 +1097,8 @@ internal sealed class ExpressionParser
                     return new NumberValue(SpecialFunctions.Sinc(v));
 
                 default:
-                    throw new FormatException($"Unknown function '{name}'.");
+                    throw new ExpressionException(new EvaluationDiagnostic(
+                        EvaluationError.UnknownFunction, $"Unknown function '{name}'."));
             }
         }
 
@@ -1156,7 +1171,8 @@ internal sealed class ExpressionParser
                     return NumberValue.BitwiseXor(args[0], args[1]);
 
                 default:
-                    throw new FormatException($"Unknown function '{name}'.");
+                    throw new ExpressionException(new EvaluationDiagnostic(
+                        EvaluationError.UnknownFunction, $"Unknown function '{name}'."));
             }
         }
 
@@ -1172,11 +1188,13 @@ internal sealed class ExpressionParser
                     return args[0] + (args[2] * (args[1] - args[0]));
 
                 default:
-                    throw new FormatException($"Unknown function '{name}'.");
+                    throw new ExpressionException(new EvaluationDiagnostic(
+                        EvaluationError.UnknownFunction, $"Unknown function '{name}'."));
             }
         }
 
-        throw new FormatException($"Too many arguments for function '{name}'.");
+        throw new ExpressionException(new EvaluationDiagnostic(
+            EvaluationError.InvalidArgumentCount, $"Invalid argument count for '{name}'."));
     }
 
     private static NumberValue EvaluateMinMax(List<NumberValue> args, bool findMinimum)
@@ -1231,6 +1249,12 @@ internal sealed class ExpressionParser
 
     private static NumberValue EvaluateClamp(NumberValue val, NumberValue min, NumberValue max)
     {
+        // Propagate NaN without throwing ArgumentOutOfRange.
+        if (val.IsNaN || min.IsNaN || max.IsNaN)
+        {
+            return new NumberValue(double.NaN);
+        }
+
         if (NumberValue.Compare(min, max) > 0)
         {
             throw new ExpressionException(new EvaluationDiagnostic(
@@ -1307,21 +1331,36 @@ internal sealed class ExpressionParser
             return false;
         }
 
+        if (_options.AngleUnit == AngleUnit.Radians)
+        {
+            // Radians: heuristic snap for near-zero canonical multiples of pi (within
+            // 100 revs).
+            if (Math.Abs(v) <= MaxSnappingRevolutions * (2.0 * Math.PI))
+            {
+                double reduced = Math.IEEERemainder(v, 2.0 * Math.PI);
+                double k = reduced / (Math.PI / 4.0);
+                var roundK = Math.Round(k);
+
+                if (Math.Abs(k - roundK) < CardinalEpsilon)
+                {
+                    step45 = (long)roundK;
+                    return true;
+                }
+            }
+
+            step45 = 0;
+            return false;
+        }
+
+        // Degrees & Gradians: exact integer reduction valid up to 2^53 (9e15).
         var (revSize, stepSize) = _options.AngleUnit switch
         {
             AngleUnit.Degrees => (360.0, 45.0),
-            AngleUnit.Gradians => (400.0, 50.0),
-            _ => (2.0 * Math.PI, Math.PI / 4.0),
+            _ => (400.0, 50.0),
         };
 
-        // Magnitude check first: only angles within MaxSnappingRevolutions have sufficient
-        // precision to guard against false-positive snaps.
-        if (Math.Abs(v) <= MaxSnappingRevolutions * revSize)
+        if (Math.Abs(v) <= 9_007_199_254_740_992.0) // 2^53
         {
-            // Centered reduction to [-180, 180] degrees, [-200, 200] gradians, or
-            // [-pi, pi] radians preserves full significand precision near cardinal
-            // points. Guarantees k is within [-4, 4] for a 45-degree step size, keeping
-            // ULP noise floor well below CardinalEpsilon (1e-12).
             double reduced = Math.IEEERemainder(v, revSize);
             double k = reduced / stepSize;
             var roundK = Math.Round(k);
@@ -1397,12 +1436,20 @@ internal sealed class ExpressionParser
             };
         }
 
-        return _options.AngleUnit switch
+        double result = _options.AngleUnit switch
         {
             AngleUnit.Degrees => double.TanPi(Math.IEEERemainder(v, 360.0) / 180.0),
             AngleUnit.Gradians => double.TanPi(Math.IEEERemainder(v, 400.0) / 200.0),
             _ => Math.Tan(v),
         };
+
+        if (!double.IsFinite(result))
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UndefinedMathResult, "Tangent is undefined at odd multiples of 90 degrees (pi/2)."));
+        }
+
+        return result;
     }
 
     private double EvaluateCot(double v)
@@ -1420,38 +1467,59 @@ internal sealed class ExpressionParser
             };
         }
 
-        var sin = EvaluateSin(v);
+        double sin = EvaluateSin(v);
         if (sin == 0.0)
         {
             throw new ExpressionException(new EvaluationDiagnostic(
                 EvaluationError.UndefinedMathResult, "Cotangent is undefined where sine is zero."));
         }
 
-        return EvaluateCos(v) / sin;
+        double result = EvaluateCos(v) / sin;
+        if (!double.IsFinite(result))
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UndefinedMathResult, "Cotangent is undefined where sine is zero."));
+        }
+
+        return result;
     }
 
     private double EvaluateSec(double v)
     {
-        var cos = EvaluateCos(v);
+        double cos = EvaluateCos(v);
         if (cos == 0.0)
         {
             throw new ExpressionException(new EvaluationDiagnostic(
                 EvaluationError.UndefinedMathResult, "Secant is undefined where cosine is zero."));
         }
 
-        return 1.0 / cos;
+        double result = 1.0 / cos;
+        if (!double.IsFinite(result))
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UndefinedMathResult, "Secant is undefined where cosine is zero."));
+        }
+
+        return result;
     }
 
     private double EvaluateCsc(double v)
     {
-        var sin = EvaluateSin(v);
+        double sin = EvaluateSin(v);
         if (sin == 0.0)
         {
             throw new ExpressionException(new EvaluationDiagnostic(
                 EvaluationError.UndefinedMathResult, "Cosecant is undefined where sine is zero."));
         }
 
-        return 1.0 / sin;
+        double result = 1.0 / sin;
+        if (!double.IsFinite(result))
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UndefinedMathResult, "Cosecant is undefined where sine is zero."));
+        }
+
+        return result;
     }
 
     private double EvaluateArcSin(double v) =>

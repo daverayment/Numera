@@ -823,6 +823,11 @@ public class NumericTests
     [DataRow("bxor(0xAA, 0x55)", "255")]
     [DataRow("bnot(0)", "-1")]
     [DataRow("bnot(-1)", "0")]
+    [DataRow("~0", "-1")]
+    [DataRow("~1", "-2")]
+    [DataRow("~~0", "0")]
+    [DataRow("~(-1)", "0")]
+    [DataRow("~0xFF", "-256")]
     public void BitwiseOperationsEvaluateCorrectly(string expression, string expected)
     {
         var result = Calculator.Evaluate(expression);
@@ -859,6 +864,7 @@ public class NumericTests
     [DataRow("bor(1, 2.5)", EvaluationError.IntegerRequired)]
     [DataRow("bxor(1.5, 2.5)", EvaluationError.IntegerRequired)]
     [DataRow("bnot(1.5)", EvaluationError.IntegerRequired)]
+    [DataRow("~1.5", EvaluationError.IntegerRequired)]
     public void BitwiseInvalidDomainProducesStructuredDiagnostics(string expression, EvaluationError expectedError)
     {
         Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic));
@@ -1129,5 +1135,147 @@ public class NumericTests
         var aliasResult = Calculator.Evaluate(aliasExpr);
         var canonicalResult = Calculator.Evaluate(canonicalExpr);
         Assert.AreEqual(canonicalResult.DblVal, aliasResult.DblVal, 0.0);
+    }
+
+    [TestMethod]
+    public void ComparisonsObeyIeee754NanSemantics()
+    {
+        var nan = new NumberValue(double.NaN);
+        var five = new NumberValue(5m);
+
+        // nan == nan -> false (0)
+        Assert.AreEqual(0m, NumberValue.Compare(nan, nan) == 0 ? 0m : 1m); // Compare total-orders, but parser comparison checks NaN
+        var eqExpr = Calculator.Evaluate("(0 * exp(1000)) == (0 * exp(1000))");
+        Assert.AreEqual(0m, eqExpr.DecVal);
+
+        var neqExpr = Calculator.Evaluate("(0 * exp(1000)) != (0 * exp(1000))");
+        Assert.AreEqual(1m, neqExpr.DecVal);
+
+        var tildeNeqExpr = Calculator.Evaluate("(0 * exp(1000)) ~= (0 * exp(1000))");
+        Assert.AreEqual(1m, tildeNeqExpr.DecVal);
+
+        var ltExpr = Calculator.Evaluate("(0 * exp(1000)) < 5");
+        Assert.AreEqual(0m, ltExpr.DecVal);
+
+        var lteExpr = Calculator.Evaluate("(0 * exp(1000)) <= 5");
+        Assert.AreEqual(0m, lteExpr.DecVal);
+
+        var gtExpr = Calculator.Evaluate("(0 * exp(1000)) > 5");
+        Assert.AreEqual(0m, gtExpr.DecVal);
+
+        var gteExpr = Calculator.Evaluate("(0 * exp(1000)) >= 5");
+        Assert.AreEqual(0m, gteExpr.DecVal);
+
+        var revLt = Calculator.Evaluate("5 < (0 * exp(1000))");
+        Assert.AreEqual(0m, revLt.DecVal);
+
+        var revGt = Calculator.Evaluate("5 > (0 * exp(1000))");
+        Assert.AreEqual(0m, revGt.DecVal);
+
+        var revEq = Calculator.Evaluate("5 == (0 * exp(1000))");
+        Assert.AreEqual(0m, revEq.DecVal);
+
+        var revNeq = Calculator.Evaluate("5 != (0 * exp(1000))");
+        Assert.AreEqual(1m, revNeq.DecVal);
+    }
+
+    [TestMethod]
+    public void ClampPropagatesNanWithoutThrowing()
+    {
+        var nanMin = Calculator.Evaluate("clamp(5, 0, 0 * exp(1000))");
+        Assert.IsTrue(nanMin.IsNaN);
+
+        var nanVal = Calculator.Evaluate("clamp(0 * exp(1000), 0, 10)");
+        Assert.IsTrue(nanVal.IsNaN);
+
+        var nanMax = Calculator.Evaluate("clamp(5, 0 * exp(1000), 10)");
+        Assert.IsTrue(nanMax.IsNaN);
+    }
+
+    [TestMethod]
+    public void LargeBigIntegerDoesNotCompareEqualToPositiveInfinity()
+    {
+        // 2^2000 has ~603 decimal digits, overflowing IEEE 754 double into +Infinity.
+        // It must not compare equal to exp(1000) (which evaluates to +Infinity).
+        var equalExpr = Calculator.Evaluate("2^2000 == exp(1000)");
+        Assert.AreEqual(0m, equalExpr.DecVal);
+
+        var notEqualExpr = Calculator.Evaluate("2^2000 != exp(1000)");
+        Assert.AreEqual(1m, notEqualExpr.DecVal);
+
+        var lessExpr = Calculator.Evaluate("2^2000 < exp(1000)");
+        Assert.AreEqual(1m, lessExpr.DecVal);
+
+        var greaterExpr = Calculator.Evaluate("2^2000 > exp(1000)");
+        Assert.AreEqual(0m, greaterExpr.DecVal);
+
+        var revGreater = Calculator.Evaluate("exp(1000) > 2^2000");
+        Assert.AreEqual(1m, revGreater.DecVal);
+
+        var negInfExpr = Calculator.Evaluate("-2^2000 > -exp(1000)");
+        Assert.AreEqual(1m, negInfExpr.DecVal);
+    }
+
+    [TestMethod]
+    public void LargeAngleAsymptotesInDegreesModeThrowUndefinedMathResult()
+    {
+        var degOptions = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
+
+        // 360000090 is 10^6 * 360 + 90 degrees
+        var exTan = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("tan(360000090)", degOptions));
+        Assert.AreEqual(EvaluationError.UndefinedMathResult, exTan.Diagnostic.Code);
+
+        var exCot = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("cot(360000180)", degOptions));
+        Assert.AreEqual(EvaluationError.UndefinedMathResult, exCot.Diagnostic.Code);
+
+        var exSec = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("sec(360000090)", degOptions));
+        Assert.AreEqual(EvaluationError.UndefinedMathResult, exSec.Diagnostic.Code);
+
+        var exCsc = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("csc(360000180)", degOptions));
+        Assert.AreEqual(EvaluationError.UndefinedMathResult, exCsc.Diagnostic.Code);
+
+        // TryEvaluate safely reports diagnostic for large asymptote
+        Assert.IsFalse(Calculator.TryEvaluate("tan(360000090)", out _, out var diagnostic, degOptions));
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(EvaluationError.UndefinedMathResult, diagnostic.Code);
+    }
+
+    [TestMethod]
+    public void DecimalBaseWithPositiveWholeExponentPreservesExactDecimalPrecision()
+    {
+        // (1 + 0.05)^10 should evaluate as exact decimal arithmetic via exponentiation by
+        // squaring.
+        var result = Calculator.Evaluate("(1 + 0.05)^10");
+        Assert.AreEqual(NumberValue.DataType.Decimal, result.Type);
+        Assert.AreEqual(1.62889462677744140625m, result.DecVal);
+
+        // Power of zero gives exact 1m decimal.
+        var zeroPow = Calculator.Evaluate("1.05^0");
+        Assert.AreEqual(NumberValue.DataType.Decimal, zeroPow.Type);
+        Assert.AreEqual(1.0m, zeroPow.DecVal);
+
+        // Negative exponent falls back to double.
+        var negPow = Calculator.Evaluate("1.05^-2");
+        Assert.AreEqual(NumberValue.DataType.Double, negPow.Type);
+        Assert.AreEqual(1.0 / (1.05 * 1.05), negPow.DblVal, 1e-15);
+
+        // Overflow of decimal range falls back to double without throwing.
+        var overflowPow = Calculator.Evaluate("100.5^200");
+        Assert.AreEqual(NumberValue.DataType.Double, overflowPow.Type);
+        Assert.IsTrue(double.IsFinite(overflowPow.DblVal) || double.IsPositiveInfinity(overflowPow.DblVal));
+    }
+
+    [TestMethod]
+    public void UnderscoresInIdentifiersAreParsedCorrectly()
+    {
+        // An unknown function containing underscores must be parsed as a full identifier
+        // and report UnknownFunction rather than an unexpected character syntax error.
+        Assert.IsFalse(Calculator.TryEvaluate("deg_to_rad(10)", out _, out var diagnostic));
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(EvaluationError.UnknownFunction, diagnostic.Code);
+        Assert.Contains("deg_to_rad", diagnostic.Message);
+
+        var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("deg_to_rad(10)"));
+        Assert.AreEqual(EvaluationError.UnknownFunction, ex.Diagnostic.Code);
     }
 }

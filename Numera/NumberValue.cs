@@ -247,6 +247,18 @@ public readonly struct NumberValue : IFormattable
             return a.DecVal.CompareTo(b.DecVal);
         }
 
+        // Handle mixed Double and exact Integer/Decimal without overflow-to-infinity
+        // false matches.
+        if (a.Type is DataType.Double && b.Type is not DataType.Double)
+        {
+            return -CompareDoubleAndExact(b, a.DblVal);
+        }
+
+        if (b.Type is DataType.Double && a.Type is not DataType.Double)
+        {
+            return CompareDoubleAndExact(a, b.DblVal);
+        }
+
         var dblA = a.AsDouble();
         var dblB = b.AsDouble();
 
@@ -632,10 +644,15 @@ public readonly struct NumberValue : IFormattable
 
     /// <summary>
     /// Uses bounded integer exponentiation for an integer base and a nonnegative whole
-    /// exponent. Other cases use Math.Pow, including negative integer exponents.
+    /// exponent. For decimal bases with nonnegative whole exponents, uses binary
+    /// exponentiation (exponentiation by squaring) preserving exact decimal precision,
+    /// falling back to double on OverflowException. Other cases use Math.Pow, including
+    /// negative integer exponents.
     /// </summary>
-    /// <exception cref="DivideByZeroException">Thrown if zero is raised to a negative power.</exception>
-    /// <exception cref="ExpressionException">Thrown if a negative base is raised to a fractional power.</exception>
+    /// <exception cref="DivideByZeroException">Thrown if zero is raised to a negative
+    /// power.</exception>
+    /// <exception cref="ExpressionException">Thrown if a negative base is raised to a
+    /// fractional power.</exception>
     public static NumberValue Pow(NumberValue baseVal, NumberValue expVal)
     {
         var hasIntExp = expVal.TryGetInteger(out var exponent);
@@ -660,6 +677,18 @@ public readonly struct NumberValue : IFormattable
 
                 return new NumberValue(BigInteger.Pow(baseVal.IntVal, (int)exponent));
             }
+
+            if (baseVal.Type is DataType.Decimal && exponent >= BigInteger.Zero)
+            {
+                try
+                {
+                    return new NumberValue(DecimalPow(baseVal.DecVal, (int)exponent));
+                }
+                catch (OverflowException)
+                {
+                    // Fall through to double calculation on decimal overflow.
+                }
+            }
         }
 
         var b = baseVal.AsDouble();
@@ -671,7 +700,8 @@ public readonly struct NumberValue : IFormattable
             throw new DivideByZeroException("Cannot raise zero to a negative power.");
         }
 
-        // Negative base raised to a non-integer power yields a complex result without a real value.
+        // Negative base raised to a non-integer power yields a complex result without a
+        // real value.
         if (b < 0.0 && !hasIntExp)
         {
             throw new ExpressionException(new EvaluationDiagnostic(
@@ -679,6 +709,31 @@ public readonly struct NumberValue : IFormattable
         }
 
         return new NumberValue(Math.Pow(b, e));
+    }
+
+    private static decimal DecimalPow(decimal baseVal, int exponent)
+    {
+        // Exponentiation by squaring to preserve decimal precision without precision
+        // loss.
+        var result = 1m;
+        var b = baseVal;
+        var e = exponent;
+
+        while (e > 0)
+        {
+            if ((e & 1) != 0)
+            {
+                result = checked(result * b);
+            }
+
+            e >>= 1;
+            if (e > 0)
+            {
+                b = checked(b * b);
+            }
+        }
+
+        return result;
     }
 
     private static int CompareIntegerAndDecimal(BigInteger integer, decimal value)
@@ -699,6 +754,57 @@ public readonly struct NumberValue : IFormattable
         // A decimal is coefficient / 10^scale. Multiplying the integer by 10^scale
         // puts both sides on the same exact integer scale without division or rounding.
         return (integer * BigInteger.Pow(10, scale)).CompareTo(coefficient);
+    }
+
+    private static int CompareDoubleAndExact(NumberValue exact, double dbl)
+    {
+        if (double.IsNaN(dbl))
+        {
+            // Consistent with double.CompareTo: non-NaN is greater than NaN.
+            return 1;
+        }
+
+        if (double.IsPositiveInfinity(dbl))
+        {
+            // Any finite integer or decimal is strictly less than +Infinity.
+            return -1;
+        }
+
+        if (double.IsNegativeInfinity(dbl))
+        {
+            // Any finite integer or decimal is strictly greater than -Infinity.
+            return 1;
+        }
+
+        if (exact.Type is DataType.Integer)
+        {
+            var integer = exact.IntVal;
+            var bitLength = integer.GetBitLength();
+
+            // Double.MaxValue has an exponent of 1023, so any integer with 1025+ bits
+            // exceeds Double.MaxValue in magnitude and cannot be compared via (double)int.
+            if (bitLength > 1024)
+            {
+                return integer.Sign > 0 ? 1 : -1;
+            }
+
+            var dblExact = (double)integer;
+            if (dblExact == dbl)
+            {
+                return 0;
+            }
+
+            return dblExact.CompareTo(dbl);
+        }
+
+        // For Decimal vs finite double
+        var dblDec = (double)exact.DecVal;
+        if (dblDec == dbl)
+        {
+            return 0;
+        }
+
+        return dblDec.CompareTo(dbl);
     }
 
     private static double DivideAsDouble(NumberValue a, NumberValue b)
