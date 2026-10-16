@@ -24,7 +24,7 @@ internal static class FunctionArity
             (int Min, int? Max)? range = lower switch
             {
                 "ceil" or "floor" or "exp" or "expm1" or "abs" or "log" or "log2" or "log10" or "ln" or "log1p"
-                    or "sqrt" or "factorial" or "sign" or "sgn" or "round" or "randi"
+                    or "sqrt" or "factorial" or "sign" or "sgn" or "randi"
                     or "sin" or "cos" or "tan" or "arcsin" or "arccos" or "arctan"
                     or "asin" or "acos" or "atan"
                     or "cot" or "sec" or "csc" or "arccot" or "arcsec" or "arccsc"
@@ -34,6 +34,8 @@ internal static class FunctionArity
                     or "rad" or "deg" or "grad" or "deg2rad" or "rad2deg" or "grad2rad"
                     or "rad2grad" or "deg2grad" or "grad2deg" or "trunc" or "frac"
                     or "cbrt" or "bnot" => (1, 1),
+
+                "round" => (1, 2),
 
                 "pow" or "root" or "logn" or "atan2" or "hypot" or "mod"
                     or "shl" or "shr" or "band" or "bor" or "bxor" => (2, 2),

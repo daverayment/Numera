@@ -266,6 +266,13 @@ public class NumericTests
     [DataRow("floor(10.8)", NumberValue.DataType.Decimal, "10")]
     [DataRow("round(2.5)", NumberValue.DataType.Decimal, "3")]
     [DataRow("round(-2.5)", NumberValue.DataType.Decimal, "-3")]
+    [DataRow("round(2.55, 1)", NumberValue.DataType.Decimal, "2.6")]
+    [DataRow("round(-2.55, 1)", NumberValue.DataType.Decimal, "-2.6")]
+    [DataRow("round(3.14159, 2)", NumberValue.DataType.Decimal, "3.14")]
+    [DataRow("round(3.14159, 4)", NumberValue.DataType.Decimal, "3.1416")]
+    [DataRow("round(42, 2)", NumberValue.DataType.Integer, "42")]
+    [DataRow("round(2.5, 0)", NumberValue.DataType.Decimal, "3")]
+    [DataRow("round(1.0000000000000000000000000005, 28)", NumberValue.DataType.Decimal, "1.0000000000000000000000000005")]
     [DataRow("factorial(0)", NumberValue.DataType.Integer, "1")]
     public void SpecialMathFunctionsPreserveRepresentationAndExactValues(string expression, NumberValue.DataType expectedType, string expectedValue)
     {
@@ -285,6 +292,9 @@ public class NumericTests
     [TestMethod]
     [DataRow("factorial(-1)", EvaluationError.ArgumentOutOfRange)]
     [DataRow("factorial(2.5)", EvaluationError.IntegerRequired)]
+    [DataRow("round(2.5, -1)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("round(2.5, 29)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("round(2.5, 1.5)", EvaluationError.IntegerRequired)]
     [DataRow("root(-16, 2)", EvaluationError.UndefinedMathResult)]
     [DataRow("randi(-5)", EvaluationError.ArgumentOutOfRange)]
     [DataRow("randi(0)", EvaluationError.ArgumentOutOfRange)]
@@ -321,6 +331,24 @@ public class NumericTests
 
         var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate(expression));
         Assert.AreEqual(expectedError, ex.Diagnostic.Code);
+    }
+
+    [TestMethod]
+    public void RoundDoubleAtAndBeyondSupportedPlaces()
+    {
+        // 15 decimal places is the maximum precision handled by double.Round
+        var atLimit = Calculator.Evaluate("round(sqrt(2), 15)");
+        Assert.AreEqual(NumberValue.DataType.Double, atLimit.Type);
+        Assert.AreEqual(Math.Round(Math.Sqrt(2), 15, MidpointRounding.AwayFromZero), atLimit.DblVal);
+
+        // Places 16..28 exceed double.Round's argument limit but are accepted within the general places ceiling (28)
+        var beyondDouble = Calculator.Evaluate("round(sqrt(2), 16)");
+        Assert.AreEqual(NumberValue.DataType.Double, beyondDouble.Type);
+        Assert.AreEqual(Math.Sqrt(2), beyondDouble.DblVal);
+
+        var atCeiling = Calculator.Evaluate("round(sqrt(2), 28)");
+        Assert.AreEqual(NumberValue.DataType.Double, atCeiling.Type);
+        Assert.AreEqual(Math.Sqrt(2), atCeiling.DblVal);
     }
 
     [TestMethod]

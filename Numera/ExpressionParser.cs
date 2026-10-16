@@ -1103,6 +1103,9 @@ internal sealed class ExpressionParser
                 case "mod":
                     return args[0] % args[1];
 
+                case "round":
+                    return EvaluateRound(args[0], args[1]);
+
                 case "root":
                     var baseVal = args[0].AsDouble();
                     var rootVal = args[1].AsDouble();
@@ -1233,6 +1236,44 @@ internal sealed class ExpressionParser
         }
 
         return val;
+    }
+
+    private static NumberValue EvaluateRound(NumberValue value, NumberValue placesArg)
+    {
+        if (!placesArg.TryGetInteger(out var placesInt))
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.IntegerRequired, "round places argument must be an integer."));
+        }
+
+        // Support rounding up to the precision capacity of the supported numeric models:
+        // decimal allows 0..28 fractional digits, and IEEE 754 double precision spans ~15-17 digits.
+        if (placesInt < 0 || placesInt > 28)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.ArgumentOutOfRange, "round places argument must be between 0 and 28."));
+        }
+
+        var places = (int)placesInt;
+
+        if (value.Type is NumberValue.DataType.Integer)
+        {
+            return value;
+        }
+
+        if (value.Type is NumberValue.DataType.Decimal)
+        {
+            return new NumberValue(Math.Round(value.DecVal, places, MidpointRounding.AwayFromZero));
+        }
+
+        if (places <= 15)
+        {
+            return new NumberValue(Math.Round(value.AsDouble(), places, MidpointRounding.AwayFromZero));
+        }
+
+        // Double values beyond 15 fractional decimal digits exceed double.Round's argument ceiling.
+        // We preserve full IEEE 754 value without crashing.
+        return value;
     }
 
     // 100 revolutions (800 quarter-turns) provides ample range for practical angular calculations
