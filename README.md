@@ -42,10 +42,10 @@ Try entering:
 
 ## Working with Results
 
-When `TryEvaluate` succeeds, it returns a `NumberValue`. You have a few clean ways to work with it:
+When `TryEvaluate` succeeds, it returns a `MathValue`. You have a few clean ways to work with it:
 
 ### 1. Formatted Display (`IFormattable`)
-`NumberValue` implements `IFormattable`, so string interpolation and standard format strings work naturally with the current culture:
+`MathValue` implements `IFormattable`, so string interpolation and standard format strings work naturally with the current culture:
 
 ```csharp
 // Interpolates directly using CurrentCulture:
@@ -66,13 +66,13 @@ If your application needs the raw numeric value rather than formatted text, insp
 // Use a switch statement to route the exact underlying type safely:
 switch (result.Type)
 {
-    case NumberValue.DataType.Integer:
+    case MathValue.DataType.Integer:
         ProcessExactInteger(result.IntVal);
         break;
-    case NumberValue.DataType.Decimal:
+    case MathValue.DataType.Decimal:
         ProcessExactDecimal(result.DecVal);
         break;
-    case NumberValue.DataType.Double:
+    case MathValue.DataType.Double:
         ProcessFloatingPoint(result.DblVal);
         break;
 }
@@ -156,7 +156,7 @@ Most expression evaluators rely exclusively on 64-bit IEEE 754 double-precision 
 
 ## How Numera is Different: A Hybrid Approach
 
-Instead of forcing all calculations into a single numeric type, each operation in Numera produces a `NumberValue` backed by one of three types:
+Instead of forcing all calculations into a single numeric type, each operation in Numera produces a `MathValue` backed by one of three types:
 
 * **BigInteger** for exact integer arithmetic within a 16,384-bit safety ceiling. Preserves large integers and whole-number quotients, such as `(10^50) / (10^49)`.
 * **Decimal** for base-10 arithmetic with roughly 28-29 significant digits and up to 28 decimal places. It preserves representable decimal fractions, making it useful for financial expressions. Parsing and arithmetic can round to fit its precision; conversion or arithmetic overflow falls back to double.
@@ -169,7 +169,7 @@ Numera implements a standard Recursive Descent parser with the following capabil
 
 - **Basic Mathematical Operators:** `+`, `-`, `*`, `/`, `%`, and right-associative `^` (exponentiation), unary `+` and unary `-`. (An example of right-associative exponentiation is `2^3^2` which evaluates as `2^(3^2) = 512`.)
 
-- **Grouping:** Parentheses `()` and brackets `[]` for grouping expressions. Matching brackets/parentheses are required; unbalanced grouping is a syntax error.
+- **Grouping:** Parentheses `()` for grouping expressions. Square brackets are unsupported.
 
 - **Relational and Equality Operators:**
   - Comparisons: `<`, `<=`, `>`, `>=`, `==`, `!=`, and `~=`.
@@ -210,8 +210,9 @@ Numera implements a standard Recursive Descent parser with the following capabil
   - **Hyperbolic:** `sinh`, `cosh`, `tanh`, `arsinh`/`asinh`, `arcosh`/`acosh`, `artanh`/`atanh`, `coth`, `sech`, `csch`, `arcoth`, `arsech`, `arcsch`.
   - **Angle Conversion:** `rad(degrees)` or `deg2rad(degrees)` converts degrees to radians; `deg(radians)` or `rad2deg(radians)` converts radians to degrees; `grad(gradians)` or `grad2rad(gradians)` converts gradians to radians; plus explicit cross-conversions `deg2grad`, `rad2grad`, and `grad2deg`.
   - **Logarithms/Roots:** `log` (base 10), `log2`, `log10`, `ln` (natural), `log1p` (ln(1 + x)), `expm1` (e^x - 1), `logn(value, base)`, `sqrt`, `cbrt`, `root(value, root)`.
-  - **Special & Probability:** `erf(x)` (error function), `erfc(x)` (complementary error function), `ncdf(x)` (standard normal cumulative distribution), `sinc(x)` (cardinal sine: sin(x)/x).
-  - **General:** `min`, `max`, `avg`, `sum`, `mul`, `mod(a, b)`, `clamp(val, min, max)`, `abs`, `round(val[, places])`, `ceil`, `floor`, `trunc`, `frac`, `sign`/`sgn`, `factorial`, `hypot(x, y)`, `lerp(a, b, t)`.
+  - **Special & Probability:** `erf(x)` (error function), `erfc(x)` (complementary error function), `ncdf(x)` (standard normal cumulative distribution), `sinc(x)` (cardinal sine: sin(x)/x), `gamma(x)` (Euler gamma), `lgamma(x)` (log-gamma), `beta(a, b)` (Euler beta), `zeta(s)` (Riemann zeta).
+  - **Combinatorics & Number Theory:** `factorial(n)`, `gcd(...values)` (greatest common divisor, variadic), `lcm(...values)` (least common multiple, variadic), `comb(n, k)` (combinations, with aliases `nCr`, `choose`, `binomial`), `perm(n, k)` (permutations, with alias `nPr`), `isprime(n)` (primality test returning 1 or 0). Require exact integer operands.
+  - **General:** `min`, `max`, `avg`, `sum`, `mul`, `mod(a, b)`, `clamp(val, min, max)`, `abs`, `round(val[, places])`, `ceil`, `floor`, `trunc`, `frac`, `sign`/`sgn`, `hypot(x, y)`, `lerp(a, b, t)`.
   - **Bitwise:** Operator `~` (unary bitwise NOT); functions `shl(val, count)`, `shr(val, count)`, `band(a, b)`, `bor(a, b)`, `bxor(a, b)`, `bnot(a)`. Require exact integer operands and evaluate via arbitrary-precision integers.
   - **Random:** `rand()` returns a double in [0,1); `randi(n)` returns an integer in [0,n).
 

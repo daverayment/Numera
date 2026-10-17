@@ -14,11 +14,11 @@ namespace Numera;
 /// can approximate. Integer results exceeding the safety ceiling throw rather than
 /// falling back to double.
 /// </remarks>
-public readonly struct NumberValue : IFormattable
+public readonly struct MathValue : IFormattable
 {
     /// <summary>
     /// Identifies the underlying active representation stored in a
-    /// <see cref="NumberValue"/>.
+    /// <see cref="MathValue"/>.
     /// </summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1720:Identifier contains type name", Justification = "The enum names are descriptive of their usage, which does not conflict with type names.")]
     public enum DataType
@@ -69,13 +69,13 @@ public readonly struct NumberValue : IFormattable
     public double DblVal { get; }
 
     /// <summary>
-    /// Initializes a new instance of <see cref="NumberValue"/> holding an exact
+    /// Initializes a new instance of <see cref="MathValue"/> holding an exact
     /// arbitrary-precision integer.
     /// </summary>
     /// <param name="value">The integer value to store.</param>
     /// <exception cref="CalculationLimitException">Thrown if the magnitude exceeds the
     /// configured bit ceiling.</exception>
-    public NumberValue(BigInteger value)
+    public MathValue(BigInteger value)
     {
         if (BigInteger.Abs(value).GetBitLength() > CalculationLimits.MaxIntegerBits)
         {
@@ -89,11 +89,11 @@ public readonly struct NumberValue : IFormattable
     }
 
     /// <summary>
-    /// Initializes a new instance of <see cref="NumberValue"/> holding a fixed-precision
+    /// Initializes a new instance of <see cref="MathValue"/> holding a fixed-precision
     /// decimal value.
     /// </summary>
     /// <param name="value">The decimal fraction or integer to store.</param>
-    public NumberValue(decimal value)
+    public MathValue(decimal value)
     {
         Type = DataType.Decimal;
         IntVal = default;
@@ -102,11 +102,11 @@ public readonly struct NumberValue : IFormattable
     }
 
     /// <summary>
-    /// Initializes a new instance of <see cref="NumberValue"/> holding a double-precision
+    /// Initializes a new instance of <see cref="MathValue"/> holding a double-precision
     /// floating-point value.
     /// </summary>
     /// <param name="value">The 64-bit binary floating-point value to store.</param>
-    public NumberValue(double value)
+    public MathValue(double value)
     {
         Type = DataType.Double;
         IntVal = default;
@@ -210,12 +210,12 @@ public readonly struct NumberValue : IFormattable
     /// Negates the value, preserving the active numerical representation.
     /// </summary>
     /// <param name="value">The value to negate.</param>
-    /// <returns>A new <see cref="NumberValue"/> with the sign inverted.</returns>
-    public static NumberValue operator -(NumberValue value) => value.Type switch
+    /// <returns>A new <see cref="MathValue"/> with the sign inverted.</returns>
+    public static MathValue operator -(MathValue value) => value.Type switch
     {
-        DataType.Integer => new NumberValue(-value.IntVal),
-        DataType.Decimal => new NumberValue(-value.DecVal),
-        _ => new NumberValue(-value.DblVal),
+        DataType.Integer => new MathValue(-value.IntVal),
+        DataType.Decimal => new MathValue(-value.DecVal),
+        _ => new MathValue(-value.DblVal),
     };
 
     /// <summary>
@@ -223,7 +223,7 @@ public readonly struct NumberValue : IFormattable
     /// double, both are converted and ordered using Double.CompareTo, including its NaN
     /// semantics; distinct exact values may compare equal after conversion.
     /// </summary>
-    public static int Compare(NumberValue a, NumberValue b)
+    public static int Compare(MathValue a, MathValue b)
     {
         // If both values are integers, compare them as big integers to avoid precision
         // and magnitude loss from double conversion.
@@ -259,8 +259,8 @@ public readonly struct NumberValue : IFormattable
             return CompareDoubleAndExact(a, b.DblVal);
         }
 
-        var dblA = a.AsDouble();
-        var dblB = b.AsDouble();
+        double dblA = a.AsDouble();
+        double dblB = b.AsDouble();
 
         // In IEEE 754 arithmetic, +0.0 == -0.0 is true. Double.CompareTo introduces
         // a total order where -0.0 < +0.0, which causes 0.0 > -0.0 to evaluate to true.
@@ -280,32 +280,32 @@ public readonly struct NumberValue : IFormattable
     /// values (including NaN) as true.
     /// Returns 1m for true or 0m for false.
     /// </summary>
-    public static NumberValue LogicalAnd(NumberValue a, NumberValue b) =>
-        (!a.IsZero && !b.IsZero) ? new NumberValue(1m) : new NumberValue(0m);
+    public static MathValue LogicalAnd(MathValue a, MathValue b) =>
+        (!a.IsZero && !b.IsZero) ? new MathValue(1m) : new MathValue(0m);
 
     /// <summary>
     /// Performs a logical OR on two values, treating zero as false and all other
     /// values (including NaN) as true.
     /// Returns 1m for true or 0m for false.
     /// </summary>
-    public static NumberValue LogicalOr(NumberValue a, NumberValue b) =>
-        (!a.IsZero || !b.IsZero) ? new NumberValue(1m) : new NumberValue(0m);
+    public static MathValue LogicalOr(MathValue a, MathValue b) =>
+        (!a.IsZero || !b.IsZero) ? new MathValue(1m) : new MathValue(0m);
 
     /// <summary>
     /// Performs a logical XOR on two values, treating zero as false and all other
     /// values (including NaN) as true.
     /// Returns 1m if exactly one operand is true, or 0m otherwise.
     /// </summary>
-    public static NumberValue LogicalXor(NumberValue a, NumberValue b) =>
-        (!a.IsZero ^ !b.IsZero) ? new NumberValue(1m) : new NumberValue(0m);
+    public static MathValue LogicalXor(MathValue a, MathValue b) =>
+        (!a.IsZero ^ !b.IsZero) ? new MathValue(1m) : new MathValue(0m);
 
     /// <summary>
     /// Performs a logical NOT on a value, treating zero as false and all other
     /// values (including NaN) as true.
     /// Returns 1m if the operand is zero (false), or 0m otherwise.
     /// </summary>
-    public static NumberValue LogicalNot(NumberValue a) =>
-        a.IsZero ? new NumberValue(1m) : new NumberValue(0m);
+    public static MathValue LogicalNot(MathValue a) =>
+        a.IsZero ? new MathValue(1m) : new MathValue(0m);
 
     /// <summary>
     /// Performs a bitwise shift-left on integer operands, enforcing the maximum bit
@@ -315,7 +315,7 @@ public readonly struct NumberValue : IFormattable
     /// the shift count is negative.</exception>
     /// <exception cref="CalculationLimitException">Thrown if the shift amount exceeds the
     /// configured bit ceiling.</exception>
-    public static NumberValue ShiftLeft(NumberValue a, NumberValue b)
+    public static MathValue ShiftLeft(MathValue a, MathValue b)
     {
         if (!a.TryGetInteger(out var val) || !b.TryGetInteger(out var count))
         {
@@ -334,24 +334,25 @@ public readonly struct NumberValue : IFormattable
             throw new CalculationLimitException();
         }
 
-        var shift = (int)count;
+        int shift = (int)count;
         if (!val.IsZero)
         {
-            var bitLength = BigInteger.Abs(val).GetBitLength();
+            long bitLength = BigInteger.Abs(val).GetBitLength();
             if (bitLength + shift > CalculationLimits.MaxIntegerBits)
             {
                 throw new CalculationLimitException();
             }
         }
 
-        return new NumberValue(val << shift);
+        return new MathValue(val << shift);
     }
 
     /// <summary>
     /// Performs an arithmetic bitwise shift-right on integer operands.
     /// </summary>
-    /// <exception cref="ExpressionException">Thrown if an operand is not an integer or the shift count is negative.</exception>
-    public static NumberValue ShiftRight(NumberValue a, NumberValue b)
+    /// <exception cref="ExpressionException">Thrown if an operand is not an integer or
+    /// the shift count is negative.</exception>
+    public static MathValue ShiftRight(MathValue a, MathValue b)
     {
         if (!a.TryGetInteger(out var val) || !b.TryGetInteger(out var count))
         {
@@ -365,15 +366,16 @@ public readonly struct NumberValue : IFormattable
                 EvaluationError.ArgumentOutOfRange, "Shift count cannot be negative."));
         }
 
-        var shift = count > CalculationLimits.MaxIntegerBits ? CalculationLimits.MaxIntegerBits : (int)count;
-        return new NumberValue(val >> shift);
+        int shift = count > CalculationLimits.MaxIntegerBits ? CalculationLimits.MaxIntegerBits : (int)count;
+        return new MathValue(val >> shift);
     }
 
     /// <summary>
     /// Performs a bitwise AND on integer operands.
     /// </summary>
-    /// <exception cref="ExpressionException">Thrown if either operand is not an integer.</exception>
-    public static NumberValue BitwiseAnd(NumberValue a, NumberValue b)
+    /// <exception cref="ExpressionException">Thrown if either operand is not an integer.
+    /// </exception>
+    public static MathValue BitwiseAnd(MathValue a, MathValue b)
     {
         if (!a.TryGetInteger(out var intA) || !b.TryGetInteger(out var intB))
         {
@@ -381,14 +383,15 @@ public readonly struct NumberValue : IFormattable
                 EvaluationError.IntegerRequired, "Bitwise AND requires integer operands."));
         }
 
-        return new NumberValue(intA & intB);
+        return new MathValue(intA & intB);
     }
 
     /// <summary>
     /// Performs a bitwise OR on integer operands.
     /// </summary>
-    /// <exception cref="ExpressionException">Thrown if either operand is not an integer.</exception>
-    public static NumberValue BitwiseOr(NumberValue a, NumberValue b)
+    /// <exception cref="ExpressionException">Thrown if either operand is not an integer.
+    /// </exception>
+    public static MathValue BitwiseOr(MathValue a, MathValue b)
     {
         if (!a.TryGetInteger(out var intA) || !b.TryGetInteger(out var intB))
         {
@@ -396,14 +399,15 @@ public readonly struct NumberValue : IFormattable
                 EvaluationError.IntegerRequired, "Bitwise OR requires integer operands."));
         }
 
-        return new NumberValue(intA | intB);
+        return new MathValue(intA | intB);
     }
 
     /// <summary>
     /// Performs a bitwise XOR on integer operands.
     /// </summary>
-    /// <exception cref="ExpressionException">Thrown if either operand is not an integer.</exception>
-    public static NumberValue BitwiseXor(NumberValue a, NumberValue b)
+    /// <exception cref="ExpressionException">Thrown if either operand is not an integer.
+    /// </exception>
+    public static MathValue BitwiseXor(MathValue a, MathValue b)
     {
         if (!a.TryGetInteger(out var intA) || !b.TryGetInteger(out var intB))
         {
@@ -411,14 +415,15 @@ public readonly struct NumberValue : IFormattable
                 EvaluationError.IntegerRequired, "Bitwise XOR requires integer operands."));
         }
 
-        return new NumberValue(intA ^ intB);
+        return new MathValue(intA ^ intB);
     }
 
     /// <summary>
     /// Performs a bitwise one's complement (NOT) on an integer operand.
     /// </summary>
-    /// <exception cref="ExpressionException">Thrown if the operand is not an integer.</exception>
-    public static NumberValue BitwiseNot(NumberValue a)
+    /// <exception cref="ExpressionException">Thrown if the operand is not an integer.
+    /// </exception>
+    public static MathValue BitwiseNot(MathValue a)
     {
         if (!a.TryGetInteger(out var val))
         {
@@ -426,85 +431,85 @@ public readonly struct NumberValue : IFormattable
                 EvaluationError.IntegerRequired, "Bitwise NOT requires an integer operand."));
         }
 
-        return new NumberValue(~val);
+        return new MathValue(~val);
     }
 
     /// <summary>
-    /// Compares two values for equality using <see cref="Compare(NumberValue, NumberValue)"/>.
+    /// Compares two values for equality using <see cref="Compare(MathValue, MathValue)"/>.
     /// Returns 1m if equal, or 0m if unequal.
     /// </summary>
-    public static NumberValue AreEqual(NumberValue a, NumberValue b) =>
-        Compare(a, b) == 0 ? new NumberValue(1m) : new NumberValue(0m);
+    public static MathValue AreEqual(MathValue a, MathValue b) =>
+        Compare(a, b) == 0 ? new MathValue(1m) : new MathValue(0m);
 
     /// <summary>
-    /// Compares two values for inequality using <see cref="Compare(NumberValue, NumberValue)"/>.
+    /// Compares two values for inequality using <see cref="Compare(MathValue, MathValue)"/>.
     /// Returns 1m if unequal, or 0m if equal.
     /// </summary>
-    public static NumberValue AreNotEqual(NumberValue a, NumberValue b) =>
-        Compare(a, b) != 0 ? new NumberValue(1m) : new NumberValue(0m);
+    public static MathValue AreNotEqual(MathValue a, MathValue b) =>
+        Compare(a, b) != 0 ? new MathValue(1m) : new MathValue(0m);
 
     /// <summary>
     /// Compares if the left operand is strictly less than the right operand using
-    /// <see cref="Compare(NumberValue, NumberValue)"/>.
+    /// <see cref="Compare(MathValue, MathValue)"/>.
     /// Returns 1m if less, or 0m otherwise.
     /// </summary>
-    public static NumberValue LessThan(NumberValue a, NumberValue b) =>
-        Compare(a, b) < 0 ? new NumberValue(1m) : new NumberValue(0m);
+    public static MathValue LessThan(MathValue a, MathValue b) =>
+        Compare(a, b) < 0 ? new MathValue(1m) : new MathValue(0m);
 
     /// <summary>
     /// Compares if the left operand is less than or equal to the right operand using
-    /// <see cref="Compare(NumberValue, NumberValue)"/>.
+    /// <see cref="Compare(MathValue, MathValue)"/>.
     /// Returns 1m if less than or equal, or 0m otherwise.
     /// </summary>
-    public static NumberValue LessThanOrEqual(NumberValue a, NumberValue b) =>
-        Compare(a, b) <= 0 ? new NumberValue(1m) : new NumberValue(0m);
+    public static MathValue LessThanOrEqual(MathValue a, MathValue b) =>
+        Compare(a, b) <= 0 ? new MathValue(1m) : new MathValue(0m);
 
     /// <summary>
     /// Compares if the left operand is strictly greater than the right operand using
-    /// <see cref="Compare(NumberValue, NumberValue)"/>.
+    /// <see cref="Compare(MathValue, MathValue)"/>.
     /// Returns 1m if greater, or 0m otherwise.
     /// </summary>
-    public static NumberValue GreaterThan(NumberValue a, NumberValue b) =>
-        Compare(a, b) > 0 ? new NumberValue(1m) : new NumberValue(0m);
+    public static MathValue GreaterThan(MathValue a, MathValue b) =>
+        Compare(a, b) > 0 ? new MathValue(1m) : new MathValue(0m);
 
     /// <summary>
     /// Compares if the left operand is greater than or equal to the right operand using
-    /// <see cref="Compare(NumberValue, NumberValue)"/>.
+    /// <see cref="Compare(MathValue, MathValue)"/>.
     /// Returns 1m if greater than or equal, or 0m otherwise.
     /// </summary>
-    public static NumberValue GreaterThanOrEqual(NumberValue a, NumberValue b) =>
-        Compare(a, b) >= 0 ? new NumberValue(1m) : new NumberValue(0m);
+    public static MathValue GreaterThanOrEqual(MathValue a, MathValue b) =>
+        Compare(a, b) >= 0 ? new MathValue(1m) : new MathValue(0m);
 
     /// <summary>
     /// Adds two values, using exact integer arithmetic when both operands are integers,
     /// decimal arithmetic for fixed-precision fractions, or promoting to double when
     /// either operand is floating-point or on decimal overflow.
     /// </summary>
-    public static NumberValue operator +(NumberValue a, NumberValue b)
+    public static MathValue operator +(MathValue a, MathValue b)
     {
         // If either value is a double, the entire operation is promoted to double.
         if (a.Type is DataType.Double || b.Type is DataType.Double)
         {
-            return new NumberValue(a.AsDouble() + b.AsDouble());
+            return new MathValue(a.AsDouble() + b.AsDouble());
         }
 
         // If both values are integers, perform exact integer addition.
         if (a.Type is DataType.Integer && b.Type is DataType.Integer)
         {
-            return new NumberValue(a.IntVal + b.IntVal);
+            return new MathValue(a.IntVal + b.IntVal);
         }
 
         // Prefer decimal for mixed integer/decimal or pure decimal arithmetic. This can
         // round to fit decimal precision; conversion or arithmetic overflow uses double.
         try
         {
-            var decA = a.Type is DataType.Integer ? (decimal)a.IntVal : a.DecVal;
-            var decB = b.Type is DataType.Integer ? (decimal)b.IntVal : b.DecVal;
-            return new NumberValue(decA + decB);
+            decimal decA = a.Type is DataType.Integer ? (decimal)a.IntVal : a.DecVal;
+            decimal decB = b.Type is DataType.Integer ? (decimal)b.IntVal : b.DecVal;
+            return new MathValue(decA + decB);
         }
         catch (OverflowException)
         {
-            return new NumberValue(a.AsDouble() + b.AsDouble());
+            return new MathValue(a.AsDouble() + b.AsDouble());
         }
     }
 
@@ -513,27 +518,27 @@ public readonly struct NumberValue : IFormattable
     /// arithmetic or decimal fractions where possible, and falling back to double if
     /// either operand is floating-point or on decimal overflow.
     /// </summary>
-    public static NumberValue operator -(NumberValue a, NumberValue b)
+    public static MathValue operator -(MathValue a, MathValue b)
     {
         if (a.Type is DataType.Double || b.Type is DataType.Double)
         {
-            return new NumberValue(a.AsDouble() - b.AsDouble());
+            return new MathValue(a.AsDouble() - b.AsDouble());
         }
 
         if (a.Type is DataType.Integer && b.Type is DataType.Integer)
         {
-            return new NumberValue(a.IntVal - b.IntVal);
+            return new MathValue(a.IntVal - b.IntVal);
         }
 
         try
         {
-            var decA = a.Type is DataType.Integer ? (decimal)a.IntVal : a.DecVal;
-            var decB = b.Type is DataType.Integer ? (decimal)b.IntVal : b.DecVal;
-            return new NumberValue(decA - decB);
+            decimal decA = a.Type is DataType.Integer ? (decimal)a.IntVal : a.DecVal;
+            decimal decB = b.Type is DataType.Integer ? (decimal)b.IntVal : b.DecVal;
+            return new MathValue(decA - decB);
         }
         catch (OverflowException)
         {
-            return new NumberValue(a.AsDouble() - b.AsDouble());
+            return new MathValue(a.AsDouble() - b.AsDouble());
         }
     }
 
@@ -542,27 +547,27 @@ public readonly struct NumberValue : IFormattable
     /// where possible, and falling back to double if either operand is floating-point or
     /// on decimal overflow.
     /// </summary>
-    public static NumberValue operator *(NumberValue a, NumberValue b)
+    public static MathValue operator *(MathValue a, MathValue b)
     {
         if (a.Type is DataType.Double || b.Type is DataType.Double)
         {
-            return new NumberValue(a.AsDouble() * b.AsDouble());
+            return new MathValue(a.AsDouble() * b.AsDouble());
         }
 
         if (a.Type is DataType.Integer && b.Type is DataType.Integer)
         {
-            return new NumberValue(a.IntVal * b.IntVal);
+            return new MathValue(a.IntVal * b.IntVal);
         }
 
         try
         {
-            var decA = a.Type is DataType.Integer ? (decimal)a.IntVal : a.DecVal;
-            var decB = b.Type is DataType.Integer ? (decimal)b.IntVal : b.DecVal;
-            return new NumberValue(decA * decB);
+            decimal decA = a.Type is DataType.Integer ? (decimal)a.IntVal : a.DecVal;
+            decimal decB = b.Type is DataType.Integer ? (decimal)b.IntVal : b.DecVal;
+            return new MathValue(decA * decB);
         }
         catch (OverflowException)
         {
-            return new NumberValue(a.AsDouble() * b.AsDouble());
+            return new MathValue(a.AsDouble() * b.AsDouble());
         }
     }
 
@@ -573,7 +578,7 @@ public readonly struct NumberValue : IFormattable
     /// </summary>
     /// <exception cref="DivideByZeroException">Thrown when the denominator evaluates to
     /// zero.</exception>
-    public static NumberValue operator /(NumberValue a, NumberValue b)
+    public static MathValue operator /(MathValue a, MathValue b)
     {
         if (b.IsZero)
         {
@@ -582,7 +587,7 @@ public readonly struct NumberValue : IFormattable
 
         if (a.Type is DataType.Double || b.Type is DataType.Double)
         {
-            return new NumberValue(DivideAsDouble(a, b));
+            return new MathValue(DivideAsDouble(a, b));
         }
 
         if (a.Type is DataType.Integer &&
@@ -591,18 +596,18 @@ public readonly struct NumberValue : IFormattable
         {
             // Preserve an exact integer quotient; fractional quotients use the decimal
             // path below, which can round even when it does not overflow.
-            return new NumberValue(a.IntVal / b.IntVal);
+            return new MathValue(a.IntVal / b.IntVal);
         }
 
         try
         {
-            var decA = a.Type is DataType.Integer ? (decimal)a.IntVal : a.DecVal;
-            var decB = b.Type is DataType.Integer ? (decimal)b.IntVal : b.DecVal;
-            return new NumberValue(decA / decB);
+            decimal decA = a.Type is DataType.Integer ? (decimal)a.IntVal : a.DecVal;
+            decimal decB = b.Type is DataType.Integer ? (decimal)b.IntVal : b.DecVal;
+            return new MathValue(decA / decB);
         }
         catch (OverflowException)
         {
-            return new NumberValue(DivideAsDouble(a, b));
+            return new MathValue(DivideAsDouble(a, b));
         }
     }
 
@@ -613,7 +618,7 @@ public readonly struct NumberValue : IFormattable
     /// </summary>
     /// <exception cref="DivideByZeroException">Thrown when the denominator evaluates to
     /// zero.</exception>
-    public static NumberValue operator %(NumberValue a, NumberValue b)
+    public static MathValue operator %(MathValue a, MathValue b)
     {
         if (b.IsZero)
         {
@@ -622,23 +627,23 @@ public readonly struct NumberValue : IFormattable
 
         if (a.Type is DataType.Double || b.Type is DataType.Double)
         {
-            return new NumberValue(a.AsDouble() % b.AsDouble());
+            return new MathValue(a.AsDouble() % b.AsDouble());
         }
 
         if (a.Type is DataType.Integer && b.Type is DataType.Integer)
         {
-            return new NumberValue(a.IntVal % b.IntVal);
+            return new MathValue(a.IntVal % b.IntVal);
         }
 
         try
         {
-            var decA = a.Type is DataType.Integer ? (decimal)a.IntVal : a.DecVal;
-            var decB = b.Type is DataType.Integer ? (decimal)b.IntVal : b.DecVal;
-            return new NumberValue(decA % decB);
+            decimal decA = a.Type is DataType.Integer ? (decimal)a.IntVal : a.DecVal;
+            decimal decB = b.Type is DataType.Integer ? (decimal)b.IntVal : b.DecVal;
+            return new MathValue(decA % decB);
         }
         catch (OverflowException)
         {
-            return new NumberValue(a.AsDouble() % b.AsDouble());
+            return new MathValue(a.AsDouble() % b.AsDouble());
         }
     }
 
@@ -653,7 +658,7 @@ public readonly struct NumberValue : IFormattable
     /// power.</exception>
     /// <exception cref="ExpressionException">Thrown if a negative base is raised to a
     /// fractional power.</exception>
-    public static NumberValue Pow(NumberValue baseVal, NumberValue expVal)
+    public static MathValue Pow(MathValue baseVal, MathValue expVal)
     {
         var hasIntExp = expVal.TryGetInteger(out var exponent);
         if (hasIntExp)
@@ -675,14 +680,14 @@ public readonly struct NumberValue : IFormattable
                     throw new CalculationLimitException();
                 }
 
-                return new NumberValue(BigInteger.Pow(baseVal.IntVal, (int)exponent));
+                return new MathValue(BigInteger.Pow(baseVal.IntVal, (int)exponent));
             }
 
             if (baseVal.Type is DataType.Decimal && exponent >= BigInteger.Zero)
             {
                 try
                 {
-                    return new NumberValue(DecimalPow(baseVal.DecVal, (int)exponent));
+                    return new MathValue(DecimalPow(baseVal.DecVal, (int)exponent));
                 }
                 catch (OverflowException)
                 {
@@ -691,8 +696,8 @@ public readonly struct NumberValue : IFormattable
             }
         }
 
-        var b = baseVal.AsDouble();
-        var e = expVal.AsDouble();
+        double b = baseVal.AsDouble();
+        double e = expVal.AsDouble();
 
         // 0 raised to a negative power represents division by zero: 0^-n = 1 / 0^n.
         if (baseVal.IsZero && e < 0.0)
@@ -708,16 +713,16 @@ public readonly struct NumberValue : IFormattable
                 EvaluationError.UndefinedMathResult, "Negative base with a fractional exponent has no real solution."));
         }
 
-        return new NumberValue(Math.Pow(b, e));
+        return new MathValue(Math.Pow(b, e));
     }
 
     private static decimal DecimalPow(decimal baseVal, int exponent)
     {
         // Exponentiation by squaring to preserve decimal precision without precision
         // loss.
-        var result = 1m;
-        var b = baseVal;
-        var e = exponent;
+        decimal result = 1m;
+        decimal b = baseVal;
+        int e = exponent;
 
         while (e > 0)
         {
@@ -749,14 +754,14 @@ public readonly struct NumberValue : IFormattable
             coefficient = -coefficient;
         }
 
-        var scale = (bits[3] >> 16) & 0xff;
+        int scale = (bits[3] >> 16) & 0xff;
 
         // A decimal is coefficient / 10^scale. Multiplying the integer by 10^scale
         // puts both sides on the same exact integer scale without division or rounding.
         return (integer * BigInteger.Pow(10, scale)).CompareTo(coefficient);
     }
 
-    private static int CompareDoubleAndExact(NumberValue exact, double dbl)
+    private static int CompareDoubleAndExact(MathValue exact, double dbl)
     {
         if (double.IsNaN(dbl))
         {
@@ -779,7 +784,7 @@ public readonly struct NumberValue : IFormattable
         if (exact.Type is DataType.Integer)
         {
             var integer = exact.IntVal;
-            var bitLength = integer.GetBitLength();
+            long bitLength = integer.GetBitLength();
 
             // Double.MaxValue has an exponent of 1023, so any integer with 1025+ bits
             // exceeds Double.MaxValue in magnitude and cannot be compared via (double)int.
@@ -788,7 +793,7 @@ public readonly struct NumberValue : IFormattable
                 return integer.Sign > 0 ? 1 : -1;
             }
 
-            var dblExact = (double)integer;
+            double dblExact = (double)integer;
             if (dblExact == dbl)
             {
                 return 0;
@@ -797,8 +802,8 @@ public readonly struct NumberValue : IFormattable
             return dblExact.CompareTo(dbl);
         }
 
-        // For Decimal vs finite double
-        var dblDec = (double)exact.DecVal;
+        // For Decimal vs finite double.
+        double dblDec = (double)exact.DecVal;
         if (dblDec == dbl)
         {
             return 0;
@@ -807,12 +812,12 @@ public readonly struct NumberValue : IFormattable
         return dblDec.CompareTo(dbl);
     }
 
-    private static double DivideAsDouble(NumberValue a, NumberValue b)
+    private static double DivideAsDouble(MathValue a, MathValue b)
     {
         // Convert bounded mantissas instead of entire integers to avoid infinity/infinity
         // when a very large numerator and denominator have a finite quotient.
-        var numerator = a.AsDoubleMantissa(out var numeratorExponent);
-        var denominator = b.AsDoubleMantissa(out var denominatorExponent);
+        double numerator = a.AsDoubleMantissa(out int numeratorExponent);
+        double denominator = b.AsDoubleMantissa(out int denominatorExponent);
         return Math.ScaleB(numerator / denominator, numeratorExponent - denominatorExponent);
     }
 
@@ -830,7 +835,7 @@ public readonly struct NumberValue : IFormattable
         // their scale separately. Discarded low bits are truncated, so this is
         // approximate.
         exponent = (int)Math.Max(0, magnitude.GetBitLength() - 53);
-        var mantissa = (double)(magnitude >> exponent);
+        double mantissa = (double)(magnitude >> exponent);
         return IntVal.Sign < 0 ? -mantissa : mantissa;
     }
 }

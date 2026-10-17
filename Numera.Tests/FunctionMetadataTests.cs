@@ -192,6 +192,34 @@ public sealed class FunctionMetadataTests
         // "modulo" -> mod.
         var modResults = Functions.Search("modulo").ToList();
         Assert.Contains(r => r.Name == "mod", modResults);
+
+        // "euler beta" -> beta.
+        var betaResults = Functions.Search("euler beta").ToList();
+        Assert.Contains(r => r.Name == "beta", betaResults);
+
+        // "riemann" -> zeta.
+        var zetaResults = Functions.Search("riemann").ToList();
+        Assert.Contains(r => r.Name == "zeta", zetaResults);
+
+        // "hcf" or "greatest common divisor" -> gcd.
+        var gcdResults = Functions.Search("hcf").ToList();
+        Assert.Contains(r => r.Name == "gcd", gcdResults);
+
+        // "lcm" -> lcm.
+        var lcmResults = Functions.Search("lowest common multiple").ToList();
+        Assert.Contains(r => r.Name == "lcm", lcmResults);
+
+        // "pascal" or "combinations" -> comb.
+        var combResults = Functions.Search("pascal").ToList();
+        Assert.Contains(r => r.Name == "comb", combResults);
+
+        // "arrangements" -> perm.
+        var permResults = Functions.Search("arrangements").ToList();
+        Assert.Contains(r => r.Name == "perm", permResults);
+
+        // "primality" -> isprime.
+        var primeResults = Functions.Search("primality").ToList();
+        Assert.Contains(r => r.Name == "isprime", primeResults);
     }
 
     [TestMethod]

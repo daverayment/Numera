@@ -230,7 +230,7 @@ internal static class FunctionCatalog
 
         return
         [
-            // Trigonometry
+            // Trigonometry.
             new FunctionInfo(
                 Name: "sin",
                 CanonicalName: "sin",
@@ -348,7 +348,7 @@ internal static class FunctionCatalog
                 Aliases: [],
                 Keywords: ["inverse cosecant", "arc cosecant"]),
 
-            // Hyperbolic
+            // Hyperbolic.
             new FunctionInfo(
                 Name: "sinh",
                 CanonicalName: "sinh",
@@ -457,7 +457,7 @@ internal static class FunctionCatalog
                 Aliases: [],
                 Keywords: ["inverse hyperbolic cosecant"]),
 
-            // Angle Conversion
+            // Angle Conversion.
             new FunctionInfo(
                 Name: "deg2rad",
                 CanonicalName: "deg2rad",
@@ -512,7 +512,7 @@ internal static class FunctionCatalog
                 Aliases: [],
                 Keywords: ["gradians", "degrees", "convert"]),
 
-            // Exponentials and Logarithms
+            // Exponentials and Logarithms.
             new FunctionInfo(
                 Name: "exp",
                 CanonicalName: "exp",
@@ -612,7 +612,7 @@ internal static class FunctionCatalog
                 Aliases: [],
                 Keywords: ["nth root", "radical", "degree"]),
 
-            // Arithmetic and Rounding
+            // Arithmetic and Rounding.
             new FunctionInfo(
                 Name: "abs",
                 CanonicalName: "abs",
@@ -712,7 +712,7 @@ internal static class FunctionCatalog
                 Aliases: [],
                 Keywords: ["hypotenuse", "pythagoras", "euclidean", "distance", "norm"]),
 
-            // Combinatorics and Number Theory
+            // Combinatorics and Number Theory.
             new FunctionInfo(
                 Name: "factorial",
                 CanonicalName: "factorial",
@@ -722,7 +722,52 @@ internal static class FunctionCatalog
                 Aliases: [],
                 Keywords: ["factorial", "gamma", "permutations", "n!"]),
 
-            // Statistical and Aggregation
+            new FunctionInfo(
+                Name: "gcd",
+                CanonicalName: "gcd",
+                Category: FunctionCategory.CombinatoricsAndNumberTheory,
+                Signature: new FunctionSignature(1, null, [new ParameterInfo("values", IsVariadic: true)]),
+                Description: "Computes the greatest common divisor of one or more integers.",
+                Aliases: [],
+                Keywords: ["gcd", "greatest common divisor", "hcf", "highest common factor", "divisors"]),
+
+            new FunctionInfo(
+                Name: "lcm",
+                CanonicalName: "lcm",
+                Category: FunctionCategory.CombinatoricsAndNumberTheory,
+                Signature: new FunctionSignature(1, null, [new ParameterInfo("values", IsVariadic: true)]),
+                Description: "Computes the least common multiple of one or more integers.",
+                Aliases: [],
+                Keywords: ["lcm", "least common multiple", "lowest common multiple", "multiples"]),
+
+            new FunctionInfo(
+                Name: "comb",
+                CanonicalName: "comb",
+                Category: FunctionCategory.CombinatoricsAndNumberTheory,
+                Signature: Sig2("n", "k"),
+                Description: "Computes the number of combinations (n choose k).",
+                Aliases: ["ncr", "choose", "binomial"],
+                Keywords: ["combinations", "choose", "ncr", "binomial", "pascal", "combinatorics"]),
+
+            new FunctionInfo(
+                Name: "perm",
+                CanonicalName: "perm",
+                Category: FunctionCategory.CombinatoricsAndNumberTheory,
+                Signature: Sig2("n", "k"),
+                Description: "Computes the number of permutations (nPr).",
+                Aliases: ["npr"],
+                Keywords: ["permutations", "npr", "arrangements", "combinatorics", "order"]),
+
+            new FunctionInfo(
+                Name: "isprime",
+                CanonicalName: "isprime",
+                Category: FunctionCategory.CombinatoricsAndNumberTheory,
+                Signature: Sig1("n"),
+                Description: "Tests whether an integer is prime (returns 1 for prime, 0 otherwise).",
+                Aliases: [],
+                Keywords: ["prime", "primality", "isprime", "number theory", "factors"]),
+
+            // Statistical and Aggregation.
             new FunctionInfo(
                 Name: "min",
                 CanonicalName: "min",
@@ -768,7 +813,7 @@ internal static class FunctionCatalog
                 Aliases: [],
                 Keywords: ["product", "multiply", "pi product"]),
 
-            // Bitwise
+            // Bitwise.
             new FunctionInfo(
                 Name: "shl",
                 CanonicalName: "shl",
@@ -823,7 +868,7 @@ internal static class FunctionCatalog
                 Aliases: [],
                 Keywords: ["bitwise not", "complement", "~", "invert"]),
 
-            // Special and Probability
+            // Special and Probability.
             new FunctionInfo(
                 Name: "erf",
                 CanonicalName: "erf",
@@ -860,7 +905,43 @@ internal static class FunctionCatalog
                 Aliases: [],
                 Keywords: ["cardinal sine", "sampling", "fourier", "signal"]),
 
-            // Random
+            new FunctionInfo(
+                Name: "gamma",
+                CanonicalName: "gamma",
+                Category: FunctionCategory.SpecialAndProbability,
+                Signature: Sig1("x"),
+                Description: "Computes the complete Euler Gamma function Gamma(x).",
+                Aliases: [],
+                Keywords: ["gamma", "factorial", "euler", "special"]),
+
+            new FunctionInfo(
+                Name: "lgamma",
+                CanonicalName: "lgamma",
+                Category: FunctionCategory.SpecialAndProbability,
+                Signature: Sig1("x"),
+                Description: "Computes the natural logarithm of the absolute value of the Gamma function, ln(|Gamma(x)|).",
+                Aliases: [],
+                Keywords: ["log gamma", "log-gamma", "lgamma", "gammaln", "logarithm"]),
+
+            new FunctionInfo(
+                Name: "beta",
+                CanonicalName: "beta",
+                Category: FunctionCategory.SpecialAndProbability,
+                Signature: Sig2("a", "b"),
+                Description: "Computes the Euler Beta function B(a, b).",
+                Aliases: [],
+                Keywords: ["beta", "euler beta", "special", "integral"]),
+
+            new FunctionInfo(
+                Name: "zeta",
+                CanonicalName: "zeta",
+                Category: FunctionCategory.SpecialAndProbability,
+                Signature: Sig1("s"),
+                Description: "Computes the Riemann zeta function zeta(s).",
+                Aliases: [],
+                Keywords: ["zeta", "riemann", "riemann zeta", "dirichlet"]),
+
+            // Random.
             new FunctionInfo(
                 Name: "rand",
                 CanonicalName: "rand",

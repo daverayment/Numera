@@ -8,7 +8,7 @@ public class LanguageTests
 {
     [TestMethod]
     [DataRow("8+3*7", 29)]
-    [DataRow("[8+3]*7", 77)]
+    [DataRow("(8+3)*7", 77)]
     [DataRow("3^2^3", 6561)]
     [DataRow("-3^2", -9)]
     [DataRow("(-3)^2", 9)]
@@ -137,18 +137,23 @@ public class LanguageTests
     }
 
     [TestMethod]
-    public void BracketPairingsMustMatch()
+    public void ParenthesesGroupExpressionsAndSquareBracketsAndSemicolonsAreReserved()
     {
-        // Matching parentheses and brackets are valid
+        // Parentheses group as expected.
         Assert.AreEqual(new BigInteger(6), Calculator.Evaluate("(1+2)*2").IntVal);
-        Assert.AreEqual(new BigInteger(6), Calculator.Evaluate("[1+2]*2").IntVal);
 
-        // Mismatched bracket types fail
-        Assert.IsFalse(Calculator.TryEvaluate("(1+2]", out _, out var diag1));
-        Assert.AreEqual(EvaluationError.InvalidSyntax, diag1!.Code);
+        // Square brackets are rejected and reserved for future vector/matrix syntax.
+        Assert.IsFalse(Calculator.TryEvaluate("[1+2]*2", out _, out var bracketDiag));
+        Assert.AreEqual(EvaluationError.InvalidSyntax, bracketDiag!.Code);
+        Assert.IsTrue(bracketDiag.Message.Contains("reserved", StringComparison.OrdinalIgnoreCase));
 
-        Assert.IsFalse(Calculator.TryEvaluate("[1+2)", out _, out var diag2));
-        Assert.AreEqual(EvaluationError.InvalidSyntax, diag2!.Code);
+        Assert.IsFalse(Calculator.TryEvaluate("(1+2]", out _, out var mismatchedDiag));
+        Assert.AreEqual(EvaluationError.InvalidSyntax, mismatchedDiag!.Code);
+
+        // Semicolons are rejected and reserved for future matrix row separation.
+        Assert.IsFalse(Calculator.TryEvaluate("1;2", out _, out var semiDiag));
+        Assert.AreEqual(EvaluationError.InvalidSyntax, semiDiag!.Code);
+        Assert.IsTrue(semiDiag.Message.Contains("reserved", StringComparison.OrdinalIgnoreCase));
     }
 
     [TestMethod]

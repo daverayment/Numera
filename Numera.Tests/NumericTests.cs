@@ -12,7 +12,7 @@ public class NumericTests
         var magnitude = BigInteger.Pow(7, 180);
         var result = Calculator.Evaluate("7^180+19");
 
-        Assert.AreEqual(NumberValue.DataType.Integer, result.Type);
+        Assert.AreEqual(MathValue.DataType.Integer, result.Type);
         Assert.AreEqual(magnitude + 19, result.IntVal);
         Assert.AreEqual(magnitude, Calculator.Evaluate("(7^180*13)/13").IntVal);
     }
@@ -24,7 +24,7 @@ public class NumericTests
         var largest = Calculator.Evaluate("max(2^240,2^240+9,2^240+8)");
         var smallest = Calculator.Evaluate("min(2^240+9,2^240+8,2^240)");
 
-        Assert.AreEqual(NumberValue.DataType.Integer, largest.Type);
+        Assert.AreEqual(MathValue.DataType.Integer, largest.Type);
         Assert.AreEqual(magnitude + 9, largest.IntVal);
         Assert.AreEqual(magnitude, smallest.IntVal);
     }
@@ -38,7 +38,7 @@ public class NumericTests
     {
         var result = Calculator.Evaluate(expression);
 
-        Assert.AreEqual(NumberValue.DataType.Decimal, result.Type);
+        Assert.AreEqual(MathValue.DataType.Decimal, result.Type);
         Assert.AreEqual(decimal.Parse(expected, CultureInfo.InvariantCulture), result.DecVal);
     }
 
@@ -49,9 +49,9 @@ public class NumericTests
         var fraction = Calculator.Evaluate("min(3.75,4,3.5)");
         var singleton = Calculator.Evaluate("max(0.0000000000000000000000000007)");
 
-        Assert.AreEqual(NumberValue.DataType.Integer, integer.Type);
+        Assert.AreEqual(MathValue.DataType.Integer, integer.Type);
         Assert.AreEqual(new BigInteger(4), integer.IntVal);
-        Assert.AreEqual(NumberValue.DataType.Decimal, fraction.Type);
+        Assert.AreEqual(MathValue.DataType.Decimal, fraction.Type);
         Assert.AreEqual(3.5m, fraction.DecVal);
         Assert.AreEqual(0.0000000000000000000000000007m, singleton.DecVal);
     }
@@ -59,12 +59,12 @@ public class NumericTests
     [TestMethod]
     public void IntegerAndDecimalComparisonDoesNotRoundToBinaryDouble()
     {
-        var integer = new NumberValue(new BigInteger(1_000_000_000_000_000_001));
-        var fraction = new NumberValue(1_000_000_000_000_000_000.5m);
+        var integer = new MathValue(new BigInteger(1_000_000_000_000_000_001));
+        var fraction = new MathValue(1_000_000_000_000_000_000.5m);
 
-        Assert.IsGreaterThan(0, NumberValue.Compare(integer, fraction));
-        Assert.IsLessThan(0, NumberValue.Compare(fraction, integer));
-        Assert.IsLessThan(0, NumberValue.Compare(-integer, -fraction));
+        Assert.IsGreaterThan(0, MathValue.Compare(integer, fraction));
+        Assert.IsLessThan(0, MathValue.Compare(fraction, integer));
+        Assert.IsLessThan(0, MathValue.Compare(-integer, -fraction));
     }
 
     [TestMethod]
@@ -77,16 +77,16 @@ public class NumericTests
         }
 
         var result = Calculator.Evaluate("factorial(75)");
-        Assert.AreEqual(NumberValue.DataType.Integer, result.Type);
+        Assert.AreEqual(MathValue.DataType.Integer, result.Type);
         Assert.AreEqual(expected, result.IntVal);
     }
 
     [TestMethod]
     public void IntegerPolynomialIdentityHoldsAcrossSignedInputs()
     {
-        for (var x = -12; x <= 12; x++)
+        for (int x = -12; x <= 12; x++)
         {
-            var expression = $"(({x})+1)^2-({x})^2-2*({x})";
+            string expression = $"(({x})+1)^2-({x})^2-2*({x})";
             Assert.AreEqual(BigInteger.One, Calculator.Evaluate(expression).IntVal, expression);
         }
     }
@@ -121,7 +121,7 @@ public class NumericTests
     public void ApproximateFunctionsAgreeWithIndependentReferences(string expression, double expected, double tolerance)
     {
         var result = Calculator.Evaluate(expression);
-        Assert.AreEqual(NumberValue.DataType.Double, result.Type);
+        Assert.AreEqual(MathValue.DataType.Double, result.Type);
         Assert.AreEqual(expected, result.DblVal, tolerance);
     }
 
@@ -142,98 +142,98 @@ public class NumericTests
         // Each integer would overflow a direct double conversion, although their ratio
         // is near one. This checks scaled division, not recovery of the tiny difference.
         var result = Calculator.Evaluate("(2^2000+1)/(2^2000-1)");
-        Assert.AreEqual(NumberValue.DataType.Double, result.Type);
+        Assert.AreEqual(MathValue.DataType.Double, result.Type);
         Assert.AreEqual(1.0, result.DblVal, 2e-15);
     }
 
     [TestMethod]
     public void NonFiniteResultsRemainAvailableToConsumers()
     {
-        var nan = new NumberValue(double.NaN);
-        Assert.AreEqual(NumberValue.DataType.Double, nan.Type);
+        var nan = new MathValue(double.NaN);
+        Assert.AreEqual(MathValue.DataType.Double, nan.Type);
         Assert.IsTrue(nan.IsNaN);
         Assert.IsFalse(nan.IsFinite);
         Assert.IsTrue(double.IsNaN(nan.DblVal));
 
         var infinity = Calculator.Evaluate("exp(1000)");
-        Assert.AreEqual(NumberValue.DataType.Double, infinity.Type);
+        Assert.AreEqual(MathValue.DataType.Double, infinity.Type);
         Assert.IsFalse(infinity.IsNaN);
         Assert.IsFalse(infinity.IsFinite);
         Assert.IsTrue(double.IsPositiveInfinity(infinity.DblVal));
     }
 
     [TestMethod]
-    public void NumberValueFinitenessPropertiesReflectUnderlyingState()
+    public void MathValueFinitenessPropertiesReflectUnderlyingState()
     {
-        var integer = new NumberValue(new BigInteger(42));
+        var integer = new MathValue(new BigInteger(42));
         Assert.IsTrue(integer.IsFinite);
         Assert.IsFalse(integer.IsNaN);
 
-        var largeInteger = new NumberValue(BigInteger.Pow(10, 100));
+        var largeInteger = new MathValue(BigInteger.Pow(10, 100));
         Assert.IsTrue(largeInteger.IsFinite);
         Assert.IsFalse(largeInteger.IsNaN);
 
-        var dec = new NumberValue(123.456m);
+        var dec = new MathValue(123.456m);
         Assert.IsTrue(dec.IsFinite);
         Assert.IsFalse(dec.IsNaN);
 
-        var finiteDouble = new NumberValue(3.14159);
+        var finiteDouble = new MathValue(3.14159);
         Assert.IsTrue(finiteDouble.IsFinite);
         Assert.IsFalse(finiteDouble.IsNaN);
 
-        var nanDouble = new NumberValue(double.NaN);
+        var nanDouble = new MathValue(double.NaN);
         Assert.IsFalse(nanDouble.IsFinite);
         Assert.IsTrue(nanDouble.IsNaN);
 
-        var posInf = new NumberValue(double.PositiveInfinity);
+        var posInf = new MathValue(double.PositiveInfinity);
         Assert.IsFalse(posInf.IsFinite);
         Assert.IsFalse(posInf.IsNaN);
 
-        var negInf = new NumberValue(double.NegativeInfinity);
+        var negInf = new MathValue(double.NegativeInfinity);
         Assert.IsFalse(negInf.IsFinite);
         Assert.IsFalse(negInf.IsNaN);
     }
 
     [TestMethod]
-    public void NumberValueTryGetIntegerExtractsOnlyExactWholeNumbers()
+    public void MathValueTryGetIntegerExtractsOnlyExactWholeNumbers()
     {
-        var integer = new NumberValue(new BigInteger(100));
+        var integer = new MathValue(new BigInteger(100));
         Assert.IsTrue(integer.TryGetInteger(out var intOut));
         Assert.AreEqual(new BigInteger(100), intOut);
 
-        var wholeDec = new NumberValue(100.0m);
+        var wholeDec = new MathValue(100.0m);
         Assert.IsTrue(wholeDec.TryGetInteger(out var decWholeOut));
         Assert.AreEqual(new BigInteger(100), decWholeOut);
 
-        var fracDec = new NumberValue(100.25m);
+        var fracDec = new MathValue(100.25m);
         Assert.IsFalse(fracDec.TryGetInteger(out _));
 
-        var wholeDouble = new NumberValue(100.0);
+        var wholeDouble = new MathValue(100.0);
         Assert.IsTrue(wholeDouble.TryGetInteger(out var dblWholeOut));
         Assert.AreEqual(new BigInteger(100), dblWholeOut);
 
-        var fracDouble = new NumberValue(100.5);
+        var fracDouble = new MathValue(100.5);
         Assert.IsFalse(fracDouble.TryGetInteger(out _));
 
-        var nanDouble = new NumberValue(double.NaN);
+        var nanDouble = new MathValue(double.NaN);
         Assert.IsFalse(nanDouble.TryGetInteger(out _));
 
-        var infDouble = new NumberValue(double.PositiveInfinity);
+        var infDouble = new MathValue(double.PositiveInfinity);
         Assert.IsFalse(infDouble.TryGetInteger(out _));
     }
 
     [TestMethod]
-    [DataRow("100 + 0.5", NumberValue.DataType.Decimal, "100.5")]
-    [DataRow("100 - 0.25", NumberValue.DataType.Decimal, "99.75")]
-    [DataRow("5 * 1.5", NumberValue.DataType.Decimal, "7.5")]
-    [DataRow("10 / 2", NumberValue.DataType.Integer, "5")]
-    [DataRow("5 / 2", NumberValue.DataType.Decimal, "2.5")]
-    public void MixedIntegerAndDecimalArithmeticPreservesExactness(string expression, NumberValue.DataType expectedType, string expectedValue)
+    [DataRow("100 + 0.5", MathValue.DataType.Decimal, "100.5")]
+    [DataRow("100 - 0.25", MathValue.DataType.Decimal, "99.75")]
+    [DataRow("5 * 1.5", MathValue.DataType.Decimal, "7.5")]
+    [DataRow("10 / 2", MathValue.DataType.Integer, "5")]
+    [DataRow("5 / 2", MathValue.DataType.Decimal, "2.5")]
+    public void MixedIntegerAndDecimalArithmeticPreservesExactness(string expression, MathValue.DataType expectedType, string expectedValue)
     {
         var result = Calculator.Evaluate(expression);
         Assert.AreEqual(expectedType, result.Type);
 
-        if (expectedType == NumberValue.DataType.Integer)
+        if (expectedType == MathValue.DataType.Integer)
         {
             Assert.AreEqual(BigInteger.Parse(expectedValue, CultureInfo.InvariantCulture), result.IntVal);
         }
@@ -246,15 +246,16 @@ public class NumericTests
     [TestMethod]
     public void DecimalArithmeticOverflowFallsBackToDouble()
     {
-        // decimal.MaxValue is ~7.9228162514264337593543950335e28.
-        // Adding to it will overflow Decimal addition and should fall back gracefully to Double.
-        var overflowSum = Calculator.Evaluate("79228162514264337593543950335 + 1.5");
-        Assert.AreEqual(NumberValue.DataType.Double, overflowSum.Type);
+        // decimal.MaxValue is 79228162514264337593543950335.
+        // Adding to it will overflow Decimal addition and should fall back gracefully to
+        // Double.
+        var overflowSum = Calculator.Evaluate($"{decimal.MaxValue} + 1.5");
+        Assert.AreEqual(MathValue.DataType.Double, overflowSum.Type);
         Assert.IsTrue(overflowSum.IsFinite);
 
         // Multiplication overflow.
-        var overflowProd = Calculator.Evaluate("79228162514264337593543950335 * 2.0");
-        Assert.AreEqual(NumberValue.DataType.Double, overflowProd.Type);
+        var overflowProd = Calculator.Evaluate($"{decimal.MaxValue} * 2.0");
+        Assert.AreEqual(MathValue.DataType.Double, overflowProd.Type);
         Assert.IsTrue(overflowProd.IsFinite);
     }
 
@@ -265,47 +266,47 @@ public class NumericTests
         // It should fall back to double rather than silently becoming zero or triggering
         // division by zero.
         var underflowLiteral = Calculator.Evaluate("0.00000000000000000000000000001");
-        Assert.AreEqual(NumberValue.DataType.Double, underflowLiteral.Type);
+        Assert.AreEqual(MathValue.DataType.Double, underflowLiteral.Type);
         Assert.AreNotEqual(0.0, underflowLiteral.DblVal);
         Assert.AreEqual(1e-29, underflowLiteral.DblVal, 1e-35);
 
         // Division by an underflowing fraction must not trigger division by zero.
         var divisionResult = Calculator.Evaluate("1 / 0.00000000000000000000000000001");
-        Assert.AreEqual(NumberValue.DataType.Double, divisionResult.Type);
+        Assert.AreEqual(MathValue.DataType.Double, divisionResult.Type);
         Assert.IsTrue(divisionResult.IsFinite);
         Assert.AreEqual(1e29, divisionResult.DblVal, 1e20);
 
         // Genuine zero with a decimal point remains Decimal.
         var genuineZero = Calculator.Evaluate("0.00");
-        Assert.AreEqual(NumberValue.DataType.Decimal, genuineZero.Type);
+        Assert.AreEqual(MathValue.DataType.Decimal, genuineZero.Type);
         Assert.AreEqual(0m, genuineZero.DecVal);
     }
 
     [TestMethod]
-    [DataRow("sign(0)", NumberValue.DataType.Integer, "0")]
-    [DataRow("sign(-42)", NumberValue.DataType.Integer, "-1")]
-    [DataRow("sign(-42.5)", NumberValue.DataType.Decimal, "-1")]
-    [DataRow("abs(-12345678901234567890)", NumberValue.DataType.Integer, "12345678901234567890")]
-    [DataRow("abs(-12.34)", NumberValue.DataType.Decimal, "12.34")]
-    [DataRow("ceil(10)", NumberValue.DataType.Integer, "10")]
-    [DataRow("ceil(10.2)", NumberValue.DataType.Decimal, "11")]
-    [DataRow("floor(10.8)", NumberValue.DataType.Decimal, "10")]
-    [DataRow("round(2.5)", NumberValue.DataType.Decimal, "3")]
-    [DataRow("round(-2.5)", NumberValue.DataType.Decimal, "-3")]
-    [DataRow("round(2.55, 1)", NumberValue.DataType.Decimal, "2.6")]
-    [DataRow("round(-2.55, 1)", NumberValue.DataType.Decimal, "-2.6")]
-    [DataRow("round(3.14159, 2)", NumberValue.DataType.Decimal, "3.14")]
-    [DataRow("round(3.14159, 4)", NumberValue.DataType.Decimal, "3.1416")]
-    [DataRow("round(42, 2)", NumberValue.DataType.Integer, "42")]
-    [DataRow("round(2.5, 0)", NumberValue.DataType.Decimal, "3")]
-    [DataRow("round(1.0000000000000000000000000005, 28)", NumberValue.DataType.Decimal, "1.0000000000000000000000000005")]
-    [DataRow("factorial(0)", NumberValue.DataType.Integer, "1")]
-    public void SpecialMathFunctionsPreserveRepresentationAndExactValues(string expression, NumberValue.DataType expectedType, string expectedValue)
+    [DataRow("sign(0)", MathValue.DataType.Integer, "0")]
+    [DataRow("sign(-42)", MathValue.DataType.Integer, "-1")]
+    [DataRow("sign(-42.5)", MathValue.DataType.Decimal, "-1")]
+    [DataRow("abs(-12345678901234567890)", MathValue.DataType.Integer, "12345678901234567890")]
+    [DataRow("abs(-12.34)", MathValue.DataType.Decimal, "12.34")]
+    [DataRow("ceil(10)", MathValue.DataType.Integer, "10")]
+    [DataRow("ceil(10.2)", MathValue.DataType.Decimal, "11")]
+    [DataRow("floor(10.8)", MathValue.DataType.Decimal, "10")]
+    [DataRow("round(2.5)", MathValue.DataType.Decimal, "3")]
+    [DataRow("round(-2.5)", MathValue.DataType.Decimal, "-3")]
+    [DataRow("round(2.55, 1)", MathValue.DataType.Decimal, "2.6")]
+    [DataRow("round(-2.55, 1)", MathValue.DataType.Decimal, "-2.6")]
+    [DataRow("round(3.14159, 2)", MathValue.DataType.Decimal, "3.14")]
+    [DataRow("round(3.14159, 4)", MathValue.DataType.Decimal, "3.1416")]
+    [DataRow("round(42, 2)", MathValue.DataType.Integer, "42")]
+    [DataRow("round(2.5, 0)", MathValue.DataType.Decimal, "3")]
+    [DataRow("round(1.0000000000000000000000000005, 28)", MathValue.DataType.Decimal, "1.0000000000000000000000000005")]
+    [DataRow("factorial(0)", MathValue.DataType.Integer, "1")]
+    public void SpecialMathFunctionsPreserveRepresentationAndExactValues(string expression, MathValue.DataType expectedType, string expectedValue)
     {
         var result = Calculator.Evaluate(expression);
         Assert.AreEqual(expectedType, result.Type);
 
-        if (expectedType == NumberValue.DataType.Integer)
+        if (expectedType == MathValue.DataType.Integer)
         {
             Assert.AreEqual(BigInteger.Parse(expectedValue, CultureInfo.InvariantCulture), result.IntVal);
         }
@@ -364,16 +365,16 @@ public class NumericTests
     {
         // 15 decimal places is the maximum precision handled by double.Round
         var atLimit = Calculator.Evaluate("round(sqrt(2), 15)");
-        Assert.AreEqual(NumberValue.DataType.Double, atLimit.Type);
+        Assert.AreEqual(MathValue.DataType.Double, atLimit.Type);
         Assert.AreEqual(Math.Round(Math.Sqrt(2), 15, MidpointRounding.AwayFromZero), atLimit.DblVal);
 
         // Places 16..28 exceed double.Round's argument limit but are accepted within the general places ceiling (28)
         var beyondDouble = Calculator.Evaluate("round(sqrt(2), 16)");
-        Assert.AreEqual(NumberValue.DataType.Double, beyondDouble.Type);
+        Assert.AreEqual(MathValue.DataType.Double, beyondDouble.Type);
         Assert.AreEqual(Math.Sqrt(2), beyondDouble.DblVal);
 
         var atCeiling = Calculator.Evaluate("round(sqrt(2), 28)");
-        Assert.AreEqual(NumberValue.DataType.Double, atCeiling.Type);
+        Assert.AreEqual(MathValue.DataType.Double, atCeiling.Type);
         Assert.AreEqual(Math.Sqrt(2), atCeiling.DblVal);
     }
 
@@ -438,13 +439,13 @@ public class NumericTests
     public void SpecialFunctionsApproximateAccuratelyAcrossIntervals(string expression, double expected, double tolerance, string description)
     {
         var result = Calculator.Evaluate(expression);
-        Assert.AreEqual(NumberValue.DataType.Double, result.Type);
+        Assert.AreEqual(MathValue.DataType.Double, result.Type);
 
         // For values < 1.0 (such as tail erfc), evaluate relative error so that precision
         // is validated to double-precision machine epsilon across all magnitudes.
-        var absoluteError = Math.Abs(result.DblVal - expected);
-        var relativeError = expected == 0.0 ? absoluteError : absoluteError / Math.Abs(expected);
-        var effectiveError = Math.Min(absoluteError, relativeError);
+        double absoluteError = Math.Abs(result.DblVal - expected);
+        double relativeError = expected == 0.0 ? absoluteError : absoluteError / Math.Abs(expected);
+        double effectiveError = Math.Min(absoluteError, relativeError);
 
         Assert.IsLessThanOrEqualTo(tolerance, effectiveError,
             $"Failed for {description}: {expression}. Expected: {expected}, Actual: {result.DblVal}, Relative/Effective Error: {effectiveError}");
@@ -454,7 +455,7 @@ public class NumericTests
     public void NegativeOddRootYieldsRealResult()
     {
         var result = Calculator.Evaluate("root(-8, 3)");
-        Assert.AreEqual(NumberValue.DataType.Double, result.Type);
+        Assert.AreEqual(MathValue.DataType.Double, result.Type);
         Assert.AreEqual(-2.0, result.DblVal, 1e-15);
     }
 
@@ -474,39 +475,39 @@ public class NumericTests
     public void AvoidsClassicFloatingPointCancellationAndAbsorption(string expression, string expected)
     {
         var result = Calculator.Evaluate(expression);
-        Assert.AreEqual(expected, result.Type == NumberValue.DataType.Decimal
+        Assert.AreEqual(expected, result.Type == MathValue.DataType.Decimal
             ? result.DecVal.ToString(CultureInfo.InvariantCulture)
             : result.IntVal.ToString(CultureInfo.InvariantCulture));
     }
 
     [TestMethod]
-    public void NumberValueFormattableDirectToStringMatchesStandardBehavior()
+    public void MathValueFormattableDirectToStringMatchesStandardBehavior()
     {
         var originalCulture = CultureInfo.CurrentCulture;
         try
         {
             CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 
-            var intVal = new NumberValue(new BigInteger(1234567));
+            var intVal = new MathValue(new BigInteger(1234567));
             Assert.AreEqual("1234567", intVal.ToString());
             Assert.AreEqual("1,234,567", intVal.ToString("N0"));
             Assert.AreEqual("1234567", $"{intVal}");
 
-            var decVal = new NumberValue(1234.56m);
+            var decVal = new MathValue(1234.56m);
             Assert.AreEqual("1234.56", decVal.ToString());
             Assert.AreEqual("1234.6", decVal.ToString("F1"));
             Assert.AreEqual("1234.56", $"{decVal}");
 
             // Double defaults to G17 when format is empty/null
-            var dblVal = new NumberValue(1.0 / 3.0);
+            var dblVal = new MathValue(1.0 / 3.0);
             Assert.AreEqual((1.0 / 3.0).ToString("G17", CultureInfo.InvariantCulture), dblVal.ToString());
             Assert.AreEqual("0.33", dblVal.ToString("F2"));
             Assert.AreEqual((1.0 / 3.0).ToString("G17", CultureInfo.InvariantCulture), $"{dblVal}");
 
             // Special double values format accurately
-            var nanVal = new NumberValue(double.NaN);
+            var nanVal = new MathValue(double.NaN);
             Assert.AreEqual("NaN", nanVal.ToString());
-            var infVal = new NumberValue(double.PositiveInfinity);
+            var infVal = new MathValue(double.PositiveInfinity);
             Assert.AreEqual("Infinity", infVal.ToString());
         }
         finally
@@ -516,18 +517,18 @@ public class NumericTests
     }
 
     [TestMethod]
-    public void NumberValueFormattableRespectsSuppliedCulture()
+    public void MathValueFormattableRespectsSuppliedCulture()
     {
         var germanCulture = CultureInfo.GetCultureInfo("de-DE");
 
-        var decVal = new NumberValue(1234.56m);
+        var decVal = new MathValue(1234.56m);
         Assert.AreEqual("1234,56", decVal.ToString(null, germanCulture));
         Assert.AreEqual("1.234,56", decVal.ToString("N2", germanCulture));
 
-        var dblVal = new NumberValue(3.5);
+        var dblVal = new MathValue(3.5);
         Assert.AreEqual("3,5", dblVal.ToString(null, germanCulture));
 
-        var intVal = new NumberValue(new BigInteger(1000000));
+        var intVal = new MathValue(new BigInteger(1000000));
         Assert.AreEqual("1.000.000", intVal.ToString("N0", germanCulture));
     }
 
@@ -562,7 +563,7 @@ public class NumericTests
         var options = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
         var result = Calculator.Evaluate(expression, options);
 
-        Assert.AreEqual(NumberValue.DataType.Double, result.Type);
+        Assert.AreEqual(MathValue.DataType.Double, result.Type);
         Assert.AreEqual(expected, result.DblVal, 0.0);
     }
 
@@ -609,7 +610,7 @@ public class NumericTests
     public void TrigonometricFunctionsPreserveExactPrecisionWithRadAndGradHelpers(string expression, double expected)
     {
         var result = Calculator.Evaluate(expression);
-        Assert.AreEqual(NumberValue.DataType.Double, result.Type);
+        Assert.AreEqual(MathValue.DataType.Double, result.Type);
         Assert.AreEqual(expected, result.DblVal, 0.0);
     }
 
@@ -655,7 +656,7 @@ public class NumericTests
     public void NonDecimalLiteralsParseAsExactIntegers(string expression, string expected)
     {
         var result = Calculator.Evaluate(expression);
-        Assert.AreEqual(NumberValue.DataType.Integer, result.Type);
+        Assert.AreEqual(MathValue.DataType.Integer, result.Type);
         Assert.AreEqual(expected, result.IntVal.ToString(CultureInfo.InvariantCulture));
     }
 
@@ -670,9 +671,9 @@ public class NumericTests
         var result = Calculator.Evaluate(expression);
         var val = result.Type switch
         {
-            NumberValue.DataType.Decimal => (double)result.DecVal,
-            NumberValue.DataType.Double => result.DblVal,
-            NumberValue.DataType.Integer => (double)result.IntVal,
+            MathValue.DataType.Decimal => (double)result.DecVal,
+            MathValue.DataType.Double => result.DblVal,
+            MathValue.DataType.Integer => (double)result.IntVal,
             _ => throw new InvalidOperationException(),
         };
         Assert.AreEqual(expected, val, 1e-12);
@@ -742,7 +743,7 @@ public class NumericTests
     public void TruncAndFracPreserveRepresentationAndValues(string expression, string expected)
     {
         var result = Calculator.Evaluate(expression);
-        var str = result.Type == NumberValue.DataType.Integer
+        string? str = result.Type == MathValue.DataType.Integer
             ? result.IntVal.ToString(CultureInfo.InvariantCulture)
             : result.DecVal.ToString(CultureInfo.InvariantCulture);
         Assert.AreEqual(expected, str);
@@ -758,10 +759,10 @@ public class NumericTests
     public void MathUtilitiesEvaluateCorrectly(string expression, double expected)
     {
         var result = Calculator.Evaluate(expression);
-        var actual = result.Type switch
+        double actual = result.Type switch
         {
-            NumberValue.DataType.Decimal => (double)result.DecVal,
-            NumberValue.DataType.Integer => (double)result.IntVal,
+            MathValue.DataType.Decimal => (double)result.DecVal,
+            MathValue.DataType.Integer => (double)result.IntVal,
             _ => result.DblVal,
         };
         Assert.AreEqual(expected, actual, 1e-12);
@@ -786,10 +787,10 @@ public class NumericTests
     public void ClampAndAvgEvaluateCorrectly(string expression, string expected)
     {
         var result = Calculator.Evaluate(expression);
-        var str = result.Type switch
+        string? str = result.Type switch
         {
-            NumberValue.DataType.Integer => result.IntVal.ToString(CultureInfo.InvariantCulture),
-            NumberValue.DataType.Decimal => result.DecVal.ToString(CultureInfo.InvariantCulture),
+            MathValue.DataType.Integer => result.IntVal.ToString(CultureInfo.InvariantCulture),
+            MathValue.DataType.Decimal => result.DecVal.ToString(CultureInfo.InvariantCulture),
             _ => result.DblVal.ToString(CultureInfo.InvariantCulture),
         };
         Assert.AreEqual(expected, str);
@@ -831,7 +832,7 @@ public class NumericTests
     public void BitwiseOperationsEvaluateCorrectly(string expression, string expected)
     {
         var result = Calculator.Evaluate(expression);
-        Assert.AreEqual(NumberValue.DataType.Integer, result.Type);
+        Assert.AreEqual(MathValue.DataType.Integer, result.Type);
         Assert.AreEqual(expected, result.IntVal.ToString(CultureInfo.InvariantCulture));
     }
 
@@ -844,10 +845,10 @@ public class NumericTests
     public void BitwiseShiftPrecedenceIsCorrect(string expression, string expected)
     {
         var result = Calculator.Evaluate(expression);
-        var actual = result.Type switch
+        string actual = result.Type switch
         {
-            NumberValue.DataType.Integer => result.IntVal.ToString(CultureInfo.InvariantCulture),
-            NumberValue.DataType.Decimal => result.DecVal.ToString(CultureInfo.InvariantCulture),
+            MathValue.DataType.Integer => result.IntVal.ToString(CultureInfo.InvariantCulture),
+            MathValue.DataType.Decimal => result.DecVal.ToString(CultureInfo.InvariantCulture),
             _ => result.DblVal.ToString(CultureInfo.InvariantCulture),
         };
         Assert.AreEqual(expected, actual);
@@ -878,8 +879,7 @@ public class NumericTests
     [TestMethod]
     public void ShiftLeftEnforcesBitCeiling()
     {
-        // 1 << 16385 must exceed MaxIntegerBits (16384)
-        Assert.Throws<CalculationLimitException>(() => Calculator.Evaluate("1 << 16385"));
+        Assert.Throws<CalculationLimitException>(() => Calculator.Evaluate($"1 << {CalculationLimits.MaxIntegerBits + 1}"));
     }
 
     [TestMethod]
@@ -913,7 +913,7 @@ public class NumericTests
     public void RadiansModePreservesExactCardinalValuesForPiMultiples(string expression, double expected)
     {
         var result = Calculator.Evaluate(expression);
-        Assert.AreEqual(NumberValue.DataType.Double, result.Type);
+        Assert.AreEqual(MathValue.DataType.Double, result.Type);
         Assert.AreEqual(expected, result.DblVal, 0.0);
     }
 
@@ -990,7 +990,7 @@ public class NumericTests
     {
         var gradOptions = new EvaluationOptions { AngleUnit = AngleUnit.Gradians };
         var result = Calculator.Evaluate(expression, gradOptions);
-        Assert.AreEqual(NumberValue.DataType.Double, result.Type);
+        Assert.AreEqual(MathValue.DataType.Double, result.Type);
         Assert.AreEqual(expected, result.DblVal, 0.0);
     }
 
@@ -1111,11 +1111,11 @@ public class NumericTests
         // whereas expm1(x) and log1p(x) preserve full double precision.
         double x = 1e-5;
         var expm1Result = Calculator.Evaluate("expm1(1e-5)");
-        Assert.AreEqual(NumberValue.DataType.Double, expm1Result.Type);
+        Assert.AreEqual(MathValue.DataType.Double, expm1Result.Type);
         Assert.AreEqual(double.ExpM1(x), expm1Result.DblVal, 0.0);
 
         var log1pResult = Calculator.Evaluate("log1p(1e-5)");
-        Assert.AreEqual(NumberValue.DataType.Double, log1pResult.Type);
+        Assert.AreEqual(MathValue.DataType.Double, log1pResult.Type);
         Assert.AreEqual(double.LogP1(x), log1pResult.DblVal, 0.0);
 
         // At x = 0, expm1(0) == 0 and log1p(0) == 0 exactly.
@@ -1140,11 +1140,10 @@ public class NumericTests
     [TestMethod]
     public void ComparisonsObeyIeee754NanSemantics()
     {
-        var nan = new NumberValue(double.NaN);
-        var five = new NumberValue(5m);
+        var nan = new MathValue(double.NaN);
 
         // nan == nan -> false (0)
-        Assert.AreEqual(0m, NumberValue.Compare(nan, nan) == 0 ? 0m : 1m); // Compare total-orders, but parser comparison checks NaN
+        Assert.AreEqual(0m, MathValue.Compare(nan, nan) == 0 ? 0m : 1m); // Compare total-orders, but parser comparison checks NaN
         var eqExpr = Calculator.Evaluate("(0 * exp(1000)) == (0 * exp(1000))");
         Assert.AreEqual(0m, eqExpr.DecVal);
 
@@ -1246,22 +1245,22 @@ public class NumericTests
         // (1 + 0.05)^10 should evaluate as exact decimal arithmetic via exponentiation by
         // squaring.
         var result = Calculator.Evaluate("(1 + 0.05)^10");
-        Assert.AreEqual(NumberValue.DataType.Decimal, result.Type);
+        Assert.AreEqual(MathValue.DataType.Decimal, result.Type);
         Assert.AreEqual(1.62889462677744140625m, result.DecVal);
 
         // Power of zero gives exact 1m decimal.
         var zeroPow = Calculator.Evaluate("1.05^0");
-        Assert.AreEqual(NumberValue.DataType.Decimal, zeroPow.Type);
+        Assert.AreEqual(MathValue.DataType.Decimal, zeroPow.Type);
         Assert.AreEqual(1.0m, zeroPow.DecVal);
 
         // Negative exponent falls back to double.
         var negPow = Calculator.Evaluate("1.05^-2");
-        Assert.AreEqual(NumberValue.DataType.Double, negPow.Type);
+        Assert.AreEqual(MathValue.DataType.Double, negPow.Type);
         Assert.AreEqual(1.0 / (1.05 * 1.05), negPow.DblVal, 1e-15);
 
         // Overflow of decimal range falls back to double without throwing.
         var overflowPow = Calculator.Evaluate("100.5^200");
-        Assert.AreEqual(NumberValue.DataType.Double, overflowPow.Type);
+        Assert.AreEqual(MathValue.DataType.Double, overflowPow.Type);
         Assert.IsTrue(double.IsFinite(overflowPow.DblVal) || double.IsPositiveInfinity(overflowPow.DblVal));
     }
 
@@ -1277,5 +1276,147 @@ public class NumericTests
 
         var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("deg_to_rad(10)"));
         Assert.AreEqual(EvaluationError.UnknownFunction, ex.Diagnostic.Code);
+    }
+
+    [TestMethod]
+    [DataRow("gamma(1)", 1.0, 1e-14)]
+    [DataRow("gamma(2)", 1.0, 1e-14)]
+    [DataRow("gamma(3)", 2.0, 1e-14)]
+    [DataRow("gamma(4)", 6.0, 1e-14)]
+    [DataRow("gamma(5)", 24.0, 1e-14)]
+    [DataRow("gamma(6)", 120.0, 1e-14)]
+    [DataRow("gamma(0.5)", 1.7724538509055159, 1e-14)] // sqrt(pi)
+    [DataRow("gamma(1.5)", 0.886226925452758, 1e-14)]  // 0.5 * sqrt(pi)
+    [DataRow("gamma(2.5)", 1.329340388179137, 1e-14)]  // 1.5 * 0.5 * sqrt(pi)
+    [DataRow("gamma(-0.5)", -3.5449077018110318, 1e-14)] // -2 * sqrt(pi)
+    [DataRow("gamma(-1.5)", 2.3632718012073546, 1e-14)]  // (4/3) * sqrt(pi)
+    [DataRow("lgamma(1)", 0.0, 1e-14)]
+    [DataRow("lgamma(2)", 0.0, 1e-14)]
+    [DataRow("lgamma(3)", 0.6931471805599453, 1e-14)]  // ln(2)
+    [DataRow("lgamma(4)", 1.791759469228055, 1e-14)]   // ln(6)
+    [DataRow("lgamma(5)", 3.1780538303479458, 1e-14)]  // ln(24)
+    [DataRow("lgamma(0.5)", 0.57236494292470009, 1e-14)] // ln(sqrt(pi))
+    [DataRow("beta(1, 1)", 1.0, 1e-14)]
+    [DataRow("beta(2, 3)", 0.08333333333333333, 1e-14)] // 1/12
+    [DataRow("beta(0.5, 0.5)", 3.141592653589793, 1e-14)] // pi
+    [DataRow("zeta(2)", 1.6449340668482264, 1e-14)]    // pi^2 / 6
+    [DataRow("zeta(4)", 1.0823232337111382, 1e-14)]    // pi^4 / 90
+    [DataRow("zeta(3)", 1.2020569031595942, 1e-14)]    // Apéry's constant
+    [DataRow("zeta(0)", -0.5, 1e-14)]
+    [DataRow("zeta(-1)", -0.08333333333333333, 1e-14)]  // -1/12
+    [DataRow("zeta(-2)", 0.0, 1e-14)]                   // trivial zero
+    [DataRow("zeta(-3)", 0.008333333333333333, 1e-14)]  // 1/120
+    [DataRow("zeta(-4)", 0.0, 1e-14)]                   // trivial zero
+    public void SpecialFunctionsGammaBetaZetaEvaluateAccurately(string expression, double expected, double tolerance)
+    {
+        var result = Calculator.Evaluate(expression);
+        Assert.AreEqual(MathValue.DataType.Double, result.Type);
+        Assert.AreEqual(expected, result.DblVal, tolerance);
+    }
+
+    [TestMethod]
+    [DataRow("gamma(0)", EvaluationError.UndefinedMathResult)]
+    [DataRow("gamma(-1)", EvaluationError.UndefinedMathResult)]
+    [DataRow("gamma(-2)", EvaluationError.UndefinedMathResult)]
+    [DataRow("lgamma(0)", EvaluationError.UndefinedMathResult)]
+    [DataRow("lgamma(-1)", EvaluationError.UndefinedMathResult)]
+    [DataRow("beta(0, 1)", EvaluationError.UndefinedMathResult)]
+    [DataRow("beta(-1, 2)", EvaluationError.UndefinedMathResult)]
+    [DataRow("zeta(1)", EvaluationError.UndefinedMathResult)]
+    public void SpecialFunctionsSingularitiesReportUndefinedMathResult(string expression, EvaluationError expectedError)
+    {
+        Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic));
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(expectedError, diagnostic.Code);
+
+        var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate(expression));
+        Assert.AreEqual(expectedError, ex.Diagnostic.Code);
+    }
+
+    [TestMethod]
+    [DataRow("gcd(12, 18)", "6")]
+    [DataRow("gcd(12, 18, 24)", "6")]
+    [DataRow("gcd(54, 24)", "6")]
+    [DataRow("gcd(7)", "7")]
+    [DataRow("gcd(0, 5)", "5")]
+    [DataRow("gcd(0, 0)", "0")]
+    [DataRow("gcd(-12, 18)", "6")]
+    [DataRow("gcd(-12, -18)", "6")]
+    [DataRow("lcm(4, 6)", "12")]
+    [DataRow("lcm(4, 6, 8)", "24")]
+    [DataRow("lcm(7)", "7")]
+    [DataRow("lcm(0, 5)", "0")]
+    [DataRow("lcm(5, 0)", "0")]
+    [DataRow("lcm(-4, 6)", "12")]
+    [DataRow("comb(5, 2)", "10")]
+    [DataRow("nCr(5, 2)", "10")]
+    [DataRow("choose(5, 2)", "10")]
+    [DataRow("binomial(5, 2)", "10")]
+    [DataRow("comb(10, 0)", "1")]
+    [DataRow("comb(10, 10)", "1")]
+    [DataRow("comb(5, 6)", "0")]
+    [DataRow("comb(50, 6)", "15890700")]
+    [DataRow("perm(5, 2)", "20")]
+    [DataRow("nPr(5, 2)", "20")]
+    [DataRow("perm(10, 0)", "1")]
+    [DataRow("perm(10, 1)", "10")]
+    [DataRow("perm(5, 6)", "0")]
+    [DataRow("perm(7, 3)", "210")]
+    [DataRow("isprime(2)", "1")]
+    [DataRow("isprime(3)", "1")]
+    [DataRow("isprime(4)", "0")]
+    [DataRow("isprime(17)", "1")]
+    [DataRow("isprime(1)", "0")]
+    [DataRow("isprime(0)", "0")]
+    [DataRow("isprime(-7)", "0")]
+    [DataRow("isprime(97)", "1")]
+    [DataRow("isprime(100)", "0")]
+    [DataRow("isprime(104729)", "1")] // 10,000th prime
+    [DataRow("isprime(104730)", "0")]
+    public void CombinatoricsAndNumberTheoryEvaluateCorrectly(string expression, string expected)
+    {
+        var result = Calculator.Evaluate(expression);
+        Assert.AreEqual(MathValue.DataType.Integer, result.Type);
+        Assert.AreEqual(expected, result.ToString());
+    }
+
+    [TestMethod]
+    [DataRow("gcd(1.5, 3)", EvaluationError.IntegerRequired)]
+    [DataRow("lcm(2, 3.5)", EvaluationError.IntegerRequired)]
+    [DataRow("comb(5.5, 2)", EvaluationError.IntegerRequired)]
+    [DataRow("comb(5, 2.5)", EvaluationError.IntegerRequired)]
+    [DataRow("perm(5.5, 2)", EvaluationError.IntegerRequired)]
+    [DataRow("isprime(2.5)", EvaluationError.IntegerRequired)]
+    [DataRow("comb(-5, 2)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("comb(5, -2)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("perm(-5, 2)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("perm(5, -2)", EvaluationError.ArgumentOutOfRange)]
+    public void CombinatoricsAndNumberTheoryDiagnosticsAreReported(string expression, EvaluationError expectedError)
+    {
+        Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic));
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(expectedError, diagnostic.Code);
+
+        var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate(expression));
+        Assert.AreEqual(expectedError, ex.Diagnostic.Code);
+    }
+
+    [TestMethod]
+    [DataRow("[1+2]", 0, 1)]
+    [DataRow("1+2]", 3, 1)]
+    [DataRow("1;2", 1, 1)]
+    [DataRow("1 + [2]", 4, 1)]
+    [DataRow("matrix[1]", 6, 1)]
+    public void ReservedBracketAndSemicolonDiagnosticsAreReported(string expression, int expectedPos, int expectedLen)
+    {
+        Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic));
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(EvaluationError.InvalidSyntax, diagnostic.Code);
+        Assert.IsTrue(diagnostic.Message.Contains("reserved", StringComparison.OrdinalIgnoreCase));
+        Assert.AreEqual(expectedPos, diagnostic.Position);
+        Assert.AreEqual(expectedLen, diagnostic.Length);
+
+        var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate(expression));
+        Assert.AreEqual(EvaluationError.InvalidSyntax, ex.Diagnostic.Code);
     }
 }

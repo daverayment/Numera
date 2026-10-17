@@ -10,13 +10,13 @@ public static class Calculator
 {
     /// <summary>
     /// Evaluates a mathematical expression and returns a polymorphic <see
-    /// cref="NumberValue"/>.
+    /// cref="MathValue"/>.
     /// </summary>
     /// <param name="expression">The expression to evaluate, e.g. "2 + 2 * sqrt(16)".
     /// </param>
     /// <param name="options">Optional constraints for evaluation to prevent memory/CPU
     /// exhaustion on untrusted inputs.</param>
-    /// <returns>The result of the evaluation as a <see cref="NumberValue"/>.</returns>
+    /// <returns>The result of the evaluation as a <see cref="MathValue"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
     /// null.</exception>
     /// <exception cref="NumeraException">Thrown if the expression contains syntax errors,
@@ -26,7 +26,7 @@ public static class Calculator
     /// To evaluate an expression without throwing exceptions for expected
     /// failures, use <see cref="TryEvaluate"/>.
     /// </remarks>
-    public static NumberValue Evaluate(string expression, EvaluationOptions? options = null)
+    public static MathValue Evaluate(string expression, EvaluationOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(expression);
         options ??= new EvaluationOptions();
@@ -69,7 +69,7 @@ public static class Calculator
     /// </remarks>
     public static bool TryEvaluate(
         string expression,
-        out NumberValue value,
+        out MathValue value,
         [NotNullWhen(false)] out EvaluationDiagnostic? diagnostic,
         EvaluationOptions? options = null)
     {
