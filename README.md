@@ -197,6 +197,12 @@ Numera implements a standard Recursive Descent parser with the following capabil
   8. `xor`
   9. `||`, `or`
 
+  > **Note on Unary Negation vs Exponentiation:**  
+  > Numera follows standard mathematical and scientific computing convention (e.g. Python, Julia, MATLAB, ExprTK, Wolfram) where exponentiation binds tighter than unary minus:
+  > - `-10^4` evaluates as `-(10^4) = -10000`.
+  > - Use parentheses when a negative base is intended: `(-10)^4 = 10000`.  
+  > *(Note that software like Microsoft Excel and Windows Calculator invert this rule by treating leading signs as higher precedence, evaluating `-10^4` as `10000`.)*
+
 - **Constants:** `pi` (or `π`, `Π`) and `e`.
 
 - **Functions:**
