@@ -32,4 +32,10 @@
     <None Include="..\assets\FxGear128x128.png" Pack="true" PackagePath="assets\" />
   </ItemGroup>
 
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Numera.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
 </Project>

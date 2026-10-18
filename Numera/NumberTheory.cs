@@ -61,16 +61,16 @@ internal static class NumberTheory
             return BigInteger.One;
         }
 
-        // Bound n to avoid denial of service.
-        if (n > CalculationLimits.MaxFactorialArgument)
-        {
-            throw new CalculationLimitException();
-        }
-
         // Exploit symmetry C(n, k) == C(n, n - k).
         if (k > n - k)
         {
             k = n - k;
+        }
+
+        // Bound the loop iteration count.
+        if (k > CalculationLimits.MaxFactorialArgument)
+        {
+            throw new CalculationLimitException();
         }
 
         int kInt = (int)k;
@@ -109,8 +109,8 @@ internal static class NumberTheory
             return BigInteger.One;
         }
 
-        // Bound n to avoid denial of service.
-        if (n > CalculationLimits.MaxFactorialArgument)
+        // Bound the loop iteration count.
+        if (k > CalculationLimits.MaxFactorialArgument)
         {
             throw new CalculationLimitException();
         }
@@ -245,5 +245,273 @@ internal static class NumberTheory
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Represents a prime factor and its exponent in a canonical prime factorization.
+    /// Internal record struct used to compute arithmetic number-theoretic functions
+    /// without prematurely allocating structured public objects.
+    /// </summary>
+    internal readonly record struct PrimeFactor(BigInteger Prime, int Exponent);
+
+    /// <summary>
+    /// Computes the prime factorization of a positive integer n &gt;= 1.
+    /// Applies trial division up to small primes and Pollard's rho algorithm for
+    /// composite factors, rejecting inputs exceeding <see
+    /// cref="CalculationLimits.MaxFactorizationBits"/> to prevent DoS.
+    /// </summary>
+    internal static List<PrimeFactor> Factorize(BigInteger n)
+    {
+        if (n <= BigInteger.Zero)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.ArgumentOutOfRange, "Factorization requires a positive integer argument."));
+        }
+
+        if (n == BigInteger.One)
+        {
+            return [];
+        }
+
+        if (n.GetBitLength() > CalculationLimits.MaxFactorizationBits)
+        {
+            throw new CalculationLimitException();
+        }
+
+        var primeCounts = new Dictionary<BigInteger, int>();
+
+        // Remove factors of 2.
+        int exp2 = 0;
+        while (n.IsEven)
+        {
+            exp2++;
+            n >>= 1;
+        }
+        if (exp2 > 0)
+        {
+            primeCounts[2] = exp2;
+        }
+
+        // Trial division against small odd primes.
+        var oddSmallPrimes = SmallPrimes[1..];
+        foreach (int p in oddSmallPrimes)
+        {
+            if (n == BigInteger.One)
+            {
+                break;
+            }
+            if (n < (long)p * p)
+            {
+                break;
+            }
+
+            if (n % p == 0)
+            {
+                int exp = 0;
+                while (n % p == 0)
+                {
+                    exp++;
+                    n /= p;
+                }
+                primeCounts[p] = exp;
+            }
+        }
+
+        if (n > BigInteger.One)
+        {
+            FactorizeCompositeRecursive(n, primeCounts);
+        }
+
+        var result = new List<PrimeFactor>(primeCounts.Count);
+        foreach (var kvp in primeCounts.OrderBy(k => k.Key))
+        {
+            result.Add(new PrimeFactor(kvp.Key, kvp.Value));
+        }
+
+        return result;
+    }
+
+    private static void FactorizeCompositeRecursive(BigInteger n, Dictionary<BigInteger, int> factors)
+    {
+        if (n == BigInteger.One)
+        {
+            return;
+        }
+
+        if (IsPrime(n))
+        {
+            factors[n] = factors.GetValueOrDefault(n) + 1;
+            return;
+        }
+
+        // Fast O(1) quadratic residue check + Newton check.
+        if (n.TryGetExactSquareRoot(out var sqrt))
+        {
+            FactorizeCompositeRecursive(sqrt, factors);
+            FactorizeCompositeRecursive(sqrt, factors);
+            return;
+        }
+
+        var divisor = PollardRho(n);
+        FactorizeCompositeRecursive(divisor, factors);
+        FactorizeCompositeRecursive(n / divisor, factors);
+    }
+
+    private static BigInteger PollardRho(BigInteger n)
+    {
+        if (n.IsEven)
+        {
+            return 2;
+        }
+
+        // Try a few small constants for the polynomial f(x) = x^2 + c mod n to avoid cycles.
+        for (BigInteger c = 1; c <= 10; c++)
+        {
+            // Vary the starting point to avoid duplicate cycles.
+            BigInteger x = c + 1;
+            BigInteger y = c + 1;
+            BigInteger d = 1;
+
+            int steps = 0;
+            const int maxSteps = 100_000; // Limit steps to avoid infinite loops on pathological cases.
+
+            while (d == 1 && steps < maxSteps)
+            {
+                x = (x * x + c) % n;
+                y = (y * y + c) % n;
+                y = (y * y + c) % n;
+                d = BigInteger.GreatestCommonDivisor(BigInteger.Abs(x - y), n);
+                steps++;
+            }
+
+            // Non-trivial factor found.
+            if (d > 1 && d < n)
+            {
+                return d;
+            }
+        }
+
+        // If Pollard's rho fails within the step limit, fail safely.
+        throw new CalculationLimitException(new EvaluationDiagnostic(
+            EvaluationError.LimitExceeded, "Factorization exceeded computation step limit."));
+    }
+
+    /// <summary>
+    /// Computes the divisor count function d(n) (also known as tau(n) or sigma_0(n)).
+    /// Named DivCount rather than Tau to avoid syntactic and lexical conflicts with the
+    /// circle constant tau = 2*pi, especially when supporting implicit multiplication.
+    /// Returns the number of positive divisors of n for n &gt;= 1.
+    /// </summary>
+    public static BigInteger DivCount(BigInteger n)
+    {
+        if (n <= BigInteger.Zero)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.ArgumentOutOfRange, "divcount argument must be a positive integer."));
+        }
+
+        var factors = Factorize(n);
+        BigInteger count = BigInteger.One;
+        foreach (var factor in factors)
+        {
+            count *= (factor.Exponent + 1);
+
+            if (count.GetBitLength() > CalculationLimits.MaxIntegerBits)
+            {
+                throw new CalculationLimitException();
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Computes the divisor sum function sigma(n) = sigma_1(n), the sum of all positive divisors of n.
+    /// </summary>
+    public static BigInteger Sigma(BigInteger n) => Sigma(n, 1);
+
+    /// <summary>
+    /// Computes the generalized divisor sum function sigma_k(n) = sum_{d|n} d^k.
+    /// Supports k = 0 (yielding divcount(n)) and integer k &gt;= 0.
+    /// </summary>
+    public static BigInteger Sigma(BigInteger n, int k)
+    {
+        if (n <= BigInteger.Zero)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.ArgumentOutOfRange, "sigma argument n must be a positive integer."));
+        }
+
+        if (k < 0)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.ArgumentOutOfRange, "sigma exponent k must be a non-negative integer."));
+        }
+
+        if (k > CalculationLimits.MaxExponentMagnitude)
+        {
+            throw new CalculationLimitException();
+        }
+
+        if (k == 0)
+        {
+            return DivCount(n);
+        }
+
+        var factors = Factorize(n);
+        BigInteger total = BigInteger.One;
+
+        foreach (var factor in factors)
+        {
+            // Sum = 1 + p^k + p^(2k) + ... + p^(a*k)
+            BigInteger pToK = BigInteger.Pow(factor.Prime, k);
+            if (pToK.GetBitLength() > CalculationLimits.MaxIntegerBits)
+            {
+                throw new CalculationLimitException();
+            }
+
+            BigInteger termSum = BigInteger.One;
+            BigInteger currentPower = BigInteger.One;
+            for (int e = 1; e <= factor.Exponent; e++)
+            {
+                currentPower *= pToK;
+                if (currentPower.GetBitLength() > CalculationLimits.MaxIntegerBits)
+                {
+                    throw new CalculationLimitException();
+                }
+                termSum += currentPower;
+            }
+
+            total *= termSum;
+            if (total.GetBitLength() > CalculationLimits.MaxIntegerBits)
+            {
+                throw new CalculationLimitException();
+            }
+        }
+
+        return total;
+    }
+
+    /// <summary>
+    /// Computes Euler's totient function phi(n), counting the positive integers up to n
+    /// that are coprime to n.
+    /// </summary>
+    public static BigInteger Totient(BigInteger n)
+    {
+        if (n <= BigInteger.Zero)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.ArgumentOutOfRange, "totient argument must be a positive integer."));
+        }
+
+        var factors = Factorize(n);
+        BigInteger result = n;
+
+        foreach (var factor in factors)
+        {
+            result = (result / factor.Prime) * (factor.Prime - 1);
+        }
+
+        return result;
     }
 }

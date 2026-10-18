@@ -767,6 +767,33 @@ internal static class FunctionCatalog
                 Aliases: [],
                 Keywords: ["prime", "primality", "isprime", "number theory", "factors"]),
 
+            new FunctionInfo(
+                Name: "divcount",
+                CanonicalName: "divcount",
+                Category: FunctionCategory.CombinatoricsAndNumberTheory,
+                Signature: Sig1("n"),
+                Description: "Computes the divisor count function d(n) (number of positive divisors of n).",
+                Aliases: ["divisorcount"],
+                Keywords: ["divcount", "divisorcount", "divisor count", "divisors", "number theory", "sigma0", "d"]),
+
+            new FunctionInfo(
+                Name: "sigma",
+                CanonicalName: "sigma",
+                Category: FunctionCategory.CombinatoricsAndNumberTheory,
+                Signature: new FunctionSignature(1, 2, [new ParameterInfo("n"), new ParameterInfo("k", IsOptional: true)]),
+                Description: "Computes the divisor sum function sigma(n) (sum of divisors), or generalized sigma(n, k) (sum of k-th powers of divisors).",
+                Aliases: ["divsum"],
+                Keywords: ["sigma", "divsum", "divisor sum", "sum of divisors", "generalized divisor sum", "number theory"]),
+
+            new FunctionInfo(
+                Name: "totient",
+                CanonicalName: "totient",
+                Category: FunctionCategory.CombinatoricsAndNumberTheory,
+                Signature: Sig1("n"),
+                Description: "Computes Euler's totient function phi(n) (count of positive integers up to n coprime to n).",
+                Aliases: ["phi", "eulerphi"],
+                Keywords: ["totient", "phi", "eulerphi", "euler totient", "coprime", "number theory"]),
+
             // Statistical and Aggregation.
             new FunctionInfo(
                 Name: "min",

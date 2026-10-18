@@ -118,6 +118,9 @@ public class NumericTests
     [DataRow("sinc(0)", 1.0, 0.0)]
     [DataRow("sinc(pi/2)", 0.63661977236758134308, 2e-16)]
     [DataRow("sinc(pi)", 0.0, 2e-16)]
+    [DataRow("tau", 6.28318530717958647692, 0.0)]
+    [DataRow("τ", 6.28318530717958647692, 0.0)]
+    [DataRow("Τ", 6.28318530717958647692, 0.0)]
     public void ApproximateFunctionsAgreeWithIndependentReferences(string expression, double expected, double tolerance)
     {
         var result = Calculator.Evaluate(expression);
@@ -1373,6 +1376,29 @@ public class NumericTests
     [DataRow("isprime(100)", "0")]
     [DataRow("isprime(104729)", "1")] // 10,000th prime
     [DataRow("isprime(104730)", "0")]
+    [DataRow("divcount(1)", "1")]
+    [DataRow("divcount(12)", "6")]
+    [DataRow("divcount(28)", "6")]
+    [DataRow("divcount(36)", "9")]
+    [DataRow("divcount(97)", "2")]
+    [DataRow("divisorcount(12)", "6")]
+    [DataRow("sigma(1)", "1")]
+    [DataRow("sigma(6)", "12")]
+    [DataRow("sigma(12)", "28")]
+    [DataRow("sigma(28)", "56")]
+    [DataRow("divsum(12)", "28")]
+    [DataRow("sigma(12, 0)", "6")]
+    [DataRow("divsum(12, 0)", "6")]
+    [DataRow("sigma(12, 1)", "28")]
+    [DataRow("sigma(6, 2)", "50")] // 1 + 4 + 9 + 36 = 50
+    [DataRow("divsum(6, 2)", "50")]
+    [DataRow("totient(1)", "1")]
+    [DataRow("totient(9)", "6")]
+    [DataRow("totient(10)", "4")]
+    [DataRow("totient(12)", "4")]
+    [DataRow("totient(13)", "12")]
+    [DataRow("phi(12)", "4")]
+    [DataRow("eulerphi(12)", "4")]
     public void CombinatoricsAndNumberTheoryEvaluateCorrectly(string expression, string expected)
     {
         var result = Calculator.Evaluate(expression);
@@ -1387,10 +1413,31 @@ public class NumericTests
     [DataRow("comb(5, 2.5)", EvaluationError.IntegerRequired)]
     [DataRow("perm(5.5, 2)", EvaluationError.IntegerRequired)]
     [DataRow("isprime(2.5)", EvaluationError.IntegerRequired)]
+    [DataRow("divcount(2.5)", EvaluationError.IntegerRequired)]
+    [DataRow("divisorcount(2.5)", EvaluationError.IntegerRequired)]
+    [DataRow("sigma(2.5)", EvaluationError.IntegerRequired)]
+    [DataRow("divsum(2.5)", EvaluationError.IntegerRequired)]
+    [DataRow("sigma(12, 1.5)", EvaluationError.IntegerRequired)]
+    [DataRow("divsum(12, 1.5)", EvaluationError.IntegerRequired)]
+    [DataRow("totient(2.5)", EvaluationError.IntegerRequired)]
+    [DataRow("phi(2.5)", EvaluationError.IntegerRequired)]
+    [DataRow("eulerphi(2.5)", EvaluationError.IntegerRequired)]
     [DataRow("comb(-5, 2)", EvaluationError.ArgumentOutOfRange)]
     [DataRow("comb(5, -2)", EvaluationError.ArgumentOutOfRange)]
     [DataRow("perm(-5, 2)", EvaluationError.ArgumentOutOfRange)]
     [DataRow("perm(5, -2)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("divcount(0)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("divcount(-12)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("divisorcount(0)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("sigma(0)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("sigma(-12)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("divsum(-12)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("sigma(12, -1)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("divsum(12, -1)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("totient(0)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("totient(-12)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("phi(-12)", EvaluationError.ArgumentOutOfRange)]
+    [DataRow("eulerphi(-12)", EvaluationError.ArgumentOutOfRange)]
     public void CombinatoricsAndNumberTheoryDiagnosticsAreReported(string expression, EvaluationError expectedError)
     {
         Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic));
@@ -1418,5 +1465,196 @@ public class NumericTests
 
         var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate(expression));
         Assert.AreEqual(EvaluationError.InvalidSyntax, ex.Diagnostic.Code);
+    }
+
+    [TestMethod]
+    public void BigIntegerExactSquareRootAndNewtonSqrtBehaveCorrectly()
+    {
+        // Zero and small boundaries.
+        Assert.AreEqual(BigInteger.Zero, BigInteger.Zero.Sqrt());
+        Assert.IsTrue(BigInteger.Zero.TryGetExactSquareRoot(out var root0));
+        Assert.AreEqual(BigInteger.Zero, root0);
+
+        Assert.AreEqual(BigInteger.One, BigInteger.One.Sqrt());
+        Assert.IsTrue(BigInteger.One.TryGetExactSquareRoot(out var root1));
+        Assert.AreEqual(BigInteger.One, root1);
+
+        Assert.AreEqual(BigInteger.One, new BigInteger(2).Sqrt());
+        Assert.IsFalse(new BigInteger(2).TryGetExactSquareRoot(out var root2));
+        Assert.AreEqual(BigInteger.Zero, root2);
+
+        Assert.AreEqual(BigInteger.One, new BigInteger(3).Sqrt());
+        Assert.IsFalse(new BigInteger(3).TryGetExactSquareRoot(out var root3));
+        Assert.AreEqual(BigInteger.Zero, root3);
+
+        // Negative numbers reject square root.
+        Assert.Throws<ArgumentOutOfRangeException>(() => new BigInteger(-1).Sqrt());
+        Assert.IsFalse(new BigInteger(-1).TryGetExactSquareRoot(out var negRoot));
+        Assert.AreEqual(BigInteger.Zero, negRoot);
+
+        // Exhaustive check across residues mod 64 for 0..10,000.
+        for (int i = 0; i <= 10000; i++)
+        {
+            var sq = (BigInteger)i * i;
+            Assert.AreEqual((BigInteger)i, sq.Sqrt(), $"Sqrt failed on {sq}");
+            Assert.IsTrue(sq.TryGetExactSquareRoot(out var exactRoot), $"TryGetExactSquareRoot failed on square {sq}");
+            Assert.AreEqual((BigInteger)i, exactRoot);
+
+            if (i > 1)
+            {
+                var nonSq1 = sq - 1;
+                Assert.AreEqual((BigInteger)(i - 1), nonSq1.Sqrt(), $"Sqrt failed on {nonSq1}");
+                Assert.IsFalse(nonSq1.TryGetExactSquareRoot(out var nonRoot1), $"False positive exact square root on {nonSq1}");
+                Assert.AreEqual(BigInteger.Zero, nonRoot1);
+            }
+
+            if (i > 0)
+            {
+                var nonSq2 = sq + 1;
+                Assert.AreEqual((BigInteger)i, nonSq2.Sqrt(), $"Sqrt failed on {nonSq2}");
+                Assert.IsFalse(nonSq2.TryGetExactSquareRoot(out var nonRoot2), $"False positive exact square root on {nonSq2}");
+                Assert.AreEqual(BigInteger.Zero, nonRoot2);
+            }
+        }
+
+        // Large integer perfect square (exceeding 64 bits / decimal range).
+        var largeBase = (BigInteger.One << 100) + 123456789;
+        var largeSquare = largeBase * largeBase;
+        Assert.AreEqual(largeBase, largeSquare.Sqrt());
+        Assert.IsTrue(largeSquare.TryGetExactSquareRoot(out var largeExactRoot));
+        Assert.AreEqual(largeBase, largeExactRoot);
+
+        var largeNonSquare = largeSquare + 1;
+        Assert.AreEqual(largeBase, largeNonSquare.Sqrt());
+        Assert.IsFalse(largeNonSquare.TryGetExactSquareRoot(out var largeNonExactRoot));
+        Assert.AreEqual(BigInteger.Zero, largeNonExactRoot);
+    }
+
+    [TestMethod]
+    public void NumberTheoryFactorizationHandlesPrimePowersAndLargeComposites()
+    {
+        // Prime powers that challenge basic Pollard's rho without square root shortcuts.
+        // 101^2 = 10201
+        var factors10201 = NumberTheory.Factorize(10201);
+        Assert.HasCount(1, factors10201);
+        Assert.AreEqual(new BigInteger(101), factors10201[0].Prime);
+        Assert.AreEqual(2, factors10201[0].Exponent);
+
+        // 103^4
+        var prime103Pow4 = BigInteger.Pow(103, 4);
+        var factors103Pow4 = NumberTheory.Factorize(prime103Pow4);
+        Assert.HasCount(1, factors103Pow4);
+        Assert.AreEqual(new BigInteger(103), factors103Pow4[0].Prime);
+        Assert.AreEqual(4, factors103Pow4[0].Exponent);
+
+        // Product of two primes outside small-primes trial division (> 100): 101 * 103 = 10403
+        var factors10403 = NumberTheory.Factorize(10403);
+        Assert.HasCount(2, factors10403);
+        Assert.AreEqual(new BigInteger(101), factors10403[0].Prime);
+        Assert.AreEqual(1, factors10403[0].Exponent);
+        Assert.AreEqual(new BigInteger(103), factors10403[1].Prime);
+        Assert.AreEqual(1, factors10403[1].Exponent);
+
+        // Product of larger 30-bit primes.
+        BigInteger p1 = 1000000007; // Prime
+        BigInteger p2 = 1000000009; // Prime
+        BigInteger semiPrime = p1 * p2;
+        var semiFactors = NumberTheory.Factorize(semiPrime);
+        Assert.HasCount(2, semiFactors);
+        Assert.AreEqual(p1, semiFactors[0].Prime);
+        Assert.AreEqual(1, semiFactors[0].Exponent);
+        Assert.AreEqual(p2, semiFactors[1].Prime);
+        Assert.AreEqual(1, semiFactors[1].Exponent);
+
+        // Verify arithmetic functions on the semiprime:
+        // divcount(p1 * p2) = (1+1)*(1+1) = 4
+        Assert.AreEqual(new BigInteger(4), NumberTheory.DivCount(semiPrime));
+        // totient(p1 * p2) = (p1 - 1) * (p2 - 1)
+        Assert.AreEqual((p1 - 1) * (p2 - 1), NumberTheory.Totient(semiPrime));
+        // sigma(p1 * p2) = (1 + p1) * (1 + p2)
+        Assert.AreEqual((p1 + 1) * (p2 + 1), NumberTheory.Sigma(semiPrime));
+    }
+
+    [TestMethod]
+    public void NumberTheoryHandlesTrivialAndOddPrimePowers()
+    {
+        // n = 1 base cases
+        var factors1 = NumberTheory.Factorize(BigInteger.One);
+        Assert.IsEmpty(factors1);
+        Assert.AreEqual(BigInteger.One, NumberTheory.DivCount(BigInteger.One));
+        Assert.AreEqual(BigInteger.One, NumberTheory.Sigma(BigInteger.One));
+        Assert.AreEqual(BigInteger.One, NumberTheory.Totient(BigInteger.One));
+        Assert.IsFalse(NumberTheory.IsPrime(BigInteger.One));
+
+        // Odd prime power: 101^3 = 1030301.
+        // Cannot be short-circuited by TryGetExactSquareRoot; exercises Pollard's rho directly on prime powers.
+        var prime101Pow3 = BigInteger.Pow(101, 3);
+        var factors101Pow3 = NumberTheory.Factorize(prime101Pow3);
+        Assert.HasCount(1, factors101Pow3);
+        Assert.AreEqual(new BigInteger(101), factors101Pow3[0].Prime);
+        Assert.AreEqual(3, factors101Pow3[0].Exponent);
+
+        // Divisors of 101^3: 1, 101, 101^2, 101^3 (4 divisors)
+        Assert.AreEqual(new BigInteger(4), NumberTheory.DivCount(prime101Pow3));
+
+        // Pure prime factorisation
+        var primeFactors = NumberTheory.Factorize(1000000007);
+        Assert.HasCount(1, primeFactors);
+        Assert.AreEqual(new BigInteger(1000000007), primeFactors[0].Prime);
+        Assert.AreEqual(1, primeFactors[0].Exponent);
+
+        // Powers of 2
+        var factors2Pow10 = NumberTheory.Factorize(1024);
+        Assert.HasCount(1, factors2Pow10);
+        Assert.AreEqual(new BigInteger(2), factors2Pow10[0].Prime);
+        Assert.AreEqual(10, factors2Pow10[0].Exponent);
+    }
+
+    [TestMethod]
+    public void NumberTheoryDomainErrorsThrowStructuredDiagnostics()
+    {
+        // Non-positive domain checks.
+        Assert.Throws<ExpressionException>(() => NumberTheory.Factorize(BigInteger.Zero));
+        Assert.Throws<ExpressionException>(() => NumberTheory.Factorize(-42));
+        Assert.Throws<ExpressionException>(() => NumberTheory.DivCount(BigInteger.Zero));
+        Assert.Throws<ExpressionException>(() => NumberTheory.DivCount(-10));
+        Assert.Throws<ExpressionException>(() => NumberTheory.Sigma(BigInteger.Zero));
+        Assert.Throws<ExpressionException>(() => NumberTheory.Sigma(10, -1));
+        Assert.Throws<ExpressionException>(() => NumberTheory.Totient(BigInteger.Zero));
+        Assert.Throws<ExpressionException>(() => NumberTheory.Totient(-1));
+
+        // Combinatorics invalid arguments.
+        Assert.Throws<ExpressionException>(() => NumberTheory.Comb(-1, 5));
+        Assert.Throws<ExpressionException>(() => NumberTheory.Comb(5, -1));
+        Assert.Throws<ExpressionException>(() => NumberTheory.Perm(-1, 5));
+        Assert.Throws<ExpressionException>(() => NumberTheory.Perm(5, -1));
+    }
+
+    [TestMethod]
+    public void CombinatoricsAndSigmaEvaluationsMatchExpectedIdentities()
+    {
+        // Comb and Perm with large n, small k (only loops k times).
+        Assert.AreEqual(new BigInteger(4999950000), NumberTheory.Comb(100000, 2));
+        Assert.AreEqual(new BigInteger(9999900000), NumberTheory.Perm(100000, 2));
+
+        // Comb out-of-bounds (k > n yields 0).
+        Assert.AreEqual(BigInteger.Zero, NumberTheory.Comb(5, 6));
+        Assert.AreEqual(BigInteger.Zero, NumberTheory.Perm(5, 6));
+
+        // Comb zero k.
+        Assert.AreEqual(BigInteger.One, NumberTheory.Comb(10, 0));
+        Assert.AreEqual(BigInteger.One, NumberTheory.Perm(10, 0));
+
+        // Generalized Sigma_k.
+        // Divisors of 12: 1, 2, 3, 4, 6, 12.
+        Assert.AreEqual(new BigInteger(6), NumberTheory.Sigma(12, 0)); // Sigma_0 == DivCount
+        Assert.AreEqual(new BigInteger(28), NumberTheory.Sigma(12, 1)); // Sigma_1 == 1+2+3+4+6+12
+        Assert.AreEqual(new BigInteger(210), NumberTheory.Sigma(12, 2)); // 1+4+9+16+36+144 = 210
+
+        // GCD and LCM.
+        Assert.AreEqual(BigInteger.Zero, NumberTheory.Gcd(0, 0));
+        Assert.AreEqual(new BigInteger(6), NumberTheory.Gcd(-12, 18));
+        Assert.AreEqual(BigInteger.Zero, NumberTheory.Lcm(0, 10));
+        Assert.AreEqual(new BigInteger(36), NumberTheory.Lcm(-12, 18));
     }
 }

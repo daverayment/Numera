@@ -31,4 +31,9 @@ public static class CalculationLimits
     /// The maximum absolute magnitude permitted for integer exponents.
     /// </summary>
     public const int MaxExponentMagnitude = 10000;
+
+    /// <summary>
+    /// The maximum bit length permitted for integer factorization.
+    /// </summary>
+    public const int MaxFactorizationBits = 128;
 }

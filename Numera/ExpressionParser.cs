@@ -735,6 +735,11 @@ internal sealed class ExpressionParser
             return new MathValue(Math.PI);
         }
 
+        if (name.Equals("tau", StringComparison.OrdinalIgnoreCase) || name.SequenceEqual("τ") || name.SequenceEqual("Τ"))
+        {
+            return new MathValue(Math.Tau);
+        }
+
         if (name.Equals("e", StringComparison.OrdinalIgnoreCase))
         {
             return new MathValue(Math.E);
@@ -1141,6 +1146,30 @@ internal sealed class ExpressionParser
                     }
                     return new MathValue(NumberTheory.IsPrime(primeArg) ? BigInteger.One : BigInteger.Zero);
 
+                case "divcount" or "divisorcount":
+                    if (!args[0].TryGetInteger(out var divCountArg))
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.IntegerRequired, $"{lower} requires an integer argument."));
+                    }
+                    return new MathValue(NumberTheory.DivCount(divCountArg));
+
+                case "sigma" or "divsum":
+                    if (!args[0].TryGetInteger(out var sigmaArg))
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.IntegerRequired, $"{lower} requires an integer argument."));
+                    }
+                    return new MathValue(NumberTheory.Sigma(sigmaArg));
+
+                case "totient" or "phi" or "eulerphi":
+                    if (!args[0].TryGetInteger(out var totientArg))
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.IntegerRequired, $"{lower} requires an integer argument."));
+                    }
+                    return new MathValue(NumberTheory.Totient(totientArg));
+
                 default:
                     throw new ExpressionException(new EvaluationDiagnostic(
                         EvaluationError.UnknownFunction, $"Unknown function '{name}'."));
@@ -1233,6 +1262,23 @@ internal sealed class ExpressionParser
                             EvaluationError.IntegerRequired, $"{lower} requires integer arguments."));
                     }
                     return new MathValue(NumberTheory.Perm(permN, permK));
+
+                case "sigma" or "divsum":
+                    if (!args[0].TryGetInteger(out var sigmaN) || !args[1].TryGetInteger(out var sigmaK))
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.IntegerRequired, $"{lower} requires integer arguments."));
+                    }
+                    if (sigmaK < 0 || sigmaK > CalculationLimits.MaxExponentMagnitude)
+                    {
+                        if (sigmaK < 0)
+                        {
+                            throw new ExpressionException(new EvaluationDiagnostic(
+                                EvaluationError.ArgumentOutOfRange, $"{lower} exponent k must be a non-negative integer."));
+                        }
+                        throw new CalculationLimitException();
+                    }
+                    return new MathValue(NumberTheory.Sigma(sigmaN, (int)sigmaK));
 
                 default:
                     throw new ExpressionException(new EvaluationDiagnostic(

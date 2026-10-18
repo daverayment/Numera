@@ -203,7 +203,7 @@ Numera implements a standard Recursive Descent parser with the following capabil
   > - Use parentheses when a negative base is intended: `(-10)^4 = 10000`.  
   > *(Note that software like Microsoft Excel and Windows Calculator invert this rule by treating leading signs as higher precedence, evaluating `-10^4` as `10000`.)*
 
-- **Constants:** `pi` (or `π`, `Π`) and `e`.
+- **Constants:** `pi` (or `π`, `Π`), `tau` (or `τ`, `Τ`, representing 2π), and `e`.
 
 - **Functions:**
   - **Trigonometry:** `sin`, `cos`, `tan`, `arcsin`/`asin`, `arccos`/`acos`, `arctan`/`atan`, `atan2(y, x)`, `cot`, `sec`, `csc`, `arccot`, `arcsec`, `arccsc` (operates in radians by default, or degrees/gradians via `EvaluationOptions.AngleUnit`).
@@ -211,7 +211,7 @@ Numera implements a standard Recursive Descent parser with the following capabil
   - **Angle Conversion:** `rad(degrees)` or `deg2rad(degrees)` converts degrees to radians; `deg(radians)` or `rad2deg(radians)` converts radians to degrees; `grad(gradians)` or `grad2rad(gradians)` converts gradians to radians; plus explicit cross-conversions `deg2grad`, `rad2grad`, and `grad2deg`.
   - **Logarithms/Roots:** `log` (base 10), `log2`, `log10`, `ln` (natural), `log1p` (ln(1 + x)), `expm1` (e^x - 1), `logn(value, base)`, `sqrt`, `cbrt`, `root(value, root)`.
   - **Special & Probability:** `erf(x)` (error function), `erfc(x)` (complementary error function), `ncdf(x)` (standard normal cumulative distribution), `sinc(x)` (cardinal sine: sin(x)/x), `gamma(x)` (Euler gamma), `lgamma(x)` (log-gamma), `beta(a, b)` (Euler beta), `zeta(s)` (Riemann zeta).
-  - **Combinatorics & Number Theory:** `factorial(n)`, `gcd(...values)` (greatest common divisor, variadic), `lcm(...values)` (least common multiple, variadic), `comb(n, k)` (combinations, with aliases `nCr`, `choose`, `binomial`), `perm(n, k)` (permutations, with alias `nPr`), `isprime(n)` (primality test returning 1 or 0). Require exact integer operands.
+  - **Combinatorics & Number Theory:** `factorial(n)`, `gcd(...values)` (greatest common divisor, variadic), `lcm(...values)` (least common multiple, variadic), `comb(n, k)` (combinations, with aliases `nCr`, `choose`, `binomial`), `perm(n, k)` (permutations, with alias `nPr`), `isprime(n)` (primality test returning 1 or 0), `divcount(n)` (divisor count function $d(n)$, alias `divisorcount`), `sigma(n[, k])` (divisor sum function $\sigma(n)$, or generalized sum of k-th powers $\sigma_k(n)$, alias `divsum`), `totient(n)` (Euler's totient function $\phi(n)$, aliases `phi`, `eulerphi`). Require exact integer operands.
   - **General:** `min`, `max`, `avg`, `sum`, `mul`, `mod(a, b)`, `clamp(val, min, max)`, `abs`, `round(val[, places])`, `ceil`, `floor`, `trunc`, `frac`, `sign`/`sgn`, `hypot(x, y)`, `lerp(a, b, t)`.
   - **Bitwise:** Operator `~` (unary bitwise NOT); functions `shl(val, count)`, `shr(val, count)`, `band(a, b)`, `bor(a, b)`, `bxor(a, b)`, `bnot(a)`. Require exact integer operands and evaluate via arbitrary-precision integers.
   - **Random:** `rand()` returns a double in [0,1); `randi(n)` returns an integer in [0,n).

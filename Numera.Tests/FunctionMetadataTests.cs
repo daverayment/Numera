@@ -220,6 +220,18 @@ public sealed class FunctionMetadataTests
         // "primality" -> isprime.
         var primeResults = Functions.Search("primality").ToList();
         Assert.Contains(r => r.Name == "isprime", primeResults);
+
+        // "divisor count" -> divcount.
+        var divCountResults = Functions.Search("divisor count").ToList();
+        Assert.Contains(r => r.Name == "divcount", divCountResults);
+
+        // "divisor sum" -> sigma.
+        var sigmaResults = Functions.Search("divisor sum").ToList();
+        Assert.Contains(r => r.Name == "sigma", sigmaResults);
+
+        // "euler totient" -> totient.
+        var totientResults = Functions.Search("euler totient").ToList();
+        Assert.Contains(r => r.Name == "totient", totientResults);
     }
 
     [TestMethod]
