@@ -1719,4 +1719,109 @@ public class NumericTests
         Assert.AreEqual(BigInteger.Zero, NumberTheory.Lcm(0, 10));
         Assert.AreEqual(new BigInteger(36), NumberTheory.Lcm(-12, 18));
     }
+
+    [TestMethod]
+    public void SpecialFunctionsHandleNonFiniteAndPolesCorrectly()
+    {
+        // NaN propagation.
+        Assert.IsTrue(double.IsNaN(SpecialFunctions.Erf(double.NaN)));
+        Assert.IsTrue(double.IsNaN(SpecialFunctions.Erfc(double.NaN)));
+        Assert.IsTrue(double.IsNaN(SpecialFunctions.NormalCdf(double.NaN)));
+        Assert.IsTrue(double.IsNaN(SpecialFunctions.Sinc(double.NaN)));
+        Assert.IsTrue(double.IsNaN(SpecialFunctions.LogGamma(double.NaN)));
+        Assert.IsTrue(double.IsNaN(SpecialFunctions.Gamma(double.NaN)));
+        Assert.IsTrue(double.IsNaN(SpecialFunctions.Beta(double.NaN, 2.0)));
+        Assert.IsTrue(double.IsNaN(SpecialFunctions.Beta(2.0, double.NaN)));
+        Assert.IsTrue(double.IsNaN(SpecialFunctions.Zeta(double.NaN)));
+
+        // Infinities.
+        Assert.AreEqual(1.0, SpecialFunctions.Erf(double.PositiveInfinity));
+        Assert.AreEqual(-1.0, SpecialFunctions.Erf(double.NegativeInfinity));
+        Assert.AreEqual(0.0, SpecialFunctions.Erfc(double.PositiveInfinity));
+        Assert.AreEqual(2.0, SpecialFunctions.Erfc(double.NegativeInfinity));
+        Assert.AreEqual(1.0, SpecialFunctions.NormalCdf(double.PositiveInfinity));
+        Assert.AreEqual(0.0, SpecialFunctions.NormalCdf(double.NegativeInfinity));
+        Assert.AreEqual(0.0, SpecialFunctions.Sinc(double.PositiveInfinity));
+        Assert.AreEqual(0.0, SpecialFunctions.Sinc(double.NegativeInfinity));
+        Assert.AreEqual(double.PositiveInfinity, SpecialFunctions.LogGamma(double.PositiveInfinity));
+        Assert.AreEqual(double.PositiveInfinity, SpecialFunctions.Gamma(double.PositiveInfinity));
+        Assert.AreEqual(1.0, SpecialFunctions.Zeta(double.PositiveInfinity));
+        Assert.AreEqual(double.PositiveInfinity, SpecialFunctions.Gamma(175.0)); // > 171.614 overflow guard
+
+        // Asymptotic zeta for large s.
+        Assert.AreEqual(1.0 + Math.Pow(2.0, -65.0), SpecialFunctions.Zeta(65.0), 1e-15);
+
+        // Beta where a+b is non-positive integer => Gamma(a+b) pole => Beta = 0.
+        Assert.AreEqual(0.0, SpecialFunctions.Beta(-1.5, -0.5)); // sum = -2.0
+
+        // Beta for large/negative arguments requiring sign tracking / LogGamma path.
+        var betaLarge = SpecialFunctions.Beta(200.0, 200.0);
+        Assert.IsTrue(double.IsFinite(betaLarge));
+        Assert.IsGreaterThan(0.0, betaLarge);
+
+        // Negative non-integers exercise reflection without being poles.
+        Assert.IsTrue(double.IsFinite(SpecialFunctions.Gamma(-2.5)));
+        Assert.IsTrue(double.IsFinite(SpecialFunctions.LogGamma(-2.5)));
+
+        // Poles / domain exceptions.
+        Assert.Throws<ExpressionException>(() => SpecialFunctions.Gamma(double.NegativeInfinity));
+        Assert.Throws<ExpressionException>(() => SpecialFunctions.Gamma(0.0));
+        Assert.Throws<ExpressionException>(() => SpecialFunctions.Gamma(-1.0));
+        Assert.Throws<ExpressionException>(() => SpecialFunctions.LogGamma(0.0));
+        Assert.Throws<ExpressionException>(() => SpecialFunctions.LogGamma(-3.0));
+        Assert.Throws<ExpressionException>(() => SpecialFunctions.Beta(0.0, 1.0));
+        Assert.Throws<ExpressionException>(() => SpecialFunctions.Beta(1.0, -2.0));
+        Assert.Throws<ExpressionException>(() => SpecialFunctions.Zeta(1.0));
+    }
+
+    [TestMethod]
+    public void NumberTheoryAndMathValueCalculationLimitsEnforced()
+    {
+        // NumberTheory safety bounds.
+        // Extremely large even numbers or multiples of small primes return false
+        // instantly without limit errors.
+        Assert.IsFalse(NumberTheory.IsPrime(BigInteger.One << 4000));
+        Assert.IsFalse(NumberTheory.IsPrime((BigInteger.One << 4000) * 3));
+        Assert.IsFalse(NumberTheory.IsPrime((BigInteger.One << 4000) * 5));
+
+        // Candidates that survive trial division up to 100 are bounded by
+        // MaxPrimalityBits before Miller-Rabin.
+        // Build a number coprime to all primes in [2..100]: product of primes <= 97 is
+        // small enough, or multiply them + 1.
+        var primeProduct = BigInteger.One;
+        int[] primesUnder100 = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97];
+        foreach (int p in primesUnder100)
+        {
+            primeProduct *= p;
+        }
+
+        // primeProduct * K + 1 has no prime factor <= 97.
+        // Scale K such that candidate > 2^2048.
+        var kMultiplier = BigInteger.One << CalculationLimits.MaxPrimalityBits;
+        var candidateAboveLimit = primeProduct * kMultiplier + 1;
+        Assert.IsGreaterThan(CalculationLimits.MaxPrimalityBits, candidateAboveLimit.GetBitLength());
+        Assert.Throws<CalculationLimitException>(() => NumberTheory.IsPrime(candidateAboveLimit));
+
+        Assert.Throws<CalculationLimitException>(() => NumberTheory.Factorize(BigInteger.One << (CalculationLimits.MaxFactorizationBits + 1)));
+        Assert.Throws<CalculationLimitException>(() => NumberTheory.Comb(100000, 50000)); // k exceeds MaxFactorialArgument (1000)
+        Assert.Throws<CalculationLimitException>(() => NumberTheory.Perm(100000, 1001)); // k exceeds MaxFactorialArgument (1000)
+        Assert.Throws<CalculationLimitException>(() => NumberTheory.Sigma(12, CalculationLimits.MaxExponentMagnitude + 1));
+
+        // MathValue bitwise shifts requiring integer operands and checking bit limits.
+        var decVal = new MathValue(2.5m);
+        var intVal = new MathValue(new BigInteger(4));
+        Assert.Throws<ExpressionException>(() => MathValue.ShiftLeft(decVal, intVal));
+        Assert.Throws<ExpressionException>(() => MathValue.ShiftRight(decVal, intVal));
+        Assert.Throws<ExpressionException>(() => MathValue.ShiftLeft(intVal, new MathValue(new BigInteger(-1))));
+        Assert.Throws<ExpressionException>(() => MathValue.ShiftRight(intVal, new MathValue(new BigInteger(-1))));
+
+        // Shift left beyond MaxIntegerBits.
+        Assert.Throws<CalculationLimitException>(() => MathValue.ShiftLeft(intVal, new MathValue(new BigInteger(CalculationLimits.MaxIntegerBits))));
+
+        // Large integer comparison with double (> 1024 bits).
+        var hugePositiveInt = new MathValue(BigInteger.One << 1030);
+        var hugeNegativeInt = new MathValue(-(BigInteger.One << 1030));
+        Assert.IsGreaterThan(0, MathValue.Compare(hugePositiveInt, new MathValue(1e100)));
+        Assert.IsLessThan(0, MathValue.Compare(hugeNegativeInt, new MathValue(1e100)));
+    }
 }

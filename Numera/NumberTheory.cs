@@ -185,8 +185,9 @@ internal static class NumberTheory
             return true;
         }
 
-        // Bound input bit length to protect against CPU exhaustion on large integers.
-        if (n.GetBitLength() > 2048)
+        // Bound input bit length to protect against CPU exhaustion on large integers
+        // before entering expensive Miller-Rabin modular exponentiations.
+        if (n.GetBitLength() > CalculationLimits.MaxPrimalityBits)
         {
             throw new CalculationLimitException();
         }

@@ -36,4 +36,11 @@ public static class CalculationLimits
     /// The maximum bit length permitted for integer factorization.
     /// </summary>
     public const int MaxFactorizationBits = 128;
+
+    /// <summary>
+    /// The maximum bit length permitted for Miller-Rabin primality testing.
+    /// Numbers exceeding this bound are rejected to prevent CPU exhaustion
+    /// from large modular exponentiations across multiple prime bases.
+    /// </summary>
+    public const int MaxPrimalityBits = 2048;
 }
