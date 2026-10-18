@@ -158,9 +158,9 @@ Most expression evaluators rely exclusively on 64-bit IEEE 754 double-precision 
 
 Instead of forcing all calculations into a single numeric type, each operation in Numera produces a `MathValue` backed by one of three types:
 
-* **BigInteger** for exact integer arithmetic within a 16,384-bit safety ceiling. Preserves large integers and whole-number quotients, such as `(10^50) / (10^49)`.
+* **BigInteger** for exact integer arithmetic within a 16,384-bit safety ceiling. Preserves large integers, whole-number quotients (such as `(10^50) / (10^49)`), and perfect squares via `sqrt` (such as `sqrt(144)` or arbitrary-precision perfect squares).
 * **Decimal** for base-10 arithmetic with roughly 28-29 significant digits and up to 28 decimal places. It preserves representable decimal fractions, making it useful for financial expressions. Parsing and arithmetic can round to fit its precision; conversion or arithmetic overflow falls back to double.
-* **Double** for functions such as `sqrt` and `sin`, powers outside the exact integer path, and decimal overflow fallback. It provides roughly 15-17 significant decimal digits and a wide range of magnitudes. Results may be approximate, `NaN`, or infinite.
+* **Double** for functions such as trigonometric evaluations, non-square `sqrt` outputs, powers outside the exact integer path, and decimal overflow fallback. It provides roughly 15-17 significant decimal digits and a wide range of magnitudes. Results may be approximate, `NaN`, or infinite.
 
 By exposing `result.Type`, Numera lets your application distinguish between provably exact integer results, high-precision decimal outputs, and floating-point approximations.
 

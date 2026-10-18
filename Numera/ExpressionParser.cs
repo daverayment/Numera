@@ -889,6 +889,20 @@ internal sealed class ExpressionParser
                     return new MathValue(double.LogP1(v));
 
                 case "sqrt":
+                    if (args[0].Type is MathValue.DataType.Integer)
+                    {
+                        if (args[0].IntVal < BigInteger.Zero)
+                        {
+                            throw new ExpressionException(new EvaluationDiagnostic(
+                                EvaluationError.UndefinedMathResult, "Square root of a negative number has no real solution."));
+                        }
+
+                        if (args[0].IntVal.TryGetExactSquareRoot(out var exactIntRoot))
+                        {
+                            return new MathValue(exactIntRoot);
+                        }
+                    }
+
                     if (v < 0)
                     {
                         throw new ExpressionException(new EvaluationDiagnostic(

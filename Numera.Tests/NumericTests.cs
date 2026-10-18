@@ -304,6 +304,31 @@ public class NumericTests
     [DataRow("round(2.5, 0)", MathValue.DataType.Decimal, "3")]
     [DataRow("round(1.0000000000000000000000000005, 28)", MathValue.DataType.Decimal, "1.0000000000000000000000000005")]
     [DataRow("factorial(0)", MathValue.DataType.Integer, "1")]
+    [DataRow("sqrt(0)", MathValue.DataType.Integer, "0")]
+    [DataRow("sqrt(1)", MathValue.DataType.Integer, "1")]
+    [DataRow("sqrt(4)", MathValue.DataType.Integer, "2")]
+    [DataRow("sqrt(9)", MathValue.DataType.Integer, "3")]
+    [DataRow("sqrt(16)", MathValue.DataType.Integer, "4")]
+    [DataRow("sqrt(144)", MathValue.DataType.Integer, "12")]
+    [DataRow("sqrt(1000000000000000000000000000000000000000000000000000000000000)", MathValue.DataType.Integer, "1000000000000000000000000000000")]
+    [DataRow("sqrt(2^64)", MathValue.DataType.Integer, "4294967296")] // 2^32
+    [DataRow("sqrt(2^100)", MathValue.DataType.Integer, "1125899906842624")] // 2^50
+
+    // Beyond double.MaxValue, confirms integer path is taken and exact value is preserved, rather than +Infinity.
+    [DataRow("sqrt(2^2000)", MathValue.DataType.Integer,
+        "10715086071862673209484250490600018105614048117055336074437503883703510511249361224931983788156958581275946729175531468251871452856923140435984577574698574803934567774824230985421074605062371141877954182153046474983581941267398767559165543946077062914571196477686542167660429831652624386837205668069376")]
+
+    // Radix / non-decimal integer literals.
+    [DataRow("sqrt(0x10000)", MathValue.DataType.Integer, "256")]
+    [DataRow("sqrt(0x100000000)", MathValue.DataType.Integer, "65536")]
+    [DataRow("sqrt(0b1000000)", MathValue.DataType.Integer, "8")] // 64 -> 8
+
+    // Expressions resulting in perfect squares, e.g. Pythagorean triples.
+    [DataRow("sqrt(3^2 + 4^2)", MathValue.DataType.Integer, "5")]
+    [DataRow("sqrt(5^2 + 12^2)", MathValue.DataType.Integer, "13")]
+
+    // Squares of large 30-bit primes (1000000007^2).
+    [DataRow("sqrt(1000000014000000049)", MathValue.DataType.Integer, "1000000007")]
     public void SpecialMathFunctionsPreserveRepresentationAndExactValues(string expression, MathValue.DataType expectedType, string expectedValue)
     {
         var result = Calculator.Evaluate(expression);
@@ -317,6 +342,43 @@ public class NumericTests
         {
             Assert.AreEqual(decimal.Parse(expectedValue, CultureInfo.InvariantCulture), result.DecVal);
         }
+    }
+
+    [TestMethod]
+    [DataRow("sqrt(2)", 1.4142135623730951)]
+    [DataRow("sqrt(3)", 1.7320508075688772)]
+    [DataRow("sqrt(5)", 2.23606797749979)]
+    [DataRow("sqrt(8)", 2.8284271247461903)]
+    [DataRow("sqrt(15)", 3.872983346207417)]
+    [DataRow("sqrt(17)", 4.123105625617661)]
+
+    // Values immediately adjacent to large perfect squares (e.g. those tested above) must
+    // fall back to double.
+    [DataRow("sqrt(10^60 - 1)", 1e30)]
+    [DataRow("sqrt(10^60 + 1)", 1e30)]
+    public void NonSquareIntegersFallBackToDouble(string expression, double expected)
+    {
+        var result = Calculator.Evaluate(expression);
+
+        // Crucial: Must be Double, NOT an integer floor!
+        Assert.AreEqual(MathValue.DataType.Double, result.Type);
+        Assert.AreEqual(expected, result.DblVal, 1e-12);
+    }
+
+    [TestMethod]
+    [DataRow("sqrt(-1)")]
+    [DataRow("sqrt(-4)")]
+    [DataRow("sqrt(-16)")]
+    [DataRow("sqrt(-1000000000000000000000000000000000000000000000000000000000000)")]
+    [DataRow("sqrt(-2^64)")]
+    public void NegativeIntegersThrowUndefinedMathResult(string expression)
+    {
+        Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic));
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(EvaluationError.UndefinedMathResult, diagnostic.Code);
+
+        var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate(expression));
+        Assert.AreEqual(EvaluationError.UndefinedMathResult, ex.Diagnostic.Code);
     }
 
     [TestMethod]
