@@ -434,17 +434,21 @@ internal sealed class AstParser
         return new NumberNode(ParseNumber());
     }
 
-    private static bool IsRecognizedConstant(string name) =>
-        name.Equals("pi", StringComparison.OrdinalIgnoreCase) ||
-        name.Equals("π", StringComparison.OrdinalIgnoreCase) ||
-        name.Equals("Π", StringComparison.OrdinalIgnoreCase) ||
-        name.Equals("tau", StringComparison.OrdinalIgnoreCase) ||
-        name.Equals("τ", StringComparison.OrdinalIgnoreCase) ||
-        name.Equals("Τ", StringComparison.OrdinalIgnoreCase) ||
-        name.Equals("phi", StringComparison.OrdinalIgnoreCase) ||
-        name.Equals("ϕ", StringComparison.OrdinalIgnoreCase) ||
-        name.Equals("Φ", StringComparison.OrdinalIgnoreCase) ||
-        name.Equals("e", StringComparison.OrdinalIgnoreCase);
+    private static bool IsRecognizedConstant(ReadOnlySpan<char> name) => name.Length switch
+    {
+        1 => name[0] switch
+        {
+            'e' or 'E' => true,
+            '\u03C0' or '\u03A0' => true,               // π, Π
+            '\u03C4' or '\u03A4' => true,               // τ, Τ
+            '\u03D5' or '\u03C6' or '\u03A6' => true,   // ϕ (symbol), φ (small), Φ (capital)
+            _ => false,
+        },
+        2 => name.Equals("pi", StringComparison.OrdinalIgnoreCase),
+        3 => name.Equals("tau", StringComparison.OrdinalIgnoreCase) ||
+             name.Equals("phi", StringComparison.OrdinalIgnoreCase),
+        _ => false,
+    };
 
     private MathValue ParseNumber()
     {

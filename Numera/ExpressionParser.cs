@@ -728,32 +728,26 @@ internal sealed class ExpressionParser
         return _input.AsSpan(start, _pos - start);
     }
 
-    private MathValue EvaluateConstant(ReadOnlySpan<char> name)
+    private MathValue EvaluateConstant(ReadOnlySpan<char> name) => name.Length switch
     {
-        if (name.Equals("pi", StringComparison.OrdinalIgnoreCase) || name.SequenceEqual("π") || name.SequenceEqual("Π"))
+        1 => name[0] switch
         {
-            return new MathValue(Math.PI);
-        }
+            'e' or 'E' => new MathValue(Math.E),
+            '\u03C0' or '\u03A0' => new MathValue(Math.PI),               // π, Π
+            '\u03C4' or '\u03A4' => new MathValue(Math.Tau),              // τ, Τ
+            '\u03D5' or '\u03C6' or '\u03A6' =>                           // ϕ (symbol), φ (small), Φ (capital)
+                new MathValue((1.0 + Math.Sqrt(5.0)) / 2.0),
+            _ => throw UnknownConstantException(name),
+        },
+        2 when name.Equals("pi", StringComparison.OrdinalIgnoreCase) => new MathValue(Math.PI),
+        3 when name.Equals("tau", StringComparison.OrdinalIgnoreCase) => new MathValue(Math.Tau),
+        3 when name.Equals("phi", StringComparison.OrdinalIgnoreCase) =>
+            new MathValue((1.0 + Math.Sqrt(5.0)) / 2.0),
+        _ => throw UnknownConstantException(name),
+    };
 
-        if (name.Equals("tau", StringComparison.OrdinalIgnoreCase) || name.SequenceEqual("τ") || name.SequenceEqual("Τ"))
-        {
-            return new MathValue(Math.Tau);
-        }
-
-        if (name.Equals("e", StringComparison.OrdinalIgnoreCase))
-        {
-            return new MathValue(Math.E);
-        }
-
-        if (name.Equals("phi", StringComparison.OrdinalIgnoreCase) || name.SequenceEqual("ϕ") || name.SequenceEqual("Φ"))
-        {
-            // Golden ratio: (1 + sqrt(5)) / 2 ≈ 1.618033988749895
-            return new MathValue((1.0 + Math.Sqrt(5.0)) / 2.0);
-        }
-
-        throw new ExpressionException(
-            new EvaluationDiagnostic(EvaluationError.UnknownConstant, $"Unknown constant '{name}'.", _pos - name.Length, name.Length));
-    }
+    private ExpressionException UnknownConstantException(ReadOnlySpan<char> name) =>
+        new(new EvaluationDiagnostic(EvaluationError.UnknownConstant, $"Unknown constant '{name}'.", _pos - name.Length, name.Length));
 
     private MathValue EvaluateFunction(ReadOnlySpan<char> name, List<MathValue> args)
     {

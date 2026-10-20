@@ -32,19 +32,27 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
     {
         if (_options.UseGreekSymbols)
         {
-            if (node.Name.Equals("pi", StringComparison.OrdinalIgnoreCase) || node.Name == "π" || node.Name == "Π")
+            var name = node.Name.AsSpan();
+            if (name.Length == 1)
+            {
+                switch (name[0])
+                {
+                    case '\u03C0' or '\u03A0': // π, Π
+                        return "π";
+                    case '\u03C4' or '\u03A4': // τ, Τ
+                        return "τ";
+                    case '\u03D5' or '\u03C6' or '\u03A6': // ϕ, φ, Φ
+                        return "ϕ";
+                }
+            }
+            else if (name.Length == 2 && name.Equals("pi", StringComparison.OrdinalIgnoreCase))
             {
                 return "π";
             }
-
-            if (node.Name.Equals("tau", StringComparison.OrdinalIgnoreCase) || node.Name == "τ" || node.Name == "Τ")
+            else if (name.Length == 3)
             {
-                return "τ";
-            }
-
-            if (node.Name.Equals("phi", StringComparison.OrdinalIgnoreCase) || node.Name == "ϕ" || node.Name == "Φ")
-            {
-                return "ϕ";
+                if (name.Equals("tau", StringComparison.OrdinalIgnoreCase)) return "τ";
+                if (name.Equals("phi", StringComparison.OrdinalIgnoreCase)) return "ϕ";
             }
         }
 

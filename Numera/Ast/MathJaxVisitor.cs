@@ -23,19 +23,27 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
 
     public string Visit(IdentifierNode node)
     {
-        if (node.Name.Equals("pi", StringComparison.OrdinalIgnoreCase) || node.Name == "π" || node.Name == "Π")
+        var name = node.Name.AsSpan();
+        if (name.Length == 1)
+        {
+            switch (name[0])
+            {
+                case '\u03C0' or '\u03A0': // π, Π
+                    return @"\pi";
+                case '\u03C4' or '\u03A4': // τ, Τ
+                    return @"\tau";
+                case '\u03D5' or '\u03C6' or '\u03A6': // ϕ, φ, Φ
+                    return @"\phi";
+            }
+        }
+        else if (name.Length == 2 && name.Equals("pi", StringComparison.OrdinalIgnoreCase))
         {
             return @"\pi";
         }
-
-        if (node.Name.Equals("tau", StringComparison.OrdinalIgnoreCase) || node.Name == "τ" || node.Name == "Τ")
+        else if (name.Length == 3)
         {
-            return @"\tau";
-        }
-
-        if (node.Name.Equals("phi", StringComparison.OrdinalIgnoreCase) || node.Name == "ϕ" || node.Name == "Φ")
-        {
-            return @"\phi";
+            if (name.Equals("tau", StringComparison.OrdinalIgnoreCase)) return @"\tau";
+            if (name.Equals("phi", StringComparison.OrdinalIgnoreCase)) return @"\phi";
         }
 
         return node.Name;
