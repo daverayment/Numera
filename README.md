@@ -145,108 +145,82 @@ Supported units are:
 * `AngleUnit.Degrees` (360° per revolution; exact cardinal values for multiples of 90°/180°)
 * `AngleUnit.Gradians` (400 gon per revolution)
 
-## Under the Hood: Why Three Numeric Types?
-Notice in the examples above that Numera returns distinct **Integer**, **Decimal**, and **Double** representations rather than forcing all results into a single type.
+## Why Numera?
 
-Most expression evaluators rely exclusively on 64-bit IEEE 754 double-precision floating-point (**double**) arithmetic for all calculations. While this is fast and convenient, it can produce surprising behaviour and imprecision:
+Most expression evaluators rely exclusively on 64-bit IEEE 754 floating-point (`double`) arithmetic. While fast, double-precision introduces surprising artifacts:
 
-1. **Decimal Artifacts:** Base-10 fractions such as `0.3` and `0.1` aren't exactly representable in binary. Standard double-based engines evaluate `0.3 / 0.1` as `2.9999999999999996` rather than `3`. Financial calculations like `3033554.11 - 3033359.71` can likewise expose small binary rounding differences instead of the exact decimal value; so you would see `194.3999999999` instead of `194.40`.
+1. **Decimal rounding issues:** Fractions such as `0.1` and `0.3` cannot be represented with finite binary expansions. Standard engines evaluate `0.3 / 0.1` as `2.9999999999999996` rather than `3`. Financial subtraction like `3033554.11 - 3033359.71` yields `194.3999999999...` instead of `194.40`.
+2. **Integer precision gaps:** Integers beyond $2^{53}$ ($\approx 9 \times 10^{15}$) silently lose precision. For example, $2^{64}$ rounds to `18,446,744,073,709,600,000` rather than the exact `18,446,744,073,709,551,616`.
 
-2. **Loss of integer precision:** In double arithmetic, large gaps can exist between the values that can be accurately represented by the type. For example all the integers from `10^16 - 5` to `10^16 + 50` silently round to `10^16`. The issue becomes more pronounced with larger integers, such as `2^64`, which is represented as `18,446,744,073,709,600,000` instead of the exact value of `18,446,744,073,709,551,616`.
+Numera takes a **hybrid approach**, backing each `MathValue` with one of three representations:
+- **`BigInteger`** for exact arbitrary-precision integer arithmetic up to 16,384 bits.
+- **`decimal`** for exact base-10 financial arithmetic with 28–29 significant digits.
+- **`double`** for trigonometric, transcendental, and hardware-accelerated floating-point operations.
 
-## How Numera is Different: A Hybrid Approach
+Your application can inspect `result.Type` to distinguish provably exact answers from floating-point approximations.
 
-Instead of forcing all calculations into a single numeric type, each operation in Numera produces a `MathValue` backed by one of three types:
+---
 
-* **BigInteger** for exact integer arithmetic within a 16,384-bit safety ceiling. Preserves large integers, whole-number quotients (such as `(10^50) / (10^49)`), and perfect squares via `sqrt` (such as `sqrt(144)` or arbitrary-precision perfect squares).
-* **Decimal** for base-10 arithmetic with roughly 28-29 significant digits and up to 28 decimal places. It preserves representable decimal fractions, making it useful for financial expressions. Parsing and arithmetic can round to fit its precision; conversion or arithmetic overflow falls back to double.
-* **Double** for functions such as trigonometric evaluations, non-square `sqrt` outputs, powers outside the exact integer path, and decimal overflow fallback. It provides roughly 15-17 significant decimal digits and a wide range of magnitudes. Results may be approximate, `NaN`, or infinite.
+## Normalizing Human Input
 
-By exposing `result.Type`, Numera lets your application distinguish between provably exact integer results, high-precision decimal outputs, and floating-point approximations.
+Numera's core evaluator expects clean, culture-invariant syntax (`.` decimal points, `,` argument commas, standard ASCII operators). 
 
-## Supported Syntax
-Numera implements a standard Recursive Descent parser with the following capabilities:
+For interactive desktop applications, launchers (such as PowerToys Run or Raycast), or search boxes, use **`ExpressionNormalizer`** to preprocess human quirks—including leading/trailing equals, European decimal commas, digit grouping, percentage idioms (`15% of 200`, `100 + 20%`), postfix factorials (`5!`), and implicit multiplication (`2pi`, `2(3+4)`):
 
-- **Basic Mathematical Operators:** `+`, `-`, `*`, `/`, `%`, and right-associative `^` (exponentiation), unary `+` and unary `-`. (An example of right-associative exponentiation is `2^3^2` which evaluates as `2^(3^2) = 512`.)
+```csharp
+using Numera;
+using System.Globalization;
 
-- **Grouping:** Parentheses `()` for grouping expressions. Square brackets are unsupported.
+var options = new NormalizationOptions { Culture = new CultureInfo("de-DE") };
+string raw = "= 1.000,50 × (2 + 3)! + 15% of 200 =";
 
-- **Relational and Equality Operators:**
-  - Comparisons: `<`, `<=`, `>`, `>=`, `==`, `!=`, and `~=`.
-  - Results evaluate to `1` (true) or `0` (false) via exact comparison.
-  - Chained comparisons evaluate conjunctively and short-circuit:
-    - `1 < x <= 10` evaluates as `1 < x and x <= 10`.
-    - `a == b == c` checks that all three values are equal (`a == b and b == c`), rather than folding into `(a == b) == c`. (Explicit parentheses like `(a == b) == c` can be used if comparing the Boolean outcome).
+if (ExpressionNormalizer.TryNormalize(raw, out var clean, options))
+{
+    // clean: "1000.50 * factorial(2 + 3) + (15 / 100) * 200"
+    var result = Calculator.Evaluate(clean);
+    Console.WriteLine($"Result: {result}");
+}
+```
 
-- **Logical Operators:**
-  - Disjunction: `||` or `or` (short-circuiting).
-  - Conjunction: `&&` or `and` (short-circuiting).
-  - Exclusive OR: `xor`.
-  - Unary negation: `!` or `not`.
-  - Truthiness: Zero (`0`) is false; all non-zero numbers (including `NaN` and infinity) are true.
-  - Short-circuiting skips evaluating right-hand branches when the outcome is already known, while still checking syntax.
+---
 
-- **Operator Precedence (highest to lowest):**
-  1. Exponentiation (`^`, right-associative)
-  2. Unary negation, signs, and bitwise NOT (`!`, `not`, `~`, `+`, `-`)
-  3. Multiplication, division, remainder (`*`, `/`, `%`)
-  4. Addition and subtraction (`+`, `-`)
-  5. Bitwise shift (`<<`, `>>`)
-  6. Chained comparison and equality (`<`, `<=`, `>`, `>=`, `==`, `!=`, `~=`)
-  7. `&&`, `and`
-  8. `xor`
-  9. `||`, `or`
+## On-Demand AST Parsing & Expression Formatting
 
-  > **Note on Unary Negation vs Exponentiation:**  
-  > Numera follows standard mathematical and scientific computing convention (e.g. Python, Julia, MATLAB, ExprTK, Wolfram) where exponentiation binds tighter than unary minus:
-  > - `-10^4` evaluates as `-(10^4) = -10000`.
-  > - Use parentheses when a negative base is intended: `(-10)^4 = 10000`.  
-  > *(Note that software like Microsoft Excel and Windows Calculator invert this rule by treating leading signs as higher precedence, evaluating `-10^4` as `10000`.)*
+Beyond direct string evaluation, Numera provides on-demand AST parsing and typographic expression formatting:
 
-- **Constants:** `pi` (or `π`, `Π`), `tau` (or `τ`, `Τ`, representing 2π), and `e`.
+```csharp
+using Numera;
+using Numera.Ast;
 
-- **Functions:**
-  - **Trigonometry:** `sin`, `cos`, `tan`, `arcsin`/`asin`, `arccos`/`acos`, `arctan`/`atan`, `atan2(y, x)`, `cot`, `sec`, `csc`, `arccot`, `arcsec`, `arccsc` (operates in radians by default, or degrees/gradians via `EvaluationOptions.AngleUnit`).
-  - **Hyperbolic:** `sinh`, `cosh`, `tanh`, `arsinh`/`asinh`, `arcosh`/`acosh`, `artanh`/`atanh`, `coth`, `sech`, `csch`, `arcoth`, `arsech`, `arcsch`.
-  - **Angle Conversion:** `rad(degrees)` or `deg2rad(degrees)` converts degrees to radians; `deg(radians)` or `rad2deg(radians)` converts radians to degrees; `grad(gradians)` or `grad2rad(gradians)` converts gradians to radians; plus explicit cross-conversions `deg2grad`, `rad2grad`, and `grad2deg`.
-  - **Logarithms/Roots:** `log` (base 10), `log2`, `log10`, `ln` (natural), `log1p` (ln(1 + x)), `expm1` (e^x - 1), `logn(value, base)`, `sqrt`, `cbrt`, `root(value, root)`.
-  - **Special & Probability:** `erf(x)` (error function), `erfc(x)` (complementary error function), `ncdf(x)` (standard normal cumulative distribution), `sinc(x)` (cardinal sine: sin(x)/x), `gamma(x)` (Euler gamma), `lgamma(x)` (log-gamma), `beta(a, b)` (Euler beta), `zeta(s)` (Riemann zeta).
-  - **Combinatorics & Number Theory:** `factorial(n)`, `gcd(...values)` (greatest common divisor, variadic), `lcm(...values)` (least common multiple, variadic), `comb(n, k)` (combinations, with aliases `nCr`, `choose`, `binomial`), `perm(n, k)` (permutations, with alias `nPr`), `isprime(n)` (primality test returning 1 or 0), `divcount(n)` (divisor count function $d(n)$, alias `divisorcount`), `sigma(n[, k])` (divisor sum function $\sigma(n)$, or generalized sum of k-th powers $\sigma_k(n)$, alias `divsum`), `totient(n)` (Euler's totient function $\phi(n)$, aliases `phi`, `eulerphi`). Require exact integer operands.
-  - **General:** `min`, `max`, `avg`, `sum`, `mul`, `mod(a, b)`, `clamp(val, min, max)`, `abs`, `round(val[, places])`, `ceil`, `floor`, `trunc`, `frac`, `sign`/`sgn`, `hypot(x, y)`, `lerp(a, b, t)`.
-  - **Bitwise:** Operator `~` (unary bitwise NOT); functions `shl(val, count)`, `shr(val, count)`, `band(a, b)`, `bor(a, b)`, `bxor(a, b)`, `bnot(a)`. Require exact integer operands and evaluate via arbitrary-precision integers.
-  - **Random:** `rand()` returns a double in [0,1); `randi(n)` returns an integer in [0,n).
+// 1. Parse into an Abstract Syntax Tree on demand:
+if (Calculator.TryParse("2 * pi * sqrt(16) / 2", out ExpressionNode? ast, out EvaluationDiagnostic? error))
+{
+    // The AST can be inspected, visited, or transformed via IExpressionVisitor<T>
+}
 
-- **Literal Formats:**
-  - Standard decimal and integer numbers.
-  - Scientific notation: e.g. `1e6`, `2.5e-3`, `1.23E+10`.
-  - Radix-prefixed exact integers: `0x...` (hexadecimal), `0b...` (binary), `0o...` (octal).
+// 2. Format expressions for desktop launchers, UI labels, or Markdown math:
+string typographic = Calculator.FormatExpression("2 * pi * sqrt(16) / 2");
+// -> "2 × π × √(16) ÷ 2"
 
-- **Function behaviour and conventions:**
-  - Function and constant names are case-insensitive.
-  - `min`, `max`, `avg`, `sum`, and `mul` are variadic (accepting one or more arguments).
-  - `round` rounds midpoint away from zero to the nearest whole number (`round(val)`), or to the specified number of decimal places (`round(val, places)` for 0–28 places).
-  - Invalid or undefined calculations fail evaluation with specific diagnostic codes:
-    - **Mathematically undefined results** (e.g. `sqrt(-1)` or `log(0)`) report `UndefinedMathResult`.
-    - **Fractions where whole numbers are required** (e.g. `1.5 << 2` or `factorial(2.5)`) report `IntegerRequired`.
-    - **Out-of-range inputs** (e.g. `factorial(-5)` or negative shift counts like `1 << -1`) report `ArgumentOutOfRange`.
+string latex = Calculator.FormatExpression("2 * pi * sqrt(16) / 2", ExpressionFormatOptions.LaTeX);
+// -> "\frac{2 \cdot \pi \cdot \sqrt{16}}{2}"
+```
 
-Unary signs bind less tightly than powers: `-2^2` means `-(2^2)`, while `2^-3` permits a negative exponent.
+---
 
-Numera input requires `.` as the decimal point and `,` as the argument separator, regardless of the current culture. It does not support localised input, digit-grouping separators, implicit multiplication, or postfix factorial. The caller is responsible for any transformations to support those features.
+## Documentation
 
-## Computational Safety and Limits
-To safeguard against resource exhaustion when evaluating untrusted user input, Numera enforces sensible computational ceilings by default:
+For comprehensive guides and references, see the documentation in [`docs/`](docs/):
 
-- Input length is limited to 4,096 UTF-16 code units, including whitespace.
-- Parser recursion depth is limited to 128, counted at unary-expression parsing. Grouping, function arguments, unary signs, and powers contribute to this depth.
-- Integers are limited to 16,384 bits (≈ 4,932 decimal digits).
-- The maximum factorial argument is 1,000.
-- Whole-number exponents are limited to an absolute magnitude of 10,000. Integer powers also have size checks. Fractional exponents use `Math.Pow` without an exponent-magnitude limit.
-- Callers can set lower input-length and parser-depth limits using `EvaluationOptions`; the values above are the maximum allowed settings.
+- **[Syntax & Functions Reference](docs/syntax.md)**: Full catalog of operators, precedence rules, constants, literals, and all 60+ built-in functions (trigonometric, hyperbolic, combinatorics, number theory, probability, bitwise).
+- **[Expression Normalization Guide](docs/normalization.md)**: Detailed breakdown of the normalization pipeline, culture options, and percentage/factorial/implicit-multiplication rules.
+- **[Numerical Architecture & Type Model](docs/architecture.md)**: How `MathValue` balances `BigInteger`, `decimal`, and `double`, type promotion rules, and exact cardinal angles.
+- **[Safety Limits & Error Diagnostics](docs/safety-and-limits.md)**: Resource ceilings (`CalculationLimits`), recursion depth, memory protections, exception hierarchy, and diagnostic codes.
 
-Exceeding a ceiling produces `CalculationLimitException`, or a `LimitExceeded` diagnostic through `TryEvaluate`.
+---
 
 ## Scope: What Numera is Not (Yet)
+
 Numera is designed for evaluating expressions with exact integers and representable base-10 decimals where possible; it is intentionally scoped and is not:
 
 - **A Computer Algebra System (CAS):** No symbolic simplification, differentiation, integration, variables, or user-defined functions.

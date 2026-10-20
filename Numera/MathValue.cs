@@ -14,7 +14,7 @@ namespace Numera;
 /// can approximate. Integer results exceeding the safety ceiling throw rather than
 /// falling back to double.
 /// </remarks>
-public readonly struct MathValue : IFormattable
+public readonly struct MathValue : IFormattable, ISpanFormattable, IUtf8SpanFormattable
 {
     /// <summary>
     /// Identifies the underlying active representation stored in a
@@ -175,6 +175,189 @@ public readonly struct MathValue : IFormattable
         DataType.Double => DblVal.ToString(format ?? "G17", formatProvider),
         _ => throw new InvalidOperationException($"Unexpected data type: {Type}"),
     };
+
+    /// <summary>
+    /// Formats the value into a character span.
+    /// </summary>
+    public bool TryFormat(
+        Span<char> destination,
+        out int charsWritten,
+        ReadOnlySpan<char> format = default,
+        IFormatProvider? provider = null)
+    {
+        switch (Type)
+        {
+            case DataType.Integer:
+                return IntVal.TryFormat(destination, out charsWritten, format, provider);
+            case DataType.Decimal:
+                return DecVal.TryFormat(destination, out charsWritten, format, provider);
+            case DataType.Double:
+                return DblVal.TryFormat(
+                    destination,
+                    out charsWritten,
+                    format.IsEmpty ? "G17" : format,
+                    provider);
+            default:
+                throw new InvalidOperationException($"Unexpected data type: {Type}");
+        }
+    }
+
+    /// <summary>
+    /// Formats the value into a UTF-8 byte span.
+    /// </summary>
+    public bool TryFormat(
+        Span<byte> utf8Destination,
+        out int bytesWritten,
+        ReadOnlySpan<char> format = default,
+        IFormatProvider? provider = null)
+    {
+        switch (Type)
+        {
+            case DataType.Integer:
+            {
+                // BigInteger implements ISpanFormattable (chars). Format to a stack buffer and encode to UTF-8.
+                Span<char> charBuffer = stackalloc char[256];
+                if (IntVal.TryFormat(charBuffer, out int charsWritten, format, provider))
+                {
+                    return System.Text.Encoding.UTF8.TryGetBytes(charBuffer[..charsWritten], utf8Destination, out bytesWritten);
+                }
+
+                // If the integer exceeds 256 characters, allocate a temporary string
+                string formatted = IntVal.ToString(format.IsEmpty ? null : format.ToString(), provider);
+                return System.Text.Encoding.UTF8.TryGetBytes(formatted, utf8Destination, out bytesWritten);
+            }
+            case DataType.Decimal:
+                return DecVal.TryFormat(utf8Destination, out bytesWritten, format, provider);
+            case DataType.Double:
+                return DblVal.TryFormat(
+                    utf8Destination,
+                    out bytesWritten,
+                    format.IsEmpty ? "G17" : format,
+                    provider);
+            default:
+                throw new InvalidOperationException($"Unexpected data type: {Type}");
+        }
+    }
+
+    /// <summary>
+    /// Returns the hexadecimal representation of the value if it is an integer; otherwise, <c>null</c>.
+    /// </summary>
+    /// <param name="prefix">Whether to prefix the result with "0x" (or "-0x" if negative).</param>
+    public string? ToHexString(bool prefix = true)
+    {
+        if (Type != DataType.Integer)
+        {
+            return null;
+        }
+
+        if (IntVal.IsZero)
+        {
+            return prefix ? "0x0" : "0";
+        }
+
+        bool isNegative = IntVal < BigInteger.Zero;
+        BigInteger absVal = BigInteger.Abs(IntVal);
+        string hex = absVal.ToString("X");
+
+        if (!prefix)
+        {
+            return isNegative ? "-" + hex : hex;
+        }
+
+        return isNegative ? "-0x" + hex : "0x" + hex;
+    }
+
+    /// <summary>
+    /// Returns the binary representation of the value if it is an integer; otherwise, <c>null</c>.
+    /// </summary>
+    /// <param name="prefix">Whether to prefix the result with "0b" (or "-0b" if negative).</param>
+    public string? ToBinaryString(bool prefix = true)
+    {
+        if (Type != DataType.Integer)
+        {
+            return null;
+        }
+
+        if (IntVal.IsZero)
+        {
+            return prefix ? "0b0" : "0";
+        }
+
+        bool isNegative = IntVal < BigInteger.Zero;
+        BigInteger absVal = BigInteger.Abs(IntVal);
+        string binary = absVal.ToString("B").TrimStart('0');
+        if (binary.Length == 0)
+        {
+            binary = "0";
+        }
+
+        if (!prefix)
+        {
+            return isNegative ? "-" + binary : binary;
+        }
+
+        return isNegative ? "-0b" + binary : "0b" + binary;
+    }
+
+    /// <summary>
+    /// Returns the octal representation of the value if it is an integer; otherwise, <c>null</c>.
+    /// </summary>
+    /// <param name="prefix">Whether to prefix the result with "0o" (or "-0o" if negative).</param>
+    public string? ToOctalString(bool prefix = true)
+    {
+        if (Type != DataType.Integer)
+        {
+            return null;
+        }
+
+        if (IntVal.IsZero)
+        {
+            return prefix ? "0o0" : "0";
+        }
+
+        bool isNegative = IntVal < BigInteger.Zero;
+        BigInteger absVal = BigInteger.Abs(IntVal);
+
+        // Convert absVal to octal by converting binary representation in 3-bit groups
+        string binary = absVal.ToString("B").TrimStart('0');
+        if (binary.Length == 0)
+        {
+            binary = "0";
+        }
+
+        int rem = binary.Length % 3;
+        int pad = rem == 0 ? 0 : 3 - rem;
+        int totalLen = binary.Length + pad;
+
+        var sb = new System.Text.StringBuilder(totalLen / 3);
+        int i = 0;
+        if (pad > 0)
+        {
+            int firstOctal = 0;
+            for (int k = 0; k < rem; k++)
+            {
+                firstOctal = (firstOctal << 1) | (binary[k] - '0');
+            }
+
+            sb.Append((char)('0' + firstOctal));
+            i = rem;
+        }
+
+        while (i < binary.Length)
+        {
+            int val = ((binary[i] - '0') << 2) | ((binary[i + 1] - '0') << 1) | (binary[i + 2] - '0');
+            sb.Append((char)('0' + val));
+            i += 3;
+        }
+
+        string octal = sb.ToString();
+        if (!prefix)
+        {
+            return isNegative ? "-" + octal : octal;
+        }
+
+        return isNegative ? "-0o" + octal : "0o" + octal;
+    }
 
     internal bool IsZero => Type switch
     {

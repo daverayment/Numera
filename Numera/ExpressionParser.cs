@@ -1334,7 +1334,7 @@ internal sealed class ExpressionParser
             result = NumberTheory.Gcd(result, next);
         }
 
-        return new MathValue(result);
+        return new MathValue(BigInteger.Abs(result));
     }
 
     private static MathValue EvaluateLcm(List<MathValue> args)
@@ -1356,7 +1356,7 @@ internal sealed class ExpressionParser
             result = NumberTheory.Lcm(result, next);
         }
 
-        return new MathValue(result);
+        return new MathValue(BigInteger.Abs(result));
     }
 
     private static MathValue EvaluateMinMax(List<MathValue> args, bool findMinimum)
