@@ -609,8 +609,8 @@ internal static class FunctionCatalog
                 Category: FunctionCategory.ExponentialsAndLogarithms,
                 Signature: Sig2("x", "n"),
                 Description: "Computes the nth root of x.",
-                Aliases: [],
-                Keywords: ["nth root", "radical", "degree"]),
+                Aliases: ["nthroot"],
+                Keywords: ["nth root", "radical", "degree", "nthroot"]),
 
             // Arithmetic and Rounding.
             new FunctionInfo(
@@ -823,6 +823,33 @@ internal static class FunctionCatalog
                 Keywords: ["average", "mean", "arithmetic mean", "expected value"]),
 
             new FunctionInfo(
+                Name: "median",
+                CanonicalName: "median",
+                Category: FunctionCategory.StatisticalAndAggregation,
+                Signature: new FunctionSignature(1, null, [new ParameterInfo("values", IsVariadic: true)]),
+                Description: "Computes the statistical median of one or more arguments.",
+                Aliases: [],
+                Keywords: ["median", "middle", "percentile", "statistics"]),
+
+            new FunctionInfo(
+                Name: "var",
+                CanonicalName: "var",
+                Category: FunctionCategory.StatisticalAndAggregation,
+                Signature: new FunctionSignature(2, null, [new ParameterInfo("values", IsVariadic: true)]),
+                Description: "Computes the sample variance of two or more arguments.",
+                Aliases: ["variance"],
+                Keywords: ["variance", "var", "sample variance", "statistics", "dispersion"]),
+
+            new FunctionInfo(
+                Name: "stdev",
+                CanonicalName: "stdev",
+                Category: FunctionCategory.StatisticalAndAggregation,
+                Signature: new FunctionSignature(2, null, [new ParameterInfo("values", IsVariadic: true)]),
+                Description: "Computes the sample standard deviation of two or more arguments.",
+                Aliases: ["stddev"],
+                Keywords: ["standard deviation", "stdev", "stddev", "sample standard deviation", "statistics", "dispersion"]),
+
+            new FunctionInfo(
                 Name: "sum",
                 CanonicalName: "sum",
                 Category: FunctionCategory.StatisticalAndAggregation,
@@ -894,6 +921,15 @@ internal static class FunctionCatalog
                 Description: "Computes the exact bitwise NOT (one's complement) of an integer.",
                 Aliases: [],
                 Keywords: ["bitwise not", "complement", "~", "invert"]),
+
+            new FunctionInfo(
+                Name: "popcount",
+                CanonicalName: "popcount",
+                Category: FunctionCategory.Bitwise,
+                Signature: Sig1("n"),
+                Description: "Counts the number of set bits (population count) of a non-negative integer.",
+                Aliases: ["bitcount"],
+                Keywords: ["popcount", "bitcount", "hamming weight", "bits", "population count"]),
 
             // Special and Probability.
             new FunctionInfo(

@@ -33,6 +33,11 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
             return @"\tau";
         }
 
+        if (node.Name.Equals("phi", StringComparison.OrdinalIgnoreCase) || node.Name == "ϕ" || node.Name == "Φ")
+        {
+            return @"\phi";
+        }
+
         return node.Name;
     }
 

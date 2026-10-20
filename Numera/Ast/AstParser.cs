@@ -441,6 +441,9 @@ internal sealed class AstParser
         name.Equals("tau", StringComparison.OrdinalIgnoreCase) ||
         name.Equals("τ", StringComparison.OrdinalIgnoreCase) ||
         name.Equals("Τ", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("phi", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("ϕ", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("Φ", StringComparison.OrdinalIgnoreCase) ||
         name.Equals("e", StringComparison.OrdinalIgnoreCase);
 
     private MathValue ParseNumber()

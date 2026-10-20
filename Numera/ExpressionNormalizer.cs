@@ -232,15 +232,16 @@ public static class ExpressionNormalizer
             if (c == '(') parenDepth++;
             else if (c == ')') parenDepth = Math.Max(0, parenDepth - 1);
 
-            // Swiss digit grouping: apostrophe between digits (e.g. 1'000'000)
-            if (c == '\'' && i > 0 && i + 1 < text.Length && char.IsDigit(text[i - 1]) && char.IsDigit(text[i + 1]))
+            // Swiss digit grouping: apostrophe between digits (e.g. 1'000'000 or 1’000’000).
+            // Supports both straight apostrophe (U+0027) and typographic/curly apostrophe (U+2019).
+            if ((c == '\'' || c == '\u2019') && i > 0 && i + 1 < text.Length && char.IsDigit(text[i - 1]) && char.IsDigit(text[i + 1]))
             {
                 // Discard grouping separator
                 continue;
             }
 
-            // Non-breaking space or regular space between groups of digits
-            // e.g. 1 000 000 or 1\u00A0000\u00A0000
+            // Non-breaking space, thin/narrow space, or regular space between groups of digits
+            // e.g. 1 000 000 or 1\u00A0000\u00A0000 or 1\u202F000\u202F000 (SI standard)
             if ((c == ' ' || c == '\u00A0' || c == '\u202F') &&
                 i > 0 && i + 1 < text.Length && char.IsDigit(text[i - 1]) && char.IsDigit(text[i + 1]))
             {

@@ -745,6 +745,12 @@ internal sealed class ExpressionParser
             return new MathValue(Math.E);
         }
 
+        if (name.Equals("phi", StringComparison.OrdinalIgnoreCase) || name.SequenceEqual("ϕ") || name.SequenceEqual("Φ"))
+        {
+            // Golden ratio: (1 + sqrt(5)) / 2 ≈ 1.618033988749895
+            return new MathValue((1.0 + Math.Sqrt(5.0)) / 2.0);
+        }
+
         throw new ExpressionException(
             new EvaluationDiagnostic(EvaluationError.UnknownConstant, $"Unknown constant '{name}'.", _pos - name.Length, name.Length));
     }
@@ -773,6 +779,21 @@ internal sealed class ExpressionParser
         if (lower is "avg")
         {
             return EvaluateAvg(args);
+        }
+
+        if (lower is "median")
+        {
+            return EvaluateMedian(args);
+        }
+
+        if (lower is "var" or "variance")
+        {
+            return EvaluateVariance(args);
+        }
+
+        if (lower is "stdev" or "stddev")
+        {
+            return EvaluateStDev(args);
         }
 
         if (lower is "sum")
@@ -835,6 +856,14 @@ internal sealed class ExpressionParser
 
                 case "bnot":
                     return MathValue.BitwiseNot(args[0]);
+
+                case "popcount" or "bitcount":
+                    if (!args[0].TryGetInteger(out var popArg))
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.IntegerRequired, $"{lower} requires an integer argument."));
+                    }
+                    return new MathValue(NumberTheory.PopCount(popArg));
 
                 case "exp":
                     return new MathValue(Math.Exp(v));
@@ -1221,7 +1250,7 @@ internal sealed class ExpressionParser
                 case "round":
                     return EvaluateRound(args[0], args[1]);
 
-                case "root":
+                case "root" or "nthroot":
                     double baseVal = args[0].AsDouble();
                     double rootVal = args[1].AsDouble();
                     if (rootVal == 0.0)
@@ -1385,6 +1414,43 @@ internal sealed class ExpressionParser
         }
 
         return sum / new MathValue((BigInteger)args.Count);
+    }
+
+    private static MathValue EvaluateMedian(List<MathValue> args)
+    {
+        var sorted = new List<MathValue>(args);
+        sorted.Sort(MathValue.Compare);
+
+        int count = sorted.Count;
+        if (count % 2 == 1)
+        {
+            return sorted[count / 2];
+        }
+
+        var mid1 = sorted[(count / 2) - 1];
+        var mid2 = sorted[count / 2];
+        return (mid1 + mid2) / new MathValue(2m);
+    }
+
+    private static MathValue EvaluateVariance(List<MathValue> args)
+    {
+        // Sample variance requires n >= 2: s^2 = (1 / (n - 1)) * sum((x_i - mean)^2)
+        var mean = EvaluateAvg(args);
+        var sumOfSquares = new MathValue(0m);
+
+        for (int i = 0; i < args.Count; i++)
+        {
+            var diff = args[i] - mean;
+            sumOfSquares += diff * diff;
+        }
+
+        return sumOfSquares / new MathValue((BigInteger)(args.Count - 1));
+    }
+
+    private static MathValue EvaluateStDev(List<MathValue> args)
+    {
+        var variance = EvaluateVariance(args);
+        return new MathValue(Math.Sqrt(variance.AsDouble()));
     }
 
     private static MathValue EvaluateSum(List<MathValue> args)

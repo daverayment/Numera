@@ -515,4 +515,27 @@ internal static class NumberTheory
 
         return result;
     }
+
+    /// <summary>
+    /// Counts the number of set bits (population count) of a non-negative integer.
+    /// </summary>
+    /// <param name="n">The integer whose set bits to count.</param>
+    /// <returns>The population count as a <see cref="BigInteger"/>.</returns>
+    /// <exception cref="ExpressionException">Thrown if <paramref name="n"/> is negative.</exception>
+    public static BigInteger PopCount(BigInteger n)
+    {
+        if (n < BigInteger.Zero)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.ArgumentOutOfRange, "popcount requires a non-negative integer."));
+        }
+
+        long count = 0;
+        foreach (byte b in n.ToByteArray())
+        {
+            count += System.Numerics.BitOperations.PopCount((uint)b);
+        }
+
+        return new BigInteger(count);
+    }
 }

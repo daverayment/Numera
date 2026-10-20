@@ -140,15 +140,28 @@ public sealed class ExpressionNormalizerTests
     [TestMethod]
     public void SwissApostropheAndIsoSpaceGroupingAreNormalized()
     {
-        // 1'000'000.50
-        string swiss = ExpressionNormalizer.Normalize("1'000'000.50");
-        Assert.AreEqual("1000000.50", swiss);
-        Assert.AreEqual(new MathValue(1000000.50m), Calculator.Evaluate(swiss));
+        // 1'000'000.50 with straight apostrophe (U+0027)
+        string swissStraight = ExpressionNormalizer.Normalize("1'000'000.50");
+        Assert.AreEqual("1000000.50", swissStraight);
+        Assert.AreEqual(new MathValue(1000000.50m), Calculator.Evaluate(swissStraight));
 
-        // 1 000 000.50 with space or non-breaking space
-        string iso = ExpressionNormalizer.Normalize("1 000 000.50");
-        Assert.AreEqual("1000000.50", iso);
-        Assert.AreEqual(new MathValue(1000000.50m), Calculator.Evaluate(iso));
+        // 1’000’000.50 with typographic/curly apostrophe (U+2019)
+        string swissCurly = ExpressionNormalizer.Normalize("1\u2019000\u2019000.50");
+        Assert.AreEqual("1000000.50", swissCurly);
+        Assert.AreEqual(new MathValue(1000000.50m), Calculator.Evaluate(swissCurly));
+
+        // SI / ISO thousands grouping: regular space (U+0020), NBSP (U+00A0), and narrow NBSP (U+202F)
+        string siRegularSpace = ExpressionNormalizer.Normalize("1 000 000.50");
+        Assert.AreEqual("1000000.50", siRegularSpace);
+        Assert.AreEqual(new MathValue(1000000.50m), Calculator.Evaluate(siRegularSpace));
+
+        string siNbsp = ExpressionNormalizer.Normalize("1\u00A0000\u00A0000.50");
+        Assert.AreEqual("1000000.50", siNbsp);
+        Assert.AreEqual(new MathValue(1000000.50m), Calculator.Evaluate(siNbsp));
+
+        string siNarrowNbsp = ExpressionNormalizer.Normalize("1\u202F000\u202F000.50");
+        Assert.AreEqual("1000000.50", siNarrowNbsp);
+        Assert.AreEqual(new MathValue(1000000.50m), Calculator.Evaluate(siNarrowNbsp));
     }
 
     [TestMethod]

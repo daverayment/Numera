@@ -41,6 +41,11 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
             {
                 return "τ";
             }
+
+            if (node.Name.Equals("phi", StringComparison.OrdinalIgnoreCase) || node.Name == "ϕ" || node.Name == "Φ")
+            {
+                return "ϕ";
+            }
         }
 
         return node.Name;

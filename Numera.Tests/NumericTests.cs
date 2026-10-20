@@ -121,6 +121,11 @@ public class NumericTests
     [DataRow("tau", 6.28318530717958647692, 0.0)]
     [DataRow("τ", 6.28318530717958647692, 0.0)]
     [DataRow("Τ", 6.28318530717958647692, 0.0)]
+    [DataRow("phi", 1.61803398874989484820, 2e-16)]
+    [DataRow("ϕ", 1.61803398874989484820, 2e-16)]
+    [DataRow("Φ", 1.61803398874989484820, 2e-16)]
+    [DataRow("nthroot(27, 3)", 3.0, 0.0)]
+    [DataRow("nthroot(-8, 3)", -2.0, 0.0)]
     public void ApproximateFunctionsAgreeWithIndependentReferences(string expression, double expected, double tolerance)
     {
         var result = Calculator.Evaluate(expression);
@@ -1825,5 +1830,89 @@ public class NumericTests
         var hugeNegativeInt = new MathValue(-(BigInteger.One << 1030));
         Assert.IsGreaterThan(0, MathValue.Compare(hugePositiveInt, new MathValue(1e100)));
         Assert.IsLessThan(0, MathValue.Compare(hugeNegativeInt, new MathValue(1e100)));
+    }
+
+    [TestMethod]
+    public void MedianEvaluatesAccuratelyAcrossOddAndEvenCounts()
+    {
+        // Odd count: middle element
+        var oddRes = Calculator.Evaluate("median(5, 1, 9, 3, 7)");
+        Assert.AreEqual(new MathValue(new BigInteger(5)), oddRes);
+
+        var singleRes = Calculator.Evaluate("median(42)");
+        Assert.AreEqual(new MathValue(new BigInteger(42)), singleRes);
+
+        // Even count: average of two middle elements
+        var evenRes = Calculator.Evaluate("median(1, 2, 3, 4)");
+        Assert.AreEqual(new MathValue(2.5m), evenRes);
+
+        var twoRes = Calculator.Evaluate("median(10, 20)");
+        Assert.AreEqual(new MathValue(15m), twoRes);
+
+        // Mixed decimal and integer values
+        var mixedRes = Calculator.Evaluate("median(1.5, 4.5, 2.5)");
+        Assert.AreEqual(new MathValue(2.5m), mixedRes);
+    }
+
+    [TestMethod]
+    public void SampleVarianceAndStandardDeviationEvaluateAccurately()
+    {
+        // Sample variance of [2, 4, 4, 4, 5, 5, 7, 9]:
+        // mean = 40/8 = 5.
+        // sum of (x_i - mean)^2 = 9 + 1 + 1 + 1 + 0 + 0 + 4 + 16 = 32.
+        // s^2 = 32 / (8 - 1) = 32 / 7.
+        var varRes = Calculator.Evaluate("var(2, 4, 4, 4, 5, 5, 7, 9)");
+        var expectedVar = 32.0 / 7.0;
+        Assert.AreEqual(expectedVar, varRes.AsDouble(), 1e-12);
+
+        // variance alias
+        var varianceRes = Calculator.Evaluate("variance(2, 4, 4, 4, 5, 5, 7, 9)");
+        Assert.AreEqual(expectedVar, varianceRes.AsDouble(), 1e-12);
+
+        // stdev: sqrt(32/7)
+        var stdevRes = Calculator.Evaluate("stdev(2, 4, 4, 4, 5, 5, 7, 9)");
+        Assert.AreEqual(Math.Sqrt(expectedVar), stdevRes.AsDouble(), 1e-12);
+
+        // stddev alias
+        var stddevRes = Calculator.Evaluate("stddev(2, 4, 4, 4, 5, 5, 7, 9)");
+        Assert.AreEqual(Math.Sqrt(expectedVar), stddevRes.AsDouble(), 1e-12);
+
+        // Simple two-element case: [10, 20], mean = 15, (25 + 25) / 1 = 50, stdev = sqrt(50)
+        Assert.AreEqual(new MathValue(50m), Calculator.Evaluate("var(10, 20)"));
+        Assert.AreEqual(Math.Sqrt(50.0), Calculator.Evaluate("stdev(10, 20)").AsDouble(), 1e-12);
+
+        // Require at least 2 arguments
+        Assert.Throws<ExpressionException>(() => Calculator.Evaluate("var(5)"));
+        Assert.Throws<ExpressionException>(() => Calculator.Evaluate("variance(5)"));
+        Assert.Throws<ExpressionException>(() => Calculator.Evaluate("stdev(5)"));
+        Assert.Throws<ExpressionException>(() => Calculator.Evaluate("stddev(5)"));
+    }
+
+    [TestMethod]
+    public void PopCountEvaluatesAccuratelyAcrossIntegersAndRejectsNegatives()
+    {
+        // popcount(0) = 0
+        Assert.AreEqual(new MathValue(BigInteger.Zero), Calculator.Evaluate("popcount(0)"));
+
+        // popcount(1) = 1, popcount(7) = 3, popcount(255) = 8
+        Assert.AreEqual(new MathValue(BigInteger.One), Calculator.Evaluate("popcount(1)"));
+        Assert.AreEqual(new MathValue(new BigInteger(3)), Calculator.Evaluate("popcount(7)"));
+        Assert.AreEqual(new MathValue(new BigInteger(8)), Calculator.Evaluate("popcount(255)"));
+        Assert.AreEqual(new MathValue(new BigInteger(8)), Calculator.Evaluate("popcount(0xFF)"));
+
+        // bitcount alias
+        Assert.AreEqual(new MathValue(new BigInteger(8)), Calculator.Evaluate("bitcount(0b11111111)"));
+
+        // Large integer: (2^100 - 1) has 100 set bits
+        var largeMask = (BigInteger.One << 100) - 1;
+        Assert.AreEqual(new MathValue(new BigInteger(100)), Calculator.Evaluate($"popcount({largeMask})"));
+
+        // Non-negative integer required: negative throws ArgumentOutOfRange
+        var negEx = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("popcount(-1)"));
+        Assert.AreEqual(EvaluationError.ArgumentOutOfRange, negEx.Diagnostic?.Code);
+
+        // Non-integer argument throws IntegerRequired
+        var decEx = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("popcount(3.14)"));
+        Assert.AreEqual(EvaluationError.IntegerRequired, decEx.Diagnostic?.Code);
     }
 }

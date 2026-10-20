@@ -213,6 +213,14 @@ public sealed class AstAndFormattingTests
         Assert.IsInstanceOfType<IdentifierNode>(tauNode);
         Assert.AreEqual("tau", ((IdentifierNode)tauNode).Name);
 
+        var phiNode = Calculator.Parse("phi");
+        Assert.IsInstanceOfType<IdentifierNode>(phiNode);
+        Assert.AreEqual("phi", ((IdentifierNode)phiNode).Name);
+
+        var phiSymNode = Calculator.Parse("ϕ");
+        Assert.IsInstanceOfType<IdentifierNode>(phiSymNode);
+        Assert.AreEqual("ϕ", ((IdentifierNode)phiSymNode).Name);
+
         var eNode = Calculator.Parse("e");
         Assert.IsInstanceOfType<IdentifierNode>(eNode);
         Assert.AreEqual("e", ((IdentifierNode)eNode).Name);
@@ -277,6 +285,9 @@ public sealed class AstAndFormattingTests
 
         string unaryPi = Calculator.FormatExpression("-pi", ExpressionFormatOptions.LaTeX);
         Assert.AreEqual(@"-\pi", unaryPi);
+
+        string unaryPhi = Calculator.FormatExpression("phi", ExpressionFormatOptions.LaTeX);
+        Assert.AreEqual(@"\phi", unaryPhi);
 
         string bitwise = Calculator.FormatExpression("~1", ExpressionFormatOptions.LaTeX);
         Assert.AreEqual(@"\sim 1", bitwise);
@@ -429,6 +440,10 @@ public sealed class AstAndFormattingTests
         // Greek tau
         string tau = Calculator.FormatExpression("tau");
         Assert.AreEqual("τ", tau);
+
+        // Greek phi
+        string phi = Calculator.FormatExpression("phi");
+        Assert.AreEqual("ϕ", phi);
 
         // Function with multiple arguments
         string minVal = Calculator.FormatExpression("min(1, 2, 3)");
