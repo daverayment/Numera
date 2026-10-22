@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Numera.Ast;
 
 namespace Numera.Tests;

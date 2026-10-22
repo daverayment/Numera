@@ -42,35 +42,60 @@ public sealed record EvaluationOptions
     public bool AllowImplicitMultiplication { get; init; } = true;
 
     /// <summary>
-    /// Caller-supplied variables available for lookup during expression parsing and evaluation.
-    /// Variable names are looked up case-insensitively.
+    /// Caller-supplied variables available for lookup during expression parsing and
+    /// evaluation. Variable names are looked up case-insensitively.
     /// </summary>
     public IReadOnlyDictionary<string, MathValue>? Variables { get; init; }
 
     /// <summary>
-    /// Gets or initializes the value of the standard <c>ans</c> variable representing the previous calculation result.
-    /// When set, populates or merges <c>ans</c> into <see cref="Variables"/>.
+    /// Gets or initializes the value of the standard <c>ans</c> variable, representing
+    /// the previous calculation result.
     /// </summary>
-    public MathValue? PreviousResult
-    {
-        get => Variables != null && Variables.TryGetValue("ans", out var val) ? val : null;
-        init
-        {
-            if (value.HasValue)
-            {
-                var dict = new Dictionary<string, MathValue>(StringComparer.OrdinalIgnoreCase);
-                if (Variables != null)
-                {
-                    foreach (var (k, v) in Variables)
-                    {
-                        dict[k] = v;
-                    }
-                }
+    public MathValue? PreviousResult { get; init; }
 
-                dict["ans"] = value.Value;
-                Variables = dict;
-            }
+    /// <summary>
+    /// Checks whether a variable with the given name is defined in the current evaluation
+    /// context, or is the special <c>ans</c> variable with a defined previous result.
+    /// </summary>
+    /// <param name="name">The name of the variable to check.</param>
+    /// <returns><c>true</c> if the variable is defined; otherwise, <c>false</c>.</returns>
+    internal bool IsVariableDefined(string name)
+    {
+        if (name.Equals("ans", StringComparison.OrdinalIgnoreCase) && PreviousResult.HasValue)
+        {
+            return true;
         }
+
+        return Variables != null && Variables.ContainsKey(name);
+    }
+
+    /// <summary>
+    /// Attempts to resolve an identifier to its corresponding <see cref="MathValue"/> in
+    /// the current evaluation context. Custom variables take precedence over the special
+    /// <c>ans</c> variable.
+    /// </summary>
+    /// <param name="name">The name of the variable to resolve.</param>
+    /// <param name="value">When this method returns, contains the <see cref="MathValue"/>
+    /// associated with the specified name, if the name is found; otherwise, the default
+    /// value for <see cref="MathValue"/>.</param>
+    /// <returns><c>true</c> if the variable was successfully resolved; otherwise,
+    /// <c>false</c>.</returns>
+    internal bool TryResolveVariable(string name, out MathValue value)
+    {
+        if (Variables != null && Variables.TryGetValue(name, out value))
+        {
+            return true;
+        }
+
+        if (name.Equals("ans", StringComparison.OrdinalIgnoreCase) &&
+            PreviousResult.HasValue)
+        {
+            value = PreviousResult.Value;
+            return true;
+        }
+
+        value = default;
+        return false;
     }
 
     internal void Validate()

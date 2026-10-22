@@ -612,7 +612,7 @@ internal sealed class AstParser
                 EvaluationError.InvalidSyntax, $"Function '{identifier}' requires parentheses.", identifierStart, identifier.Length));
         }
 
-        if (_options.Variables != null && _options.Variables.ContainsKey(identifier))
+        if (_options.IsVariableDefined(identifier))
         {
             return new IdentifierNode(identifier, null, new TextSpan(identifierStart, identifier.Length));
         }
@@ -824,8 +824,9 @@ internal sealed class AstParser
         {
             if (!double.IsFinite(doubleValue))
             {
-                // If a large floating-point literal represents an exact integer (e.g. '1e309' or '2.5e400')
-                // and fits within the configured BigInteger bit ceiling, promote it to an exact BigInteger.
+                // If a large floating-point literal represents an exact integer (e.g.
+                // '1e309' or '2.5e400') and fits within the configured BigInteger bit
+                // ceiling, promote it to an exact BigInteger.
                 if (TryPromoteScientificToBigInteger(numberSpan, out var bigIntValue))
                 {
                     return new MathValue(bigIntValue);
@@ -844,7 +845,8 @@ internal sealed class AstParser
             return new MathValue(doubleValue);
         }
 
-        // Check if a literal that could not parse as double can still be represented as an exact BigInteger
+        // Check if a literal that could not parse as double can still be represented as
+        // an exact BigInteger.
         if (TryPromoteScientificToBigInteger(numberSpan, out var bigIntFallback))
         {
             return new MathValue(bigIntFallback);
@@ -854,7 +856,8 @@ internal sealed class AstParser
             new EvaluationDiagnostic(EvaluationError.InvalidSyntax, "Expected a number.", start, Math.Max(1, _pos - start)));
     }
 
-    private static bool TryPromoteScientificToBigInteger(ReadOnlySpan<char> span, out BigInteger result)
+    private static bool TryPromoteScientificToBigInteger(ReadOnlySpan<char> span,
+        out BigInteger result)
     {
         result = BigInteger.Zero;
         int expIndex = span.IndexOfAny('e', 'E');
@@ -873,7 +876,7 @@ internal sealed class AstParser
 
         if (expSpan.StartsWith("-"))
         {
-            // Negative exponent cannot be promoted to a large integer
+            // Negative exponent cannot be promoted to a large integer.
             return false;
         }
 
@@ -905,8 +908,11 @@ internal sealed class AstParser
                 return false;
             }
 
-            string digits = string.Concat(integerPart, fractionalPart);
-            if (!BigInteger.TryParse(digits, NumberStyles.Integer, CultureInfo.InvariantCulture, out mantissaInt))
+            // Avoid heap allocation by using stackalloc for the mantissa buffer.
+            Span<char> buffer = stackalloc char[integerPart.Length + fractionalPart.Length];
+            integerPart.CopyTo(buffer);
+            fractionalPart.CopyTo(buffer[integerPart.Length..]);
+            if (!BigInteger.TryParse(buffer, NumberStyles.Integer, CultureInfo.InvariantCulture, out mantissaInt))
             {
                 return false;
             }

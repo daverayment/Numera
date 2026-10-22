@@ -25,7 +25,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 			return new MathValue(value);
 		}
 
-		if (_options.Variables != null && _options.Variables.TryGetValue(node.Name, out var variableValue))
+		if (_options.TryResolveVariable(node.Name, out var variableValue))
 		{
 			return variableValue;
 		}

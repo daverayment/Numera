@@ -521,7 +521,8 @@ internal static class NumberTheory
     /// </summary>
     /// <param name="n">The integer whose set bits to count.</param>
     /// <returns>The population count as a <see cref="BigInteger"/>.</returns>
-    /// <exception cref="ExpressionException">Thrown if <paramref name="n"/> is negative.</exception>
+    /// <exception cref="ExpressionException">Thrown if <paramref name="n"/> is negative.
+    /// </exception>
     public static BigInteger PopCount(BigInteger n)
     {
         if (n < BigInteger.Zero)
@@ -530,10 +531,16 @@ internal static class NumberTheory
                 EvaluationError.ArgumentOutOfRange, "popcount requires a non-negative integer."));
         }
 
+        int byteCount = n.GetByteCount();
+
+        // Use stack allocation when possible to avoid heap allocs.
+        Span<byte> buffer = byteCount <= 256 ? stackalloc byte[byteCount] : new byte[byteCount];
+        n.TryWriteBytes(buffer, out int bytesWritten);
+
         long count = 0;
-        foreach (byte b in n.ToByteArray())
+        for (int i = 0; i < bytesWritten; i++)
         {
-            count += System.Numerics.BitOperations.PopCount((uint)b);
+            count += BitOperations.PopCount(buffer[i]);
         }
 
         return new BigInteger(count);
