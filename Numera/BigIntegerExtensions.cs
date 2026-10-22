@@ -84,4 +84,108 @@ internal static class BigIntegerExtensions
         root = BigInteger.Zero;
         return false;
     }
+
+    /// <summary>
+    /// Attempts to compute the exact integer k-th root of a <see cref="BigInteger"/>.
+    /// Supports even and odd positive integer degrees. Odd roots are supported for negative numbers.
+    /// Returns true if an exact integer root exists; otherwise false.
+    /// </summary>
+    public static bool TryGetExactRoot(this BigInteger n, int degree, out BigInteger root)
+    {
+        if (degree <= 0)
+        {
+            root = BigInteger.Zero;
+            return false;
+        }
+
+        if (degree == 1)
+        {
+            root = n;
+            return true;
+        }
+
+        if (n.IsZero)
+        {
+            root = BigInteger.Zero;
+            return true;
+        }
+
+        if (n == BigInteger.One)
+        {
+            root = BigInteger.One;
+            return true;
+        }
+
+        if (degree == 2)
+        {
+            return n.TryGetExactSquareRoot(out root);
+        }
+
+        if (n < BigInteger.Zero)
+        {
+            // Even roots of negative numbers have no real solution.
+            if ((degree & 1) == 0)
+            {
+                root = BigInteger.Zero;
+                return false;
+            }
+
+            // Odd roots of negative numbers: root(-n, degree) = -root(n, degree).
+            if (TryGetExactRoot(-n, degree, out var posRoot))
+            {
+                root = -posRoot;
+                return true;
+            }
+
+            root = BigInteger.Zero;
+            return false;
+        }
+
+        // Degree greater than or equal to bit length of n (for n >= 2):
+        // Since 2^degree > n when degree >= bitLength, the only possible integer root is 1,
+        // which was already handled above.
+        long bitLength = n.GetBitLength();
+        if (degree >= bitLength)
+        {
+            root = BigInteger.Zero;
+            return false;
+        }
+
+        // Compute integer k-th root floor(n^(1/degree)) via integer Newton-Raphson.
+        // Initial estimate x0: 2^(ceil(bitLength / degree)).
+        int initialBits = (int)((bitLength + degree - 1) / degree);
+        var x = BigInteger.One << initialBits;
+        int kMinus1 = degree - 1;
+
+        while (true)
+        {
+            // x_{next} = ((k - 1) * x + n / x^(k - 1)) / k
+            var xPow = BigInteger.Pow(x, kMinus1);
+            var y = (kMinus1 * x + n / xPow) / degree;
+            if (y >= x)
+            {
+                break;
+            }
+
+            x = y;
+        }
+
+        // x is now floor(n^(1/degree)) (or within 1 due to integer division).
+        // Check if x^degree == n, or test adjacent candidates if needed.
+        if (BigInteger.Pow(x, degree) == n)
+        {
+            root = x;
+            return true;
+        }
+
+        var xPlusOne = x + 1;
+        if (BigInteger.Pow(xPlusOne, degree) == n)
+        {
+            root = xPlusOne;
+            return true;
+        }
+
+        root = BigInteger.Zero;
+        return false;
+    }
 }

@@ -1,753 +1,247 @@
-using System.Globalization;
 using System.Numerics;
 
-namespace Numera;
+namespace Numera.Ast;
 
 /// <summary>
-/// Evaluates one mathematical expression using recursive descent, without retaining an
-/// abstract syntax tree. Each instance owns the parsing state for a single evaluation.
+/// Evaluates an <see cref="ExpressionNode"/> tree. The parser has already validated
+/// syntax, constants, function names and arity for every branch, so short-circuiting here
+/// only skips evaluation work. Runtime failures are tagged with the offending node's
+/// source span.
 /// </summary>
-/// <remarks>
-/// Precedence, from lowest to highest, is OR, XOR, AND, chained comparison
-/// (equality and relational), bitwise shift (&lt;&lt;, &gt;&gt;), addition/subtraction,
-/// multiplication/division/remainder, unary signs/negation, and exponentiation.
-/// Grouping and function arguments restart at the lowest precedence.
-/// </remarks>
-internal sealed class ExpressionParser
+internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 {
-    private readonly string _input;
-    private readonly EvaluationOptions _options;
-
-    // Cursor positions also identify diagnostic locations in the original input.
-    private int _pos;
-    private int _depth;
-
-    private enum ComparisonOp
-    {
-        None,
-        Equal,
-        NotEqual,
-        LessThan,
-        LessThanOrEqual,
-        GreaterThan,
-        GreaterThanOrEqual,
-    }
-
-    public ExpressionParser(string input, EvaluationOptions options)
-    {
-        ArgumentNullException.ThrowIfNull(input);
-        if (input.Length > options.MaxInputLength)
-        {
-            throw new CalculationLimitException();
-        }
-
-        _input = input;
-        _options = options;
-    }
-
-    public MathValue Evaluate()
-    {
-        var result = ParseLogical();
-        SkipWhitespace();
-
-        // A valid prefix is not enough: the entire expression must be consumed.
-        if (_pos < _input.Length)
-        {
-            char trailing = _input[_pos];
-            if (trailing is '[' or ']' or ';')
-            {
-                throw SyntaxError($"'{trailing}' is reserved for future matrix and array syntax.");
-            }
-
-            throw SyntaxError($"Unexpected character '{trailing}'.");
-        }
-
-        return result;
-    }
-
-    // With evaluate=false, parsing and validation still run, but operators and function
-    // execution are skipped. Returned values on that path are not evaluation results.
-    private MathValue ParseLogical(bool evaluate = true)
-    {
-        // Recursive descent starts at the loosest-binding level (lowest precedence)
-        // and descends toward tighter-binding levels:
-        // ParseLogical (OR) -> ParseLogicalXor (XOR) -> ParseLogicalAnd (AND) ->
-        // ParseEquality -> ...
-        // A method delegates to the next level for its operands, so the deeper levels
-        // (AND) are evaluated before the outer levels (OR).
-        var left = ParseLogicalXor(evaluate);
-        while (true)
-        {
-            SkipWhitespace();
-            if (Peek() == '|' && Peek(1) == '|')
-            {
-                Consume();
-                Consume();
-                var right = ParseLogicalXor(evaluate && left.IsZero);
-                if (evaluate)
-                {
-                    left = MathValue.LogicalOr(left, right);
-                }
-            }
-            else if (MatchKeyword("or"))
-            {
-                var right = ParseLogicalXor(evaluate && left.IsZero);
-                if (evaluate)
-                {
-                    left = MathValue.LogicalOr(left, right);
-                }
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        return left;
-    }
-
-    private MathValue ParseLogicalXor(bool evaluate)
-    {
-        var left = ParseLogicalAnd(evaluate);
-        while (true)
-        {
-            SkipWhitespace();
-            if (MatchKeyword("xor"))
-            {
-                var right = ParseLogicalAnd(evaluate);
-                if (evaluate)
-                {
-                    left = MathValue.LogicalXor(left, right);
-                }
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        return left;
-    }
-
-    private MathValue ParseLogicalAnd(bool evaluate)
-    {
-        var left = ParseComparison(evaluate);
-        while (true)
-        {
-            SkipWhitespace();
-            if (Peek() == '&' && Peek(1) == '&')
-            {
-                Consume();
-                Consume();
-                var right = ParseComparison(evaluate && !left.IsZero);
-                if (evaluate)
-                {
-                    left = MathValue.LogicalAnd(left, right);
-                }
-            }
-            else if (MatchKeyword("and"))
-            {
-                var right = ParseComparison(evaluate && !left.IsZero);
-                if (evaluate)
-                {
-                    left = MathValue.LogicalAnd(left, right);
-                }
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        return left;
-    }
-
-    private MathValue ParseComparison(bool evaluate)
-    {
-        var left = ParseShift(evaluate);
-        bool hasComparison = false;
-        bool allPassed = true;
-
-        while (true)
-        {
-            SkipWhitespace();
-            var op = MatchComparisonOperator();
-            if (op == ComparisonOp.None)
-            {
-                break;
-            }
-
-            hasComparison = true;
-
-            // Short-circuit. If a previous comparison failed, skip the next operand and
-            // comparison evaluation to avoid unnecessary work and potential exceptions
-            // (e.g. division by zero).
-            bool evaluateCurrent = evaluate && allPassed;
-            var right = ParseShift(evaluateCurrent);
-
-            if (evaluateCurrent)
-            {
-                if (!EvaluateComparison(op, left, right))
-                {
-                    allPassed = false;
-                }
-            }
-
-            // For chained comparisons, the right operand becomes the left operand for the
-            // next comparison.
-            left = right;
-        }
-
-        if (!hasComparison)
-        {
-            return left;
-        }
-
-        return allPassed ? new MathValue(1m) : new MathValue(0m);
-    }
-
-    private static bool EvaluateComparison(ComparisonOp op, MathValue left, MathValue right)
-    {
-        // IEEE 754 NaN comparison semantics:
-        // Any relational comparison or equality with NaN evaluates to false.
-        // Inequality (!= and ~=) with NaN evaluates to true.
-        if (left.IsNaN || right.IsNaN)
-        {
-            return op is ComparisonOp.NotEqual;
-        }
-
-        int cmp = MathValue.Compare(left, right);
-        return op switch
-        {
-            ComparisonOp.Equal => cmp == 0,
-            ComparisonOp.NotEqual => cmp != 0,
-            ComparisonOp.LessThan => cmp < 0,
-            ComparisonOp.LessThanOrEqual => cmp <= 0,
-            ComparisonOp.GreaterThan => cmp > 0,
-            ComparisonOp.GreaterThanOrEqual => cmp >= 0,
-            _ => false,
-        };
-    }
-
-    private ComparisonOp MatchComparisonOperator()
-    {
-        ComparisonOp op = Peek() switch
-        {
-            '=' when Peek(1) == '=' => ComparisonOp.Equal,
-            '!' when Peek(1) == '=' => ComparisonOp.NotEqual,
-            '~' when Peek(1) == '=' => ComparisonOp.NotEqual,
-            '<' when Peek(1) == '=' => ComparisonOp.LessThanOrEqual,
-            '>' when Peek(1) == '=' => ComparisonOp.GreaterThanOrEqual,
-            '<' => ComparisonOp.LessThan,
-            '>' => ComparisonOp.GreaterThan,
-            _ => ComparisonOp.None,
-        };
-
-        if (op == ComparisonOp.None)
-        {
-            return ComparisonOp.None;
-        }
-
-        Consume();
-        if (op is ComparisonOp.Equal or ComparisonOp.NotEqual or
-            ComparisonOp.LessThanOrEqual or ComparisonOp.GreaterThanOrEqual)
-        {
-            Consume();
-        }
-
-        return op;
-    }
-
-    private MathValue ParseShift(bool evaluate)
-    {
-        var left = ParseExpression(evaluate);
-        while (true)
-        {
-            SkipWhitespace();
-            if (Peek() == '<' && Peek(1) == '<')
-            {
-                Consume();
-                Consume();
-                var right = ParseExpression(evaluate);
-                if (evaluate)
-                {
-                    left = MathValue.ShiftLeft(left, right);
-                }
-            }
-            else if (Peek() == '>' && Peek(1) == '>')
-            {
-                Consume();
-                Consume();
-                var right = ParseExpression(evaluate);
-                if (evaluate)
-                {
-                    left = MathValue.ShiftRight(left, right);
-                }
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        return left;
-    }
-
-    private MathValue ParseExpression(bool evaluate)
-    {
-        var left = ParseTerm(evaluate);
-        while (true)
-        {
-            SkipWhitespace();
-            if (Peek() == '+')
-            {
-                Consume();
-                var right = ParseTerm(evaluate);
-                if (evaluate)
-                {
-                    left += right;
-                }
-            }
-            else if (Peek() == '-')
-            {
-                Consume();
-                var right = ParseTerm(evaluate);
-                if (evaluate)
-                {
-                    left -= right;
-                }
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        return left;
-    }
-
-    private MathValue ParseTerm(bool evaluate)
-    {
-        var left = ParseUnary(evaluate);
-        while (true)
-        {
-            SkipWhitespace();
-            if (Peek() == '*')
-            {
-                Consume();
-                var right = ParseUnary(evaluate);
-                if (evaluate)
-                {
-                    left *= right;
-                }
-            }
-            else if (Peek() == '/')
-            {
-                Consume();
-                var right = ParseUnary(evaluate);
-                if (evaluate)
-                {
-                    left /= right;
-                }
-            }
-            else if (Peek() == '%')
-            {
-                Consume();
-                var right = ParseUnary(evaluate);
-                if (evaluate)
-                {
-                    left %= right;
-                }
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        return left;
-    }
-
-    private MathValue ParseUnary(bool evaluate)
-    {
-        // Recursive grammar paths return through here, so one counter bounds grouping,
-        // function arguments, unary chains, and right-associative powers alike.
-        if (_depth >= _options.MaxNestingDepth)
-        {
-            throw new CalculationLimitException();
-        }
-
-        _depth++;
-        try
-        {
-            SkipWhitespace();
-            if (Peek() == '-')
-            {
-                Consume();
-                var value = ParseUnary(evaluate);
-                return evaluate ? -value : default;
-            }
-            else if (Peek() == '+')
-            {
-                Consume();
-                return ParseUnary(evaluate);
-            }
-            else if (Peek() == '!')
-            {
-                Consume();
-                var value = ParseUnary(evaluate);
-                return evaluate ? MathValue.LogicalNot(value) : default;
-            }
-            else if (Peek() == '~')
-            {
-                Consume();
-                var value = ParseUnary(evaluate);
-                return evaluate ? MathValue.BitwiseNot(value) : default;
-            }
-            else if (MatchKeyword("not"))
-            {
-                var value = ParseUnary(evaluate);
-                return evaluate ? MathValue.LogicalNot(value) : default;
-            }
-
-            // Powers bind more tightly than a leading sign: -2^2 means -(2^2).
-            return ParsePower(evaluate);
-        }
-        finally
-        {
-            _depth--;
-        }
-    }
-
-    private MathValue ParsePower(bool evaluate)
-    {
-        var left = ParsePrimary(evaluate);
-        SkipWhitespace();
-        if (Peek() == '^')
-        {
-            Consume();
-
-            // Recursing through unary permits signed exponents and makes powers
-            // right-associative: 2^-3 is valid, and 2^3^2 means 2^(3^2).
-            var right = ParseUnary(evaluate);
-            if (evaluate)
-            {
-                left = MathValue.Pow(left, right);
-            }
-        }
-
-        return left;
-    }
-
-    private MathValue ParsePrimary(bool evaluate)
-    {
-        SkipWhitespace();
-        if (_pos >= _input.Length)
-        {
-            throw SyntaxError("Unexpected end of input.");
-        }
-
-        var c = Peek();
-
-        if (c is '[' or ']' or ';')
-        {
-            throw SyntaxError($"'{c}' is reserved for future matrix and array syntax.");
-        }
-
-        if (c == '(')
-        {
-            Consume();
-            var value = ParseLogical(evaluate);
-            SkipWhitespace();
-
-            if (Peek() != ')')
-            {
-                throw SyntaxError("Expected ')'.");
-            }
-
-            Consume();
-            return value;
-        }
-
-        if (char.IsLetter(c) || c == '_' || c == 'π')
-        {
-            int identifierStart = _pos;
-            var identifier = ParseIdentifier();
-            SkipWhitespace();
-            if (Peek() == '(')
-            {
-                Consume();
-                SkipWhitespace();
-                var args = new List<MathValue>();
-                if (Peek() != ')')
-                {
-                    while (true)
-                    {
-                        args.Add(ParseLogical(evaluate));
-                        SkipWhitespace();
-                        if (Peek() == ',')
-                        {
-                            Consume();
-                        }
-                        else
-                        {
-                            break;
-                        }
-                    }
-                }
-
-                if (Peek() == ')')
-                {
-                    Consume();
-                }
-                else
-                {
-                    throw SyntaxError("Expected ')'.");
-                }
-
-                // Short-circuiting suppresses execution, not errors in function names
-                // or argument counts. Validation also protects the dispatch below.
-                if (!FunctionArity.TryGet(identifier, out var signature))
-                {
-                    throw new ExpressionException(new EvaluationDiagnostic(
-                        EvaluationError.UnknownFunction, $"Unknown function '{identifier}'.", identifierStart, identifier.Length));
-                }
-
-                if (args.Count < signature.MinimumArguments || (signature.MaximumArguments is int maximum && args.Count > maximum))
-                {
-                    throw new ExpressionException(new EvaluationDiagnostic(
-                        EvaluationError.InvalidArgumentCount, $"Invalid argument count for '{identifier}'.", identifierStart, identifier.Length));
-                }
-
-                if (evaluate)
-                {
-                    return EvaluateFunction(identifier, args);
-                }
-
-                return default;
-            }
-
-            // Constants and literals are still resolved in skipped operands, so invalid
-            // names and malformed numbers cannot hide behind short-circuiting.
-            if (Peek() is '[' or ']' or ';')
-            {
-                char reservedChar = Peek();
-                throw SyntaxError($"'{reservedChar}' is reserved for future matrix and array syntax.");
-            }
-
-            return EvaluateConstant(identifier);
-        }
-
-        return ParseNumber();
-    }
-
-    private MathValue ParseNumber()
-    {
-        int start = _pos;
-
-        // Check for radix-prefixed integer literals: 0x (hex), 0b (binary), 0o (octal).
-        if (Peek() == '0' && _pos + 1 < _input.Length)
-        {
-            char prefix = char.ToLowerInvariant(Peek(1));
-            if (prefix is 'x' or 'b' or 'o')
-            {
-                Consume(); // '0'
-                Consume(); // 'x', 'b', or 'o'
-
-                int digitsStart = _pos;
-                while (_pos < _input.Length && (prefix switch
-                {
-                    'x' => char.IsAsciiHexDigit(Peek()),
-                    'b' => Peek() is '0' or '1',
-                    'o' => Peek() is >= '0' and <= '7',
-                    _ => false,
-                }))
-                {
-                    Consume();
-                }
-
-                if (_pos == digitsStart)
-                {
-                    throw SyntaxError($"Expected {prefix switch { 'x' => "hexadecimal", 'b' => "binary", 'o' => "octal", _ => "radix" }} digits after '0{prefix}'.");
-                }
-
-                var digitsSpan = _input.AsSpan(digitsStart, _pos - digitsStart);
-                var value = prefix switch
-                {
-                    'x' => ParseHexBigInteger(digitsSpan),
-                    'b' => ParseBinaryBigInteger(digitsSpan),
-                    'o' => ParseOctalBigInteger(digitsSpan),
-                    _ => throw SyntaxError("Unsupported number prefix."),
-                };
-
-                return new MathValue(value);
-            }
-        }
-
-        bool hasDecimal = false;
-        bool hasExponent = false;
-
-        // Signs belong to ParseUnary. Literal syntax allows digits, an optional decimal point,
-        // and an optional scientific exponent (e/E optionally followed by +/- and digits).
-        while (_pos < _input.Length)
-        {
-            char ch = Peek();
-            if (char.IsDigit(ch))
-            {
-                Consume();
-            }
-            else if (ch == '.')
-            {
-                if (hasDecimal || hasExponent)
-                {
-                    break;
-                }
-
-                hasDecimal = true;
-                Consume();
-            }
-            else if (ch is 'e' or 'E')
-            {
-                if (hasExponent)
-                {
-                    break;
-                }
-
-                // Check ahead: exponent indicator must be followed by optional sign and at least one digit.
-                int nextPos = 1;
-                if (Peek(nextPos) is '+' or '-')
-                {
-                    nextPos++;
-                }
-
-                if (!char.IsDigit(Peek(nextPos)))
-                {
-                    break;
-                }
-
-                hasExponent = true;
-                Consume(); // 'e' or 'E'
-                if (Peek() is '+' or '-')
-                {
-                    Consume();
-                }
-
-                while (_pos < _input.Length && char.IsDigit(Peek()))
-                {
-                    Consume();
-                }
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        var numberSpan = _input.AsSpan(start, _pos - start);
-
-        // Keep whole-number literals without exponents as arbitrary-precision integers.
-        // For literals with a decimal point or scientific exponent, prefer decimal to
-        // binary floating point; parsing may still round excess digits. Double is a
-        // fallback for overflow or underflow to zero.
-        if (!hasDecimal && !hasExponent && BigInteger.TryParse(
-            numberSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
-        {
-            return new MathValue(intValue);
-        }
-        else if (decimal.TryParse(
-            numberSpan, NumberStyles.Float, CultureInfo.InvariantCulture, out var decValue))
-        {
-            // If decimal parsed to zero but the literal contains non-zero digits, the
-            // literal underflowed decimal's 28-29 digit scale limit. Fall through to
-            // double so the non-zero magnitude is preserved and expressions like
-            // 1 / 0.000...001 do not divide by zero.
-            if (decValue != 0m || numberSpan.IndexOfAnyInRange('1', '9') < 0)
-            {
-                return new MathValue(decValue);
-            }
-        }
-
-        if (double.TryParse(
-            numberSpan, NumberStyles.Float, CultureInfo.InvariantCulture, out double doubleValue))
-        {
-            return new MathValue(doubleValue);
-        }
-
-        throw new ExpressionException(
-            new EvaluationDiagnostic(EvaluationError.InvalidSyntax, "Expected a number.", start, Math.Max(1, _pos - start)));
-    }
-
-    private static BigInteger ParseHexBigInteger(ReadOnlySpan<char> span)
-    {
-        var result = BigInteger.Zero;
-        foreach (var ch in span)
-        {
-            int digit = ch switch
-            {
-                >= '0' and <= '9' => ch - '0',
-                >= 'a' and <= 'f' => ch - 'a' + 10,
-                >= 'A' and <= 'F' => ch - 'A' + 10,
-                _ => 0,
-            };
-            result = (result << 4) | (uint)digit;
-        }
-
-        return result;
-    }
-
-    private static BigInteger ParseBinaryBigInteger(ReadOnlySpan<char> span)
-    {
-        var result = BigInteger.Zero;
-        foreach (char ch in span)
-        {
-            result = (result << 1) | (uint)(ch - '0');
-        }
-
-        return result;
-    }
-
-    private static BigInteger ParseOctalBigInteger(ReadOnlySpan<char> span)
-    {
-        var result = BigInteger.Zero;
-        foreach (char ch in span)
-        {
-            result = (result << 3) | (uint)(ch - '0');
-        }
-
-        return result;
-    }
-
-    private ReadOnlySpan<char> ParseIdentifier()
-    {
-        var start = _pos;
-        while (_pos < _input.Length && (char.IsLetterOrDigit(Peek()) || Peek() == '_' || Peek() == 'π' || Peek() == 'Π'))
-        {
-            Consume();
-        }
-
-        return _input.AsSpan(start, _pos - start);
-    }
-
-    private MathValue EvaluateConstant(ReadOnlySpan<char> name) => name.Length switch
-    {
-        1 => name[0] switch
-        {
-            'e' or 'E' => new MathValue(Math.E),
-            '\u03C0' or '\u03A0' => new MathValue(Math.PI),               // π, Π
-            '\u03C4' or '\u03A4' => new MathValue(Math.Tau),              // τ, Τ
-            '\u03D5' or '\u03C6' or '\u03A6' =>                           // ϕ (symbol), φ (small), Φ (capital)
-                new MathValue((1.0 + Math.Sqrt(5.0)) / 2.0),
-            _ => throw UnknownConstantException(name),
-        },
-        2 when name.Equals("pi", StringComparison.OrdinalIgnoreCase) => new MathValue(Math.PI),
-        3 when name.Equals("tau", StringComparison.OrdinalIgnoreCase) => new MathValue(Math.Tau),
-        3 when name.Equals("phi", StringComparison.OrdinalIgnoreCase) =>
-            new MathValue((1.0 + Math.Sqrt(5.0)) / 2.0),
-        _ => throw UnknownConstantException(name),
-    };
-
-    private ExpressionException UnknownConstantException(ReadOnlySpan<char> name) =>
-        new(new EvaluationDiagnostic(EvaluationError.UnknownConstant, $"Unknown constant '{name}'.", _pos - name.Length, name.Length));
+	private readonly EvaluationOptions _options;
+
+	public AstEvaluator(EvaluationOptions options) => _options = options;
+
+	public MathValue Visit(NumberNode node) => node.Value;
+
+	public MathValue Visit(IdentifierNode node)
+	{
+		// Constant resolution produces a high-precision decimal (up to 28 digits)
+		// for direct inspection and linear decimal/integer arithmetic.
+		if (ConstantCatalog.TryResolve(node.Name, out _, out decimal value))
+		{
+			return new MathValue(value);
+		}
+
+		if (_options.Variables != null && _options.Variables.TryGetValue(node.Name, out var variableValue))
+		{
+			return variableValue;
+		}
+
+		throw new ExpressionException(new EvaluationDiagnostic(
+			EvaluationError.UnknownConstant, $"Unknown constant or variable '{node.Name}'.",
+			node.Span.Start, node.Span.Length));
+	}
+
+	public MathValue Visit(UnaryNode node)
+	{
+		var value = node.Operand.Accept(this);
+		try
+		{
+			return node.Op switch
+			{
+				UnaryOperator.Negate => -value,
+				UnaryOperator.Positive => value,
+				UnaryOperator.LogicalNot => MathValue.LogicalNot(value),
+				UnaryOperator.BitwiseNot => MathValue.BitwiseNot(value),
+				UnaryOperator.Factorial => EvaluateFactorial(value),
+				UnaryOperator.Percent => value / new MathValue(100m),
+				_ => throw new ExpressionException(new EvaluationDiagnostic(
+					EvaluationError.InvalidSyntax, "Unknown unary operator.")),
+			};
+		}
+		catch (Exception ex) when (ex is ExpressionException or DivideByZeroException or OverflowException)
+		{
+			throw Enrich(ex, node.Span);
+		}
+	}
+
+	public MathValue Visit(BinaryNode node)
+	{
+		// Fast path with no spine allocation. Power nodes must take it too, or the loop below
+		// would recurse into this method forever; they are not flattened because they count
+		// towards nesting height (see BinaryNode.Height).
+		if (node.Op == BinaryOperator.Power || node.Left is not BinaryNode { Op: not BinaryOperator.Power })
+		{
+			return Apply(node, node.Left.Accept(this));
+		}
+
+		// Walk the non-power left spine iteratively so long flat chains (e.g. thousands of additive
+		// terms) cannot overflow the call stack. This is the same rule as BinaryNode.Height.
+		var spine = new Stack<BinaryNode>();
+		ExpressionNode current = node;
+		while (current is BinaryNode { Op: not BinaryOperator.Power } bin)
+		{
+			spine.Push(bin);
+			current = bin.Left;
+		}
+
+		MathValue left = current.Accept(this);
+		while (spine.Count > 0)
+		{
+			left = Apply(spine.Pop(), left);
+		}
+
+		return left;
+	}
+
+	private MathValue Apply(BinaryNode node, MathValue left)
+	{
+		if (node.Op == BinaryOperator.LogicalOr && !left.IsZero)
+		{
+			return Guard(node.Span, () => MathValue.LogicalOr(left, new MathValue(1m)));
+		}
+
+		if (node.Op == BinaryOperator.LogicalAnd && left.IsZero)
+		{
+			return Guard(node.Span, () => MathValue.LogicalAnd(left, new MathValue(0m)));
+		}
+
+		var right = node.Right.Accept(this);
+		bool markup = PercentRules.IsMarkup(node);
+		var one = new MathValue(1m);
+		return Guard(node.Span, () => node.Op switch
+		{
+			BinaryOperator.Add when markup => left * (one + right),
+			BinaryOperator.Subtract when markup => left * (one - right),
+			BinaryOperator.Of => left * right,
+			BinaryOperator.Add => left + right,
+			BinaryOperator.Subtract => left - right,
+			BinaryOperator.Multiply => left * right,
+			BinaryOperator.Divide => left / right,
+			BinaryOperator.Modulo => left % right,
+			BinaryOperator.Power => MathValue.Pow(left, right),
+			BinaryOperator.ShiftLeft => MathValue.ShiftLeft(left, right),
+			BinaryOperator.ShiftRight => MathValue.ShiftRight(left, right),
+			BinaryOperator.LogicalAnd => MathValue.LogicalAnd(left, right),
+			BinaryOperator.LogicalOr => MathValue.LogicalOr(left, right),
+			BinaryOperator.LogicalXor => MathValue.LogicalXor(left, right),
+			_ => throw new ExpressionException(new EvaluationDiagnostic(EvaluationError.InvalidSyntax, "Unknown binary operator.")),
+		});
+	}
+
+    /// <summary>
+    /// Evaluates a comparison chain node by evaluating its operands and applying the
+    /// comparison operators in sequence.
+    /// </summary>
+    /// <param name="node">The comparison chain node to evaluate.</param>
+    /// <returns>The result of evaluating the comparison chain.</returns>
+	public MathValue Visit(ComparisonChainNode node)
+	{
+		var left = node.Operands[0].Accept(this);
+		for (int i = 0; i < node.Operators.Count; i++)
+		{
+			// Later operands are skipped once a comparison fails, avoiding needless work
+            // and errors.
+			var right = node.Operands[i + 1].Accept(this);
+			if (!EvaluateComparison(node.Operators[i], left, right))
+			{
+				return new MathValue(0m);
+			}
+
+			left = right;
+		}
+
+		return new MathValue(1m);
+	}
+
+    /// <summary>
+    /// Evaluates a function call node by evaluating its arguments and dispatching to the
+    /// appropriate function implementation.
+    /// </summary>
+    /// <param name="node">The function call node to evaluate.</param>
+    /// <returns>The result of evaluating the function call.</returns>
+	public MathValue Visit(FunctionCallNode node)
+	{
+		var args = new List<MathValue>(node.Arguments.Count);
+		foreach (var arg in node.Arguments)
+		{
+			args.Add(arg.Accept(this));
+		}
+
+		try
+		{
+			return EvaluateFunction(node.FunctionName, args);
+		}
+		catch (Exception ex) when (ex is ExpressionException or DivideByZeroException or OverflowException)
+		{
+			throw Enrich(ex, node.Span);
+		}
+	}
+
+    /// <summary>
+    /// Guards an evaluation action against runtime exceptions and enriches them with
+    /// source span information.
+    /// </summary>
+	private static T Guard<T>(TextSpan span, Func<T> action)
+	{
+		try
+		{
+			return action();
+		}
+		catch (Exception ex) when (ex is ExpressionException or DivideByZeroException or OverflowException)
+		{
+			throw Enrich(ex, span);
+		}
+	}
+
+    /// <summary>
+    /// Creates an <see cref="ExpressionException"/> with an evaluation diagnostic and
+    /// adds source span information when the diagnostic has no position already set.
+    /// </summary>
+    /// <remarks>Keeps an existing diagnostic position unchanged so more precise locations
+    /// are not overwritten.</remarks>
+    /// <param name="ex">Exception to convert or augment with an evaluation diagnostic.
+    /// </param>
+    /// <param name="span">Source span used to populate diagnostic position and length
+    /// when available.</param>
+    /// <returns>Original exception when it is already an <see
+    /// cref="ExpressionException"/> with the same diagnostic; otherwise, a new
+    /// <see cref="ExpressionException"/> that wraps the original exception and carries
+    /// the resolved diagnostic.</returns>
+	private static Exception Enrich(Exception ex, TextSpan span)
+	{
+		EvaluationDiagnostic diagnostic = ex switch
+		{
+			ExpressionException ee => ee.Diagnostic,
+			DivideByZeroException => new EvaluationDiagnostic(
+                EvaluationError.DivisionByZero, "Division by zero."),
+			_ => new EvaluationDiagnostic(
+                EvaluationError.NumericOverflow, "Numeric overflow."),
+		};
+
+		if (diagnostic.Position is null && span.HasValue)
+		{
+			diagnostic = diagnostic with { Position = span.Start, Length = span.Length };
+		}
+
+		return ex is ExpressionException exception && ReferenceEquals(diagnostic, exception.Diagnostic)
+			? ex
+			: new ExpressionException(diagnostic, ex);
+	}
+
+	private static bool EvaluateComparison(ComparisonOperator op, MathValue left, MathValue right)
+	{
+		// IEEE 754: every comparison with NaN is false except inequality.
+		if (left.IsNaN || right.IsNaN)
+		{
+			return op is ComparisonOperator.NotEqual;
+		}
+
+		int cmp = MathValue.Compare(left, right);
+		return op switch
+		{
+			ComparisonOperator.Equal => cmp == 0,
+			ComparisonOperator.NotEqual => cmp != 0,
+			ComparisonOperator.LessThan => cmp < 0,
+			ComparisonOperator.LessThanOrEqual => cmp <= 0,
+			ComparisonOperator.GreaterThan => cmp > 0,
+			ComparisonOperator.GreaterThanOrEqual => cmp >= 0,
+			_ => false,
+		};
+	}
 
     private MathValue EvaluateFunction(ReadOnlySpan<char> name, List<MathValue> args)
     {
@@ -817,24 +311,24 @@ internal sealed class ExpressionParser
                     return args[0].Type switch
                     {
                         MathValue.DataType.Integer => args[0],
-                        MathValue.DataType.Decimal => new MathValue(Math.Ceiling(args[0].DecVal)),
-                        _ => new MathValue(Math.Ceiling(v)),
+                        MathValue.DataType.Decimal => new MathValue((BigInteger)Math.Ceiling(args[0].DecVal)),
+                        _ => ToIntegralMathValue(Math.Ceiling(v)),
                     };
 
                 case "floor":
                     return args[0].Type switch
                     {
                         MathValue.DataType.Integer => args[0],
-                        MathValue.DataType.Decimal => new MathValue(Math.Floor(args[0].DecVal)),
-                        _ => new MathValue(Math.Floor(v)),
+                        MathValue.DataType.Decimal => new MathValue((BigInteger)Math.Floor(args[0].DecVal)),
+                        _ => ToIntegralMathValue(Math.Floor(v)),
                     };
 
                 case "trunc":
                     return args[0].Type switch
                     {
                         MathValue.DataType.Integer => args[0],
-                        MathValue.DataType.Decimal => new MathValue(decimal.Truncate(args[0].DecVal)),
-                        _ => new MathValue(Math.Truncate(v)),
+                        MathValue.DataType.Decimal => new MathValue((BigInteger)decimal.Truncate(args[0].DecVal)),
+                        _ => ToIntegralMathValue(Math.Truncate(v)),
                     };
 
                 case "frac":
@@ -846,6 +340,11 @@ internal sealed class ExpressionParser
                     };
 
                 case "cbrt":
+                    if (args[0].Type is MathValue.DataType.Integer && args[0].IntVal.TryGetExactRoot(3, out var exactCbrt))
+                    {
+                        return new MathValue(exactCbrt);
+                    }
+
                     return new MathValue(Math.Cbrt(v));
 
                 case "bnot":
@@ -934,30 +433,7 @@ internal sealed class ExpressionParser
                     return new MathValue(Math.Sqrt(v));
 
                 case "factorial":
-                    if (!args[0].TryGetInteger(out var factorialArgument))
-                    {
-                        throw new ExpressionException(new EvaluationDiagnostic(
-                            EvaluationError.IntegerRequired, "Factorial requires an integer argument."));
-                    }
-
-                    if (factorialArgument < 0)
-                    {
-                        throw new ExpressionException(new EvaluationDiagnostic(
-                            EvaluationError.ArgumentOutOfRange, "Factorial is undefined for negative integers."));
-                    }
-
-                    if (factorialArgument > CalculationLimits.MaxFactorialArgument)
-                    {
-                        throw new CalculationLimitException();
-                    }
-
-                    BigInteger f = 1;
-                    for (int i = 2; i <= (int)factorialArgument; i++)
-                    {
-                        f *= i;
-                    }
-
-                    return new MathValue(f);
+                    return EvaluateFactorial(args[0]);
 
                 case "sign":
                 case "sgn":
@@ -990,10 +466,10 @@ internal sealed class ExpressionParser
 
                     if (args[0].Type is MathValue.DataType.Decimal)
                     {
-                        return new MathValue(Math.Round(args[0].DecVal, MidpointRounding.AwayFromZero));
+                        return new MathValue((BigInteger)Math.Round(args[0].DecVal, MidpointRounding.AwayFromZero));
                     }
 
-                    return new MathValue(Math.Round(v, MidpointRounding.AwayFromZero));
+                    return ToIntegralMathValue(Math.Round(v, MidpointRounding.AwayFromZero));
 
                 case "randi":
                     if (!args[0].TryGetInteger(out var randomUpperBound))
@@ -1245,6 +721,17 @@ internal sealed class ExpressionParser
                     return EvaluateRound(args[0], args[1]);
 
                 case "root" or "nthroot":
+                    // If base and degree are both integers and degree is a positive int,
+                    // check for an exact integer root before falling back to double approximation.
+                    if (args[0].Type is MathValue.DataType.Integer &&
+                        args[1].TryGetInteger(out var rootDegInt) &&
+                        rootDegInt > BigInteger.Zero &&
+                        rootDegInt <= int.MaxValue &&
+                        args[0].IntVal.TryGetExactRoot((int)rootDegInt, out var exactNthRoot))
+                    {
+                        return new MathValue(exactNthRoot);
+                    }
+
                     double baseVal = args[0].AsDouble();
                     double rootVal = args[1].AsDouble();
                     if (rootVal == 0.0)
@@ -1518,6 +1005,16 @@ internal sealed class ExpressionParser
         if (value.Type is MathValue.DataType.Integer)
         {
             return value;
+        }
+
+        if (places == 0)
+        {
+            if (value.Type is MathValue.DataType.Decimal)
+            {
+                return new MathValue((BigInteger)Math.Round(value.DecVal, MidpointRounding.AwayFromZero));
+            }
+
+            return ToIntegralMathValue(Math.Round(value.AsDouble(), MidpointRounding.AwayFromZero));
         }
 
         if (value.Type is MathValue.DataType.Decimal)
@@ -1802,50 +1299,45 @@ internal sealed class ExpressionParser
             _ => Math.Asin(1.0 / v),
         };
 
-    private ExpressionException SyntaxError(string message) =>
-        new(new EvaluationDiagnostic(EvaluationError.InvalidSyntax, message, _pos, _pos < _input.Length ? 1 : 0));
-
-    private char Peek(int ahead = 0) => _pos + ahead < _input.Length ? _input[_pos + ahead] : '\0';
-
-    private void Consume() => _pos++;
-
-    private void SkipWhitespace()
+    private static MathValue ToIntegralMathValue(double roundedValue)
     {
-        while (_pos < _input.Length && char.IsWhiteSpace(_input[_pos]))
+        // When rounding or truncating an IEEE 754 double, preserve integer closure if the
+        // resulting number is finite and within supported integer bit limits. Non-finite values
+        // (NaN, infinities) remain Double.
+        if (double.IsFinite(roundedValue))
         {
-            _pos++;
+            return new MathValue((BigInteger)roundedValue);
         }
+
+        return new MathValue(roundedValue);
     }
 
-    /// <summary>
-    /// Matches a whole-word keyword case-insensitively and advances the cursor past it if
-    /// found. Ensures the match is delimited and not merely a prefix of a longer
-    /// identifier.
-    /// </summary>
-    private bool MatchKeyword(string keyword)
+    private static MathValue EvaluateFactorial(MathValue argument)
     {
-        int len = keyword.Length;
-        if (_pos + len > _input.Length)
+        if (!argument.TryGetInteger(out var factorialArgument))
         {
-            return false;
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.IntegerRequired, "Factorial requires an integer argument."));
         }
 
-        if (!_input.AsSpan(_pos, len).Equals(keyword, StringComparison.OrdinalIgnoreCase))
+        if (factorialArgument < 0)
         {
-            return false;
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.ArgumentOutOfRange, "Factorial is undefined for negative integers."));
         }
 
-        // Must be delimited: next character cannot be letter, digit, or underscore.
-        if (_pos + len < _input.Length)
+        if (factorialArgument > CalculationLimits.MaxFactorialArgument)
         {
-            char next = _input[_pos + len];
-            if (char.IsLetterOrDigit(next) || next == '_')
-            {
-                return false;
-            }
+            throw new CalculationLimitException();
         }
 
-        _pos += len;
-        return true;
+        int n = (int)factorialArgument;
+        BigInteger f = 1;
+        for (int i = 2; i <= n; i++)
+        {
+            f *= i;
+        }
+
+        return new MathValue(f);
     }
 }

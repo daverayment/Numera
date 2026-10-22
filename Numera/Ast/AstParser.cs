@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace Numera.Ast;
 
@@ -15,9 +16,25 @@ internal sealed class AstParser
     private int _pos;
     private int _depth;
 
+    // Outer extents (parentheses included) of nodes that were written inside a group.
+    // Keyed by reference: nodes are records, so default equality would be structural.
+    private Dictionary<ExpressionNode, TextSpan>? _groupExtents;
+
+    private TextSpan Extent(ExpressionNode node) =>
+        _groupExtents is not null && _groupExtents.TryGetValue(node, out var extent) ? extent : node.Span;
+
+    private TextSpan Combine(ExpressionNode left, ExpressionNode right) =>
+        TextSpan.Combine(Extent(left), Extent(right));
+
+    // The depth count alone is not a stack bound: frames per level vary and the host may already be deep
+    // in its own stack, so also check the real remaining stack.
+    private bool NestingLimitReached() =>
+        _depth >= _options.MaxNestingDepth || !RuntimeHelpers.TryEnsureSufficientExecutionStack();
+
     public AstParser(string input, EvaluationOptions options)
     {
         ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(options);
         if (input.Length > options.MaxInputLength)
         {
             throw new CalculationLimitException();
@@ -31,6 +48,8 @@ internal sealed class AstParser
     {
         var result = ParseLogical();
         SkipWhitespace();
+
+        AstValidator.Validate(result, _options);
 
         if (_pos < _input.Length)
         {
@@ -46,6 +65,23 @@ internal sealed class AstParser
         return result;
     }
 
+    // Operator precedence (lowest to highest):
+    // 1.  Logical OR (||, or)
+    // 2.  Logical XOR (xor)
+    // 3.  Logical AND (&&, and)
+    // 4.  Logical NOT (!, not)
+    //     Note on 'not' and '!': in Numera (matching Python convention), logical negation has lower
+    //     precedence than comparison chains, so "not x == y" parses as "not (x == y)".
+    // 5.  Comparison (==, !=, ~=, <, <=, >, >=)
+    // 6.  Bitwise Shift (<<, >>)
+    // 7.  Additive (+, -)
+    // 8.  Multiplicative (*, /, %)
+    // 9.  Implicit Multiplication (juxtaposition, e.g. 2x, 2(3+4); binds tighter than explicit *, /)
+    // 10. Unary (+, -, ~; binds tighter than juxtaposition, so -2x is (-2)*x)
+    // 11. Exponentiation (^)
+    // 12. Postfix Factorial (!; binds tighter than power, so 2^3! is 2^(3!) and -3! is -(3!))
+    // 13. Primary (literals, identifiers, function calls, grouped expressions)
+
     private ExpressionNode ParseLogical()
     {
         var left = ParseLogicalXor();
@@ -57,12 +93,12 @@ internal sealed class AstParser
                 Consume();
                 Consume();
                 var right = ParseLogicalXor();
-                left = new BinaryNode(BinaryOperator.LogicalOr, left, right);
+                left = new BinaryNode(BinaryOperator.LogicalOr, left, right, Combine(left, right));
             }
             else if (MatchKeyword("or"))
             {
                 var right = ParseLogicalXor();
-                left = new BinaryNode(BinaryOperator.LogicalOr, left, right);
+                left = new BinaryNode(BinaryOperator.LogicalOr, left, right, Combine(left, right));
             }
             else
             {
@@ -82,7 +118,7 @@ internal sealed class AstParser
             if (MatchKeyword("xor"))
             {
                 var right = ParseLogicalAnd();
-                left = new BinaryNode(BinaryOperator.LogicalXor, left, right);
+                left = new BinaryNode(BinaryOperator.LogicalXor, left, right, Combine(left, right));
             }
             else
             {
@@ -95,7 +131,7 @@ internal sealed class AstParser
 
     private ExpressionNode ParseLogicalAnd()
     {
-        var left = ParseComparison();
+        var left = ParseLogicalNot();
         while (true)
         {
             SkipWhitespace();
@@ -103,13 +139,13 @@ internal sealed class AstParser
             {
                 Consume();
                 Consume();
-                var right = ParseComparison();
-                left = new BinaryNode(BinaryOperator.LogicalAnd, left, right);
+                var right = ParseLogicalNot();
+                left = new BinaryNode(BinaryOperator.LogicalAnd, left, right, Combine(left, right));
             }
             else if (MatchKeyword("and"))
             {
-                var right = ParseComparison();
-                left = new BinaryNode(BinaryOperator.LogicalAnd, left, right);
+                var right = ParseLogicalNot();
+                left = new BinaryNode(BinaryOperator.LogicalAnd, left, right, Combine(left, right));
             }
             else
             {
@@ -119,6 +155,51 @@ internal sealed class AstParser
 
         return left;
     }
+
+    private ExpressionNode ParseLogicalNot()
+    {
+        SkipWhitespace();
+        int opStart = _pos;
+        int opLen = 0;
+        if (Peek() == '!')
+        {
+            Consume();
+            opLen = 1;
+        }
+        else if (MatchKeyword("not"))
+        {
+            opLen = 3;
+        }
+
+        if (opLen > 0)
+        {
+            if (NestingLimitReached())
+            {
+                throw new CalculationLimitException();
+            }
+
+            _depth++;
+            var operand = ParseLogicalNot();
+            _depth--;
+
+            if (_options.RequireExplicitLogicalNegation && operand is ComparisonChainNode && !IsFullyParenthesized(operand))
+            {
+                throw new ExpressionException(new EvaluationDiagnostic(
+                    EvaluationError.AmbiguousLogicalNegation,
+                    "Explicit parentheses are required when logical negation is applied to a comparison expression.",
+                    opStart,
+                    opLen));
+            }
+
+            return new UnaryNode(UnaryOperator.LogicalNot, operand,
+                TextSpan.Combine(new TextSpan(opStart, opLen), Extent(operand)));
+        }
+
+        return ParseComparison();
+    }
+
+    private bool IsFullyParenthesized(ExpressionNode operand) =>
+        _groupExtents?.ContainsKey(operand) == true;
 
     private ExpressionNode ParseComparison()
     {
@@ -148,7 +229,7 @@ internal sealed class AstParser
             return first;
         }
 
-        return new ComparisonChainNode(operands, operators!);
+        return new ComparisonChainNode(operands, operators!, Combine(operands[0], operands[^1]));
     }
 
     private ComparisonOperator? MatchComparisonOperator()
@@ -182,7 +263,7 @@ internal sealed class AstParser
 
     private ExpressionNode ParseShift()
     {
-        var left = ParseExpression();
+        var left = ParseAdditive();
         while (true)
         {
             SkipWhitespace();
@@ -190,15 +271,15 @@ internal sealed class AstParser
             {
                 Consume();
                 Consume();
-                var right = ParseExpression();
-                left = new BinaryNode(BinaryOperator.ShiftLeft, left, right);
+                var right = ParseAdditive();
+                left = new BinaryNode(BinaryOperator.ShiftLeft, left, right, Combine(left, right));
             }
             else if (Peek() == '>' && Peek(1) == '>')
             {
                 Consume();
                 Consume();
-                var right = ParseExpression();
-                left = new BinaryNode(BinaryOperator.ShiftRight, left, right);
+                var right = ParseAdditive();
+                left = new BinaryNode(BinaryOperator.ShiftRight, left, right, Combine(left, right));
             }
             else
             {
@@ -209,7 +290,11 @@ internal sealed class AstParser
         return left;
     }
 
-    private ExpressionNode ParseExpression()
+    /// <summary>
+    /// Parses additive expressions (+ and -). This represents the additive precedence level,
+    /// situated between shift expressions and multiplicative terms.
+    /// </summary>
+    private ExpressionNode ParseAdditive()
     {
         var left = ParseTerm();
         while (true)
@@ -219,13 +304,13 @@ internal sealed class AstParser
             {
                 Consume();
                 var right = ParseTerm();
-                left = new BinaryNode(BinaryOperator.Add, left, right);
+                left = new BinaryNode(BinaryOperator.Add, left, right, Combine(left, right));
             }
             else if (Peek() == '-')
             {
                 Consume();
                 var right = ParseTerm();
-                left = new BinaryNode(BinaryOperator.Subtract, left, right);
+                left = new BinaryNode(BinaryOperator.Subtract, left, right, Combine(left, right));
             }
             else
             {
@@ -238,27 +323,27 @@ internal sealed class AstParser
 
     private ExpressionNode ParseTerm()
     {
-        var left = ParseUnary();
+        var left = ParseImplicitProduct();
         while (true)
         {
             SkipWhitespace();
             if (Peek() == '*')
             {
                 Consume();
-                var right = ParseUnary();
-                left = new BinaryNode(BinaryOperator.Multiply, left, right);
+                var right = ParseImplicitProduct();
+                left = new BinaryNode(BinaryOperator.Multiply, left, right, Combine(left, right));
             }
             else if (Peek() == '/')
             {
                 Consume();
-                var right = ParseUnary();
-                left = new BinaryNode(BinaryOperator.Divide, left, right);
+                var right = ParseImplicitProduct();
+                left = new BinaryNode(BinaryOperator.Divide, left, right, Combine(left, right));
             }
-            else if (Peek() == '%')
+            else if (Peek() == '%' && PercentIsModulo())
             {
                 Consume();
-                var right = ParseUnary();
-                left = new BinaryNode(BinaryOperator.Modulo, left, right);
+                var right = ParseImplicitProduct();
+                left = new BinaryNode(BinaryOperator.Modulo, left, right, Combine(left, right));
             }
             else
             {
@@ -269,67 +354,155 @@ internal sealed class AstParser
         return left;
     }
 
+    private ExpressionNode ParseImplicitProduct()
+    {
+        var left = ParseUnary();
+        while (StartsImplicitOperand())
+        {
+            var right = ParseUnary();
+            left = new BinaryNode(BinaryOperator.Multiply, left, right, Combine(left, right), IsImplicit: true);
+        }
+
+        SkipWhitespace();
+        if (IsKeywordAt("of"))
+        {
+            if (!PercentRules.IsPercentShaped(left))
+            {
+                throw SyntaxError("Only a percentage can appear before 'of', e.g. 10% of 200.");
+            }
+
+            Consume();
+            Consume();
+            if (NestingLimitReached())
+            {
+                throw new CalculationLimitException();
+            }
+
+            // Right-associative so "10% of 20% of 1000" reads as 10% of (20% of 1000).
+            _depth++;
+            var ofRight = ParseImplicitProduct();
+            _depth--;
+            return new BinaryNode(BinaryOperator.Of, left, ofRight, Combine(left, ofRight));
+        }
+
+        return left;
+    }
+
+    /// <summary>
+    /// Decides whether the '%' at the current position is modulo. It is only modulo when an operand follows,
+    /// so "10% + 3" and "10% of 5" are percentages but "10 % 3" and "10 %(3)" are modulo.
+    /// </summary>
+    private bool PercentIsModulo()
+    {
+        int save = _pos;
+        Consume();
+        SkipWhitespace();
+        char c = Peek();
+        bool modulo = char.IsDigit(c) || c == '.' || c == '(' ||
+            (IsIdentifierStart(c) && !IsKeywordAt("of") && !IsKeywordAt("and") && !IsKeywordAt("or") && !IsKeywordAt("xor"));
+        _pos = save;
+        return modulo;
+    }
+
+    private bool StartsImplicitOperand()
+    {
+        if (!_options.AllowImplicitMultiplication) return false;
+        SkipWhitespace();
+        char c = Peek();
+        if (c == '(') return true;
+
+        // Deliberately not digits or '.': "1 000" would otherwise silently become 1 * 0.
+        return IsIdentifierStart(c) && !IsKeywordAt("and") && !IsKeywordAt("or") && !IsKeywordAt("xor") && !IsKeywordAt("of");
+    }
+
     private ExpressionNode ParseUnary()
     {
-        if (_depth >= _options.MaxNestingDepth)
+        if (NestingLimitReached())
         {
             throw new CalculationLimitException();
         }
 
         _depth++;
-        try
+        SkipWhitespace();
+        int opStart = _pos;
+        ExpressionNode result;
+        if (Peek() == '-')
         {
-            SkipWhitespace();
-            if (Peek() == '-')
-            {
-                Consume();
-                var operand = ParseUnary();
-                return new UnaryNode(UnaryOperator.Negate, operand);
-            }
-            else if (Peek() == '+')
-            {
-                Consume();
-                var operand = ParseUnary();
-                return new UnaryNode(UnaryOperator.Positive, operand);
-            }
-            else if (Peek() == '!')
-            {
-                Consume();
-                var operand = ParseUnary();
-                return new UnaryNode(UnaryOperator.LogicalNot, operand);
-            }
-            else if (Peek() == '~')
-            {
-                Consume();
-                var operand = ParseUnary();
-                return new UnaryNode(UnaryOperator.BitwiseNot, operand);
-            }
-            else if (MatchKeyword("not"))
-            {
-                var operand = ParseUnary();
-                return new UnaryNode(UnaryOperator.LogicalNot, operand);
-            }
+            Consume();
+            var operand = ParseUnary();
+            result = new UnaryNode(UnaryOperator.Negate, operand,
+                TextSpan.Combine(new TextSpan(opStart, 1), Extent(operand)));
+        }
+        else if (Peek() == '+')
+        {
+            Consume();
+            var operand = ParseUnary();
+            result = new UnaryNode(UnaryOperator.Positive, operand,
+                TextSpan.Combine(new TextSpan(opStart, 1), Extent(operand)));
+        }
+        else if (Peek() == '~')
+        {
+            Consume();
+            var operand = ParseUnary();
+            result = new UnaryNode(UnaryOperator.BitwiseNot, operand,
+                TextSpan.Combine(new TextSpan(opStart, 1), Extent(operand)));
+        }
+        else
+        {
+            result = ParsePower();
+        }
 
-            return ParsePower();
-        }
-        finally
-        {
-            _depth--;
-        }
+        _depth--;
+        return result;
     }
 
     private ExpressionNode ParsePower()
     {
-        var left = ParsePrimary();
+        var left = ParsePostfix();
         SkipWhitespace();
         if (Peek() == '^')
         {
             Consume();
             var right = ParseUnary();
-            return new BinaryNode(BinaryOperator.Power, left, right);
+            return new BinaryNode(BinaryOperator.Power, left, right, Combine(left, right));
         }
 
         return left;
+    }
+
+    private ExpressionNode ParsePostfix()
+    {
+        var operand = ParsePrimary();
+        SkipWhitespace();
+        if (Peek() == '%' && !PercentIsModulo())
+        {
+            int pctStart = _pos;
+            Consume();
+            return new UnaryNode(UnaryOperator.Percent, operand,
+                TextSpan.Combine(Extent(operand), new TextSpan(pctStart, 1)));
+        }
+
+        if (!_options.AllowPostfixFactorial)
+        {
+            return operand;
+        }
+
+        // '!=' is comparison, but '!==' is factorial followed by '=='.
+        if (Peek() != '!' || (Peek(1) == '=' && Peek(2) != '='))
+        {
+            return operand;
+        }
+
+        int opStart = _pos;
+        Consume();
+
+        if (Peek() == '!' && Peek(1) != '=')
+        {
+            throw SyntaxError("Repeated '!' is ambiguous (double factorial); write (n!)! instead.");
+        }
+
+        return new UnaryNode(UnaryOperator.Factorial, operand,
+            TextSpan.Combine(Extent(operand), new TextSpan(opStart, 1)));
     }
 
     private ExpressionNode ParsePrimary()
@@ -349,6 +522,7 @@ internal sealed class AstParser
 
         if (c == '(')
         {
+            int groupStart = _pos;
             Consume();
             var value = ParseLogical();
             SkipWhitespace();
@@ -359,138 +533,204 @@ internal sealed class AstParser
             }
 
             Consume();
+            _groupExtents ??= new Dictionary<ExpressionNode, TextSpan>(ReferenceEqualityComparer.Instance);
+            _groupExtents[value] = new TextSpan(groupStart, _pos - groupStart);
             return value;
         }
 
-        if (char.IsLetter(c) || c == '_' || c == 'π' || c == 'τ')
+        if (c == '!' && Peek(1) != '=')
         {
-            int identifierStart = _pos;
-            var identifierSpan = ParseIdentifier();
-            string identifier = identifierSpan.ToString();
-            SkipWhitespace();
+            throw SyntaxError("Logical negation is only allowed at the start of a logical operand; wrap the negated expression in parentheses.");
+        }
 
-            if (Peek() == '(')
+        if (IsIdentifierStart(c))
+        {
+            int kwPos = _pos;
+            if (MatchKeyword("not"))
             {
-                Consume();
-                SkipWhitespace();
-                var args = new List<ExpressionNode>();
-                if (Peek() != ')')
+                _pos = kwPos;
+                throw new ExpressionException(new EvaluationDiagnostic(
+                    EvaluationError.InvalidSyntax,
+                    "Logical negation is only allowed at the start of a logical operand; wrap the negated expression in parentheses.",
+                    kwPos,
+                    3));
+            }
+
+            return ParseIdentifierOrCall();
+        }
+
+        if (char.IsAsciiDigit(c) || c == '.')
+        {
+            int numStart = _pos;
+            var num = ParseNumber();
+            return new NumberNode(num, new TextSpan(numStart, _pos - numStart));
+        }
+
+        throw SyntaxError("Expected a number, constant, or '('.");
+    }
+
+    private ExpressionNode ParseIdentifierOrCall()
+    {
+        int identifierStart = _pos;
+        var identifierSpan = ParseIdentifier();
+        string identifier = identifierSpan.ToString();
+        SkipWhitespace();
+
+        if (Peek() == '(' && FunctionArity.TryGet(identifier, out var signature))
+        {
+            var args = ParseArgumentList();
+
+            if (args.Count < signature.MinimumArguments || (signature.MaximumArguments is int maximum && args.Count > maximum))
+            {
+                throw new ExpressionException(new EvaluationDiagnostic(
+                    EvaluationError.InvalidArgumentCount, $"Invalid argument count for '{identifier}'.", identifierStart, identifier.Length));
+            }
+
+            return new FunctionCallNode(identifier, args, new TextSpan(identifierStart, _pos - identifierStart));
+        }
+
+        if (Peek() == '(' && !_options.AllowImplicitMultiplication)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UnknownFunction, $"Unknown function '{identifier}'.", identifierStart, identifier.Length));
+        }
+
+        if (Peek() is '[' or ']' or ';')
+        {
+            char reservedChar = Peek();
+            throw SyntaxError($"'{reservedChar}' is reserved for future matrix and array syntax.");
+        }
+
+        if (ConstantCatalog.TryResolve(identifier, out var constantKind, out _))
+        {
+            return new IdentifierNode(identifier, constantKind, new TextSpan(identifierStart, identifier.Length));
+        }
+
+        if (Peek() != '(' && FunctionArity.TryGet(identifier, out _))
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.InvalidSyntax, $"Function '{identifier}' requires parentheses.", identifierStart, identifier.Length));
+        }
+
+        if (_options.Variables != null && _options.Variables.ContainsKey(identifier))
+        {
+            return new IdentifierNode(identifier, null, new TextSpan(identifierStart, identifier.Length));
+        }
+
+        if (Peek() == '(')
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UnknownFunction, $"Unknown function '{identifier}'.", identifierStart, identifier.Length));
+        }
+
+        throw new ExpressionException(new EvaluationDiagnostic(
+            EvaluationError.UnknownConstant, $"Unknown constant or variable '{identifier}'.", identifierStart, identifier.Length));
+    }
+
+    private List<ExpressionNode> ParseArgumentList()
+    {
+        Consume(); // '('
+        SkipWhitespace();
+        var args = new List<ExpressionNode>();
+        if (Peek() != ')')
+        {
+            while (true)
+            {
+                if (NestingLimitReached())
                 {
-                    while (true)
-                    {
-                        args.Add(ParseLogical());
-                        SkipWhitespace();
-                        if (Peek() == ',')
-                        {
-                            Consume();
-                        }
-                        else
-                        {
-                            break;
-                        }
-                    }
+                    throw new CalculationLimitException();
                 }
 
-                if (Peek() == ')')
+                _depth++;
+                args.Add(ParseLogical());
+                _depth--;
+                SkipWhitespace();
+                if (Peek() == ',')
                 {
                     Consume();
                 }
                 else
                 {
-                    throw SyntaxError("Expected ')'.");
+                    break;
                 }
-
-                if (!FunctionArity.TryGet(identifier, out var signature))
-                {
-                    throw new ExpressionException(new EvaluationDiagnostic(
-                        EvaluationError.UnknownFunction, $"Unknown function '{identifier}'.", identifierStart, identifier.Length));
-                }
-
-                if (args.Count < signature.MinimumArguments || (signature.MaximumArguments is int maximum && args.Count > maximum))
-                {
-                    throw new ExpressionException(new EvaluationDiagnostic(
-                        EvaluationError.InvalidArgumentCount, $"Invalid argument count for '{identifier}'.", identifierStart, identifier.Length));
-                }
-
-                return new FunctionCallNode(identifier, args);
             }
-
-            if (Peek() is '[' or ']' or ';')
-            {
-                char reservedChar = Peek();
-                throw SyntaxError($"'{reservedChar}' is reserved for future matrix and array syntax.");
-            }
-
-            // Verify valid constant identifier
-            if (!IsRecognizedConstant(identifier))
-            {
-                throw new ExpressionException(new EvaluationDiagnostic(
-                    EvaluationError.UnknownConstant, $"Unknown constant '{identifier}'.", identifierStart, identifier.Length));
-            }
-
-            return new IdentifierNode(identifier);
         }
 
-        return new NumberNode(ParseNumber());
+        if (Peek() == ')')
+        {
+            Consume();
+        }
+        else
+        {
+            throw SyntaxError("Expected ')'.");
+        }
+
+        return args;
     }
 
-    private static bool IsRecognizedConstant(ReadOnlySpan<char> name) => name.Length switch
+    private delegate BigInteger RadixDigitsParser(ReadOnlySpan<char> digits);
+
+    /// <summary>
+    /// Everything that differs between the radix-prefixed literal forms (0x, 0b, 0o). Keeping it in one
+    /// place means the prefix check and the per-radix behaviour cannot drift apart.
+    /// </summary>
+    private readonly record struct RadixLiteral(
+        char Prefix,
+        string Name,
+        int BitsPerDigit,
+        Func<char, bool> IsDigit,
+        RadixDigitsParser Parse);
+
+    private static bool TryGetRadix(char prefixChar, out RadixLiteral radix)
     {
-        1 => name[0] switch
+        switch (char.ToLowerInvariant(prefixChar))
         {
-            'e' or 'E' => true,
-            '\u03C0' or '\u03A0' => true,               // π, Π
-            '\u03C4' or '\u03A4' => true,               // τ, Τ
-            '\u03D5' or '\u03C6' or '\u03A6' => true,   // ϕ (symbol), φ (small), Φ (capital)
-            _ => false,
-        },
-        2 => name.Equals("pi", StringComparison.OrdinalIgnoreCase),
-        3 => name.Equals("tau", StringComparison.OrdinalIgnoreCase) ||
-             name.Equals("phi", StringComparison.OrdinalIgnoreCase),
-        _ => false,
-    };
+            case 'x':
+                radix = new RadixLiteral('x', "hexadecimal", 4, static c => char.IsAsciiHexDigit(c), ParseHexBigInteger);
+                return true;
+            case 'b':
+                radix = new RadixLiteral('b', "binary", 1, static c => c is '0' or '1', ParseBinaryBigInteger);
+                return true;
+            case 'o':
+                radix = new RadixLiteral('o', "octal", 3, static c => c is >= '0' and <= '7', ParseOctalBigInteger);
+                return true;
+            default:
+                radix = default;
+                return false;
+        }
+    }
 
     private MathValue ParseNumber()
     {
         int start = _pos;
 
-        // Check for radix-prefixed integer literals: 0x, 0b, 0o
-        if (Peek() == '0' && _pos + 1 < _input.Length)
+        // Check for radix-prefixed integer literals: 0x, 0b, 0o.
+        if (Peek() == '0' && TryGetRadix(Peek(1), out var radix))
         {
-            char prefix = char.ToLowerInvariant(Peek(1));
-            if (prefix is 'x' or 'b' or 'o')
+            Consume(); // '0'
+            Consume(); // radix prefix letter
+
+            int digitsStart = _pos;
+            while (_pos < _input.Length && radix.IsDigit(Peek()))
             {
-                Consume(); // '0'
-                Consume(); // 'x', 'b', or 'o'
-
-                int digitsStart = _pos;
-                while (_pos < _input.Length && (prefix switch
-                {
-                    'x' => char.IsAsciiHexDigit(Peek()),
-                    'b' => Peek() is '0' or '1',
-                    'o' => Peek() is >= '0' and <= '7',
-                    _ => false,
-                }))
-                {
-                    Consume();
-                }
-
-                if (_pos == digitsStart)
-                {
-                    throw SyntaxError($"Expected {prefix switch { 'x' => "hexadecimal", 'b' => "binary", 'o' => "octal", _ => "radix" }} digits after '0{prefix}'.");
-                }
-
-                var digitsSpan = _input.AsSpan(digitsStart, _pos - digitsStart);
-                var value = prefix switch
-                {
-                    'x' => ParseHexBigInteger(digitsSpan),
-                    'b' => ParseBinaryBigInteger(digitsSpan),
-                    'o' => ParseOctalBigInteger(digitsSpan),
-                    _ => throw SyntaxError("Unsupported number prefix."),
-                };
-
-                return new MathValue(value);
+                Consume();
             }
+
+            if (_pos == digitsStart)
+            {
+                throw SyntaxError(
+                    $"Expected {radix.Name} digits after '0{radix.Prefix}'.");
+            }
+
+            // Guard against bit lengths that exceed the maximum integer ceiling before
+            // allocating BigInteger.
+            int digitCount = _pos - digitsStart;
+            if ((long)digitCount * radix.BitsPerDigit > CalculationLimits.MaxIntegerBits)
+            {
+                throw new CalculationLimitException();
+            }
+
+            return new MathValue(radix.Parse(_input.AsSpan(digitsStart, digitCount)));
         }
 
         bool hasDecimal = false;
@@ -499,7 +739,7 @@ internal sealed class AstParser
         while (_pos < _input.Length)
         {
             char ch = Peek();
-            if (char.IsDigit(ch))
+            if (char.IsAsciiDigit(ch))
             {
                 Consume();
             }
@@ -526,7 +766,7 @@ internal sealed class AstParser
                     nextPos++;
                 }
 
-                if (!char.IsDigit(Peek(nextPos)))
+                if (!char.IsAsciiDigit(Peek(nextPos)))
                 {
                     break;
                 }
@@ -538,7 +778,7 @@ internal sealed class AstParser
                     Consume();
                 }
 
-                while (_pos < _input.Length && char.IsDigit(Peek()))
+                while (_pos < _input.Length && char.IsAsciiDigit(Peek()))
                 {
                     Consume();
                 }
@@ -551,15 +791,29 @@ internal sealed class AstParser
 
         var numberSpan = _input.AsSpan(start, _pos - start);
 
-        if (!hasDecimal && !hasExponent && BigInteger.TryParse(
-            numberSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
+        if (!hasDecimal && !hasExponent)
         {
-            return new MathValue(intValue);
+            // L decimal digits require at least (L - 1) * log2(10) bits (~3.3219).
+            // Reject excessively large plain integer literals before attempting BigInteger parsing.
+            if ((numberSpan.Length - 1) * 3.3219 > CalculationLimits.MaxIntegerBits)
+            {
+                throw new CalculationLimitException();
+            }
+
+            if (BigInteger.TryParse(numberSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
+            {
+                if (intValue.GetBitLength() > CalculationLimits.MaxIntegerBits)
+                {
+                    throw new CalculationLimitException();
+                }
+
+                return new MathValue(intValue);
+            }
         }
         else if (decimal.TryParse(
             numberSpan, NumberStyles.Float, CultureInfo.InvariantCulture, out var decValue))
         {
-            if (decValue != 0m || numberSpan.IndexOfAnyInRange('1', '9') < 0)
+            if (decValue != 0m || IsZeroMantissa(numberSpan))
             {
                 return new MathValue(decValue);
             }
@@ -568,11 +822,141 @@ internal sealed class AstParser
         if (double.TryParse(
             numberSpan, NumberStyles.Float, CultureInfo.InvariantCulture, out double doubleValue))
         {
+            if (!double.IsFinite(doubleValue))
+            {
+                // If a large floating-point literal represents an exact integer (e.g. '1e309' or '2.5e400')
+                // and fits within the configured BigInteger bit ceiling, promote it to an exact BigInteger.
+                if (TryPromoteScientificToBigInteger(numberSpan, out var bigIntValue))
+                {
+                    return new MathValue(bigIntValue);
+                }
+
+                throw new ExpressionException(
+                    new EvaluationDiagnostic(EvaluationError.NumericOverflow, "Literal overflowed floating-point range.", start, Math.Max(1, _pos - start)));
+            }
+
+            if (doubleValue == 0.0 && !IsZeroMantissa(numberSpan))
+            {
+                throw new ExpressionException(
+                    new EvaluationDiagnostic(EvaluationError.NumericOverflow, "Literal underflowed floating-point range.", start, Math.Max(1, _pos - start)));
+            }
+
             return new MathValue(doubleValue);
+        }
+
+        // Check if a literal that could not parse as double can still be represented as an exact BigInteger
+        if (TryPromoteScientificToBigInteger(numberSpan, out var bigIntFallback))
+        {
+            return new MathValue(bigIntFallback);
         }
 
         throw new ExpressionException(
             new EvaluationDiagnostic(EvaluationError.InvalidSyntax, "Expected a number.", start, Math.Max(1, _pos - start)));
+    }
+
+    private static bool TryPromoteScientificToBigInteger(ReadOnlySpan<char> span, out BigInteger result)
+    {
+        result = BigInteger.Zero;
+        int expIndex = span.IndexOfAny('e', 'E');
+        if (expIndex < 0)
+        {
+            return false;
+        }
+
+        var mantissaSpan = span[..expIndex];
+        var expSpan = span[(expIndex + 1)..];
+
+        if (expSpan.StartsWith("+"))
+        {
+            expSpan = expSpan[1..];
+        }
+
+        if (expSpan.StartsWith("-"))
+        {
+            // Negative exponent cannot be promoted to a large integer
+            return false;
+        }
+
+        if (!int.TryParse(expSpan, NumberStyles.None, CultureInfo.InvariantCulture, out int exponent))
+        {
+            return false;
+        }
+
+        int dotIndex = mantissaSpan.IndexOf('.');
+        int fractionDigits = 0;
+        BigInteger mantissaInt;
+
+        if (dotIndex >= 0)
+        {
+            var integerPart = mantissaSpan[..dotIndex];
+            var fractionalPart = mantissaSpan[(dotIndex + 1)..];
+            fractionDigits = fractionalPart.Length;
+
+            if (exponent < fractionDigits)
+            {
+                // Has remaining fractional digits, so it cannot be an exact integer.
+                return false;
+            }
+
+            // Reject mantissas whose digit counts alone exceed the integer bit ceiling
+            // to guard against pathological allocations or huge BigInteger parsing.
+            if ((long)(integerPart.Length + fractionalPart.Length) * 4 > CalculationLimits.MaxIntegerBits)
+            {
+                return false;
+            }
+
+            string digits = string.Concat(integerPart, fractionalPart);
+            if (!BigInteger.TryParse(digits, NumberStyles.Integer, CultureInfo.InvariantCulture, out mantissaInt))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            if ((long)mantissaSpan.Length * 4 > CalculationLimits.MaxIntegerBits)
+            {
+                return false;
+            }
+
+            if (!BigInteger.TryParse(mantissaSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out mantissaInt))
+            {
+                return false;
+            }
+        }
+
+        long effectiveExponent = (long)exponent - fractionDigits;
+        // Upper bound check: 10^k takes about k * 3.322 bits.
+        // Perform calculations using 64-bit integers to prevent 32-bit overflow when multiplying large exponents.
+        if (effectiveExponent > 0)
+        {
+            if (effectiveExponent > CalculationLimits.MaxIntegerBits ||
+                effectiveExponent * 3.322 > CalculationLimits.MaxIntegerBits)
+            {
+                return false;
+            }
+        }
+
+        try
+        {
+            result = mantissaInt * BigInteger.Pow(10, (int)effectiveExponent);
+            if (BigInteger.Abs(result).GetBitLength() > CalculationLimits.MaxIntegerBits)
+            {
+                return false;
+            }
+
+            return true;
+        }
+        catch (ArithmeticException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsZeroMantissa(ReadOnlySpan<char> span)
+    {
+        int expIndex = span.IndexOfAny('e', 'E');
+        var mantissa = expIndex >= 0 ? span[..expIndex] : span;
+        return mantissa.IndexOfAnyInRange('1', '9') < 0;
     }
 
     private static BigInteger ParseHexBigInteger(ReadOnlySpan<char> span)
@@ -615,11 +999,29 @@ internal sealed class AstParser
         return result;
     }
 
+    private static bool IsIdentifierStart(char c) =>
+        char.IsLetter(c) || c == '_';
+
+    private static bool IsIdentifierPart(char c) =>
+        (char.IsLetter(c) || char.IsAsciiDigit(c) || c == '_') && !ConstantCatalog.IsConstantLetter(c);
+
     private ReadOnlySpan<char> ParseIdentifier()
     {
         var start = _pos;
-        while (_pos < _input.Length && (char.IsLetterOrDigit(Peek()) || Peek() == '_' || Peek() == 'π' || Peek() == 'Π' || Peek() == 'τ' || Peek() == 'Τ'))
+        if (ConstantCatalog.IsConstantLetter(Peek()))
         {
+            Consume();
+            return _input.AsSpan(start, 1);
+        }
+
+        while (_pos < _input.Length)
+        {
+            char ch = Peek();
+            if (!IsIdentifierPart(ch))
+            {
+                break;
+            }
+
             Consume();
         }
 
@@ -641,29 +1043,15 @@ internal sealed class AstParser
         }
     }
 
+    private bool IsKeywordAt(string keyword) =>
+        _pos + keyword.Length <= _input.Length &&
+        _input.AsSpan(_pos, keyword.Length).Equals(keyword, StringComparison.OrdinalIgnoreCase) &&
+        (_pos + keyword.Length == _input.Length || !IsIdentifierPart(_input[_pos + keyword.Length]));
+
     private bool MatchKeyword(string keyword)
     {
-        int len = keyword.Length;
-        if (_pos + len > _input.Length)
-        {
-            return false;
-        }
-
-        if (!_input.AsSpan(_pos, len).Equals(keyword, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        if (_pos + len < _input.Length)
-        {
-            char next = _input[_pos + len];
-            if (char.IsLetterOrDigit(next) || next == '_')
-            {
-                return false;
-            }
-        }
-
-        _pos += len;
+        if (!IsKeywordAt(keyword)) return false;
+        _pos += keyword.Length;
         return true;
     }
 }

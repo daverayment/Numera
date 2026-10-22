@@ -58,6 +58,12 @@ public enum EvaluationError
     /// A mathematical function has no defined real-valued result for the given argument.
     /// </summary>
     UndefinedMathResult,
+
+    /// <summary>
+    /// A logical negation was applied directly to a comparison expression without explicit parentheses,
+    /// violating the configured requirement for unambiguous parenthesization.
+    /// </summary>
+    AmbiguousLogicalNegation,
 }
 
 /// <summary>

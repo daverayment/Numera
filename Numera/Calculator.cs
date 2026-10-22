@@ -25,7 +25,7 @@ public static class Calculator
     /// Check <see cref="NumeraException.Diagnostic"/> for structured failure details.</exception>
     /// <remarks>
     /// To evaluate an expression without throwing exceptions for expected
-    /// failures, use <see cref="TryEvaluate"/>.
+    /// failures, use <see cref="TryEvaluate(string, out MathValue, out EvaluationDiagnostic?, EvaluationOptions?)"/>.
     /// </remarks>
     public static MathValue Evaluate(string expression, EvaluationOptions? options = null)
     {
@@ -35,7 +35,7 @@ public static class Calculator
 
         try
         {
-            return new ExpressionParser(expression, options).Evaluate();
+            return Evaluate(new AstParser(expression, options).Parse(), options);
         }
         catch (DivideByZeroException exception)
         {
@@ -49,6 +49,69 @@ public static class Calculator
             throw new ExpressionException(
                 new EvaluationDiagnostic(EvaluationError.NumericOverflow, exception.Message), exception);
         }
+    }
+
+    /// <summary>
+    /// Evaluates an already parsed expression tree, enabling single-parse workflows that
+    /// both format and evaluate without duplicating parsing work.
+    /// </summary>
+    /// <param name="node">The root node of the parsed expression tree.</param>
+    /// <param name="options">Optional evaluation constraints.</param>
+    /// <returns>The result of the evaluation as a <see cref="MathValue"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="node"/> is null.</exception>
+    /// <exception cref="NumeraException">Thrown if evaluation fails.</exception>
+    public static MathValue Evaluate(ExpressionNode node, EvaluationOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        options ??= new EvaluationOptions();
+        options.Validate();
+
+        AstValidator.Validate(node, options);
+
+        try
+        {
+            return node.Accept(new AstEvaluator(options));
+        }
+        catch (DivideByZeroException exception)
+        {
+            throw new ExpressionException(
+                new EvaluationDiagnostic(EvaluationError.DivisionByZero, exception.Message), exception);
+        }
+        catch (OverflowException exception)
+        {
+            throw new ExpressionException(
+                new EvaluationDiagnostic(EvaluationError.NumericOverflow, exception.Message), exception);
+        }
+    }
+
+    /// <summary>
+    /// Safely attempts to evaluate a parsed expression tree without throwing exceptions for standard
+    /// mathematical or evaluation errors.
+    /// </summary>
+    /// <param name="node">The parsed expression tree node.</param>
+    /// <param name="value">The resulting value if evaluation succeeds; otherwise, default.</param>
+    /// <param name="diagnostic">Contains detailed error information if evaluation failed; otherwise null.</param>
+    /// <param name="options">Optional evaluation constraints.</param>
+    /// <returns><c>true</c> if evaluation succeeded; otherwise, <c>false</c>.</returns>
+    public static bool TryEvaluate(
+        ExpressionNode node,
+        out MathValue value,
+        [NotNullWhen(false)] out EvaluationDiagnostic? diagnostic,
+        EvaluationOptions? options = null)
+    {
+        try
+        {
+            value = Evaluate(node, options);
+            diagnostic = null;
+            return true;
+        }
+        catch (NumeraException exception)
+        {
+            diagnostic = exception.Diagnostic;
+        }
+
+        value = default;
+        return false;
     }
 
     /// <summary>
@@ -183,6 +246,8 @@ public static class Calculator
     {
         ArgumentNullException.ThrowIfNull(node);
         options ??= ExpressionFormatOptions.Typographic;
+
+        AstValidator.Validate(node, new EvaluationOptions(), allowUnknownFunctions: true);
 
         IExpressionVisitor<string> visitor = options.Style switch
         {

@@ -684,6 +684,8 @@ public readonly struct MathValue : IFormattable, ISpanFormattable, IUtf8SpanForm
 
         // Prefer decimal for mixed integer/decimal or pure decimal arithmetic. This can
         // round to fit decimal precision; conversion or arithmetic overflow uses double.
+        // However, if the decimal operand represents a whole number, promote to exact
+        // BigInteger rather than losing precision in double.
         try
         {
             decimal decA = a.Type is DataType.Integer ? (decimal)a.IntVal : a.DecVal;
@@ -692,6 +694,11 @@ public readonly struct MathValue : IFormattable, ISpanFormattable, IUtf8SpanForm
         }
         catch (OverflowException)
         {
+            if (TryEvaluateMixedIntegerAndWholeDecimal(a, b, static (x, y) => x + y, out var intResult))
+            {
+                return intResult;
+            }
+
             return new MathValue(a.AsDouble() + b.AsDouble());
         }
     }
@@ -721,6 +728,11 @@ public readonly struct MathValue : IFormattable, ISpanFormattable, IUtf8SpanForm
         }
         catch (OverflowException)
         {
+            if (TryEvaluateMixedIntegerAndWholeDecimal(a, b, static (x, y) => x - y, out var intResult))
+            {
+                return intResult;
+            }
+
             return new MathValue(a.AsDouble() - b.AsDouble());
         }
     }
@@ -750,6 +762,11 @@ public readonly struct MathValue : IFormattable, ISpanFormattable, IUtf8SpanForm
         }
         catch (OverflowException)
         {
+            if (TryEvaluateMixedIntegerAndWholeDecimal(a, b, static (x, y) => x * y, out var intResult))
+            {
+                return intResult;
+            }
+
             return new MathValue(a.AsDouble() * b.AsDouble());
         }
     }
@@ -874,6 +891,21 @@ public readonly struct MathValue : IFormattable, ISpanFormattable, IUtf8SpanForm
                 }
                 catch (OverflowException)
                 {
+                    // If the decimal base has no fractional part, promote to BigInteger
+                    // rather than losing precision in double.
+                    if (decimal.Truncate(baseVal.DecVal) == baseVal.DecVal)
+                    {
+                        var intBase = new BigInteger(baseVal.DecVal);
+                        var magnitude = BigInteger.Abs(intBase);
+                        if (magnitude > BigInteger.One &&
+                            ((magnitude.GetBitLength() - 1) * (int)exponent) + 1 > CalculationLimits.MaxIntegerBits)
+                        {
+                            throw new CalculationLimitException();
+                        }
+
+                        return new MathValue(BigInteger.Pow(intBase, (int)exponent));
+                    }
+
                     // Fall through to double calculation on decimal overflow.
                 }
             }
@@ -1020,5 +1052,40 @@ public readonly struct MathValue : IFormattable, ISpanFormattable, IUtf8SpanForm
         exponent = (int)Math.Max(0, magnitude.GetBitLength() - 53);
         double mantissa = (double)(magnitude >> exponent);
         return IntVal.Sign < 0 ? -mantissa : mantissa;
+    }
+
+    private static bool TryEvaluateMixedIntegerAndWholeDecimal(
+        MathValue a,
+        MathValue b,
+        Func<BigInteger, BigInteger, BigInteger> intOperation,
+        out MathValue result)
+    {
+        if (a.Type is DataType.Integer && b.Type is DataType.Decimal)
+        {
+            if (decimal.Truncate(b.DecVal) == b.DecVal)
+            {
+                result = new MathValue(intOperation(a.IntVal, new BigInteger(b.DecVal)));
+                return true;
+            }
+        }
+        else if (a.Type is DataType.Decimal && b.Type is DataType.Integer)
+        {
+            if (decimal.Truncate(a.DecVal) == a.DecVal)
+            {
+                result = new MathValue(intOperation(new BigInteger(a.DecVal), b.IntVal));
+                return true;
+            }
+        }
+        else if (a.Type is DataType.Decimal && b.Type is DataType.Decimal)
+        {
+            if (decimal.Truncate(a.DecVal) == a.DecVal && decimal.Truncate(b.DecVal) == b.DecVal)
+            {
+                result = new MathValue(intOperation(new BigInteger(a.DecVal), new BigInteger(b.DecVal)));
+                return true;
+            }
+        }
+
+        result = default;
+        return false;
     }
 }

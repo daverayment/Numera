@@ -30,30 +30,15 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
 
     public string Visit(IdentifierNode node)
     {
-        if (_options.UseGreekSymbols)
+        if (_options.UseGreekSymbols && node.Constant is ConstantKind kind)
         {
-            var name = node.Name.AsSpan();
-            if (name.Length == 1)
+            return kind switch
             {
-                switch (name[0])
-                {
-                    case '\u03C0' or '\u03A0': // π, Π
-                        return "π";
-                    case '\u03C4' or '\u03A4': // τ, Τ
-                        return "τ";
-                    case '\u03D5' or '\u03C6' or '\u03A6': // ϕ, φ, Φ
-                        return "ϕ";
-                }
-            }
-            else if (name.Length == 2 && name.Equals("pi", StringComparison.OrdinalIgnoreCase))
-            {
-                return "π";
-            }
-            else if (name.Length == 3)
-            {
-                if (name.Equals("tau", StringComparison.OrdinalIgnoreCase)) return "τ";
-                if (name.Equals("phi", StringComparison.OrdinalIgnoreCase)) return "ϕ";
-            }
+                ConstantKind.Pi => "π",
+                ConstantKind.Tau => "τ",
+                ConstantKind.Phi => "ϕ",
+                _ => node.Name,
+            };
         }
 
         return node.Name;
@@ -68,19 +53,77 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
             UnaryOperator.Positive => "+" + operandText,
             UnaryOperator.LogicalNot => "!" + operandText,
             UnaryOperator.BitwiseNot => "~" + operandText,
-            _ => operandText,
+            UnaryOperator.Factorial => operandText + "!",
+            UnaryOperator.Percent => operandText + "%",
+            _ => throw new ArgumentOutOfRangeException(nameof(node), node.Op, "Unknown unary operator."),
         };
     }
 
     public string Visit(BinaryNode node)
     {
+        // Power nodes (and nodes without a flattenable left child) take the direct path. Power must
+        // not enter the loop below, since its left child is not part of the spine (see BinaryNode.Height).
+        if (node.Op == BinaryOperator.Power || node.Left is not BinaryNode { Op: not BinaryOperator.Power })
+        {
+            return Compose(node, node.Left.Accept(this));
+        }
+
+        // Format the left spine iteratively so long flat chains (e.g. thousands of additive terms)
+        // cannot overflow the call stack. Each step receives the formatted text of its left child.
+        var spine = new Stack<BinaryNode>();
+        ExpressionNode current = node;
+        while (current is BinaryNode { Op: not BinaryOperator.Power } bin)
+        {
+            spine.Push(bin);
+            current = bin.Left;
+        }
+
+        string text = current.Accept(this);
+        while (spine.Count > 0)
+        {
+            text = Compose(spine.Pop(), text);
+        }
+
+        return text;
+    }
+
+    /// <summary>
+    /// Formats one binary node given the already-formatted text of its left operand (before any
+    /// parenthesisation, which depends on this node). The right operand is formatted recursively.
+    /// </summary>
+    private string Compose(BinaryNode node, string rawLeft)
+    {
+        string leftText = Parenthesize(rawLeft, node.Left, node, isRight: false);
+
+        if (node.IsImplicit && node.Op == BinaryOperator.Multiply)
+        {
+            // Juxtaposition binds tighter than explicit * / %, so such a left operand must be grouped or
+            // it would reparse with a different structure, e.g. (a/b)x as a/(bx).
+            string leftImplicit = node.Left is BinaryNode { Op: BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo, IsImplicit: false }
+                ? $"({rawLeft})"
+                : leftText;
+            string rightImplicit = FormatChild(node.Right, node, isRight: true);
+
+            // Avoid ambiguities like 2(3) -> 23, 2(-x) -> 2-x, or x(y+1) looking like a function call.
+            bool isAmbiguousJuxtaposition =
+                (node.Left is IdentifierNode && rightImplicit.StartsWith('(')) ||
+                (rightImplicit.Length > 0 && !rightImplicit.StartsWith('(') && !char.IsLetter(rightImplicit[0]));
+
+            if (isAmbiguousJuxtaposition)
+            {
+                string explicitOp = GetBinaryOperatorSymbol(BinaryOperator.Multiply);
+                return $"{leftImplicit} {explicitOp} {rightImplicit}";
+            }
+
+            return $"{leftImplicit} {rightImplicit}";
+        }
+
         if (node.Op == BinaryOperator.Power && _options.UseSuperscriptPowers && TryGetSuperscript(node.Right, out string? superscripts))
         {
-            string leftText = FormatChild(node.Left, node, isRight: false);
             return leftText + superscripts;
         }
 
-        string left = FormatChild(node.Left, node, isRight: false);
+        string left = leftText;
         string right = FormatChild(node.Right, node, isRight: true);
         string opStr = GetBinaryOperatorSymbol(node.Op);
 
@@ -90,6 +133,7 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
     public string Visit(ComparisonChainNode node)
     {
         var sb = new StringBuilder();
+        int compPrec = GetPrecedence(node);
         for (int i = 0; i < node.Operands.Count; i++)
         {
             if (i > 0)
@@ -100,7 +144,15 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
             }
 
             var operand = node.Operands[i];
-            sb.Append(operand.Accept(this));
+            string operandText = operand.Accept(this);
+            if (GetPrecedence(operand) <= compPrec)
+            {
+                sb.Append('(').Append(operandText).Append(')');
+            }
+            else
+            {
+                sb.Append(operandText);
+            }
         }
 
         return sb.ToString();
@@ -140,7 +192,8 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
         BinaryOperator.LogicalAnd => "&&",
         BinaryOperator.LogicalOr => "||",
         BinaryOperator.LogicalXor => "xor",
-        _ => op.ToString(),
+        BinaryOperator.Of => "of",
+        _ => throw new ArgumentOutOfRangeException(nameof(op), op, "Unknown binary operator."),
     };
 
     private string GetComparisonOperatorSymbol(ComparisonOperator op) => op switch
@@ -151,19 +204,16 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
         ComparisonOperator.LessThanOrEqual => _options.Style == ExpressionFormatStyle.TypographicUnicode ? "≤" : "<=",
         ComparisonOperator.GreaterThan => ">",
         ComparisonOperator.GreaterThanOrEqual => _options.Style == ExpressionFormatStyle.TypographicUnicode ? "≥" : ">=",
-        _ => op.ToString(),
+        _ => throw new ArgumentOutOfRangeException(nameof(op), op, "Unknown comparison operator."),
     };
 
     private string FormatChild(ExpressionNode child, ExpressionNode parent, bool isRight)
     {
-        string text = child.Accept(this);
-        if (NeedsParentheses(child, parent, isRight))
-        {
-            return $"({text})";
-        }
-
-        return text;
+        return Parenthesize(child.Accept(this), child, parent, isRight);
     }
+
+    private static string Parenthesize(string text, ExpressionNode child, ExpressionNode parent, bool isRight) =>
+        NeedsParentheses(child, parent, isRight) ? $"({text})" : text;
 
     private static bool NeedsParentheses(ExpressionNode child, ExpressionNode parent, bool isRight)
     {
@@ -183,32 +233,68 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
                 return !isRight;
             }
 
-            // For subtraction/division (left-associative non-commutative): right child needs parens: a - (b - c)
-            if (isRight && parent is BinaryNode { Op: BinaryOperator.Subtract or BinaryOperator.Divide or BinaryOperator.Modulo })
+            //At equal precedence, right operand of binary operator defaults to parentheses
+            // unless the child is a binary node with the same associative operator.
+            if (isRight && parent is BinaryNode parentBin)
+            {
+                if (child is BinaryNode childBin && childBin.Op == parentBin.Op && IsAssociative(parentBin.Op))
+                {
+                    return false;
+                }
+
+                return true;
+            }
+
+            if (parent is UnaryNode { Op: UnaryOperator.Negate or UnaryOperator.Positive } &&
+                child is UnaryNode { Op: UnaryOperator.Negate or UnaryOperator.Positive })
+            {
+                return true;
+            }
+
+            if (parent is UnaryNode { Op: UnaryOperator.Factorial } &&
+                child is UnaryNode { Op: UnaryOperator.Factorial })
             {
                 return true;
             }
         }
 
+        // Avoid ambiguity like a - (-b) or a + (-b)
+        if (isRight && child is UnaryNode && parent is BinaryNode { Op: BinaryOperator.Add or BinaryOperator.Subtract or BinaryOperator.Divide or BinaryOperator.Modulo })
+        {
+            return true;
+        }
+
         return false;
     }
+
+    private static bool IsAssociative(BinaryOperator op) => op switch
+    {
+        BinaryOperator.Add or BinaryOperator.Multiply or
+        BinaryOperator.LogicalAnd or BinaryOperator.LogicalOr or BinaryOperator.LogicalXor => true,
+        _ => false,
+    };
 
     private static int GetPrecedence(ExpressionNode node) => node switch
     {
         BinaryNode b => b.Op switch
         {
-            BinaryOperator.Power => 9,
-            BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo => 7,
-            BinaryOperator.Add or BinaryOperator.Subtract => 6,
-            BinaryOperator.ShiftLeft or BinaryOperator.ShiftRight => 5,
+            BinaryOperator.Power => 10,
+            BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo or BinaryOperator.Of => 8,
+            BinaryOperator.Add or BinaryOperator.Subtract => 7,
+            BinaryOperator.ShiftLeft or BinaryOperator.ShiftRight => 6,
             BinaryOperator.LogicalAnd => 3,
             BinaryOperator.LogicalXor => 2,
             BinaryOperator.LogicalOr => 1,
             _ => 0,
         },
-        UnaryNode => 8,
-        ComparisonChainNode => 4,
-        _ => 10, // Number, Identifier, FunctionCall are primary
+        UnaryNode u => u.Op switch
+        {
+            UnaryOperator.Factorial or UnaryOperator.Percent => 11,
+            UnaryOperator.LogicalNot => 4,
+            _ => 9,
+        },
+        ComparisonChainNode => 5,
+        _ => 12, // Number, Identifier, FunctionCall are primary
     };
 
     private bool TryGetSuperscript(ExpressionNode node, out string? result)

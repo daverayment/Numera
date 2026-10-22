@@ -37,6 +37,12 @@ public enum BinaryOperator
 
     /// <summary>Logical exclusive disjunction ('xor').</summary>
     LogicalXor,
+
+    /// <summary>
+    /// Percentage-of ('10% of 200'). Evaluates as multiplication, but is kept distinct so it prints as typed and
+    /// so 'of' stays a reserved word. The left operand must be percent-shaped (see <c>PercentRules</c>).
+    /// </summary>
+    Of,
 }
 
 /// <summary>
@@ -79,4 +85,13 @@ public enum UnaryOperator
 
     /// <summary>Bitwise complement / NOT ('~').</summary>
     BitwiseNot,
+
+    /// <summary>Postfix factorial ('!').</summary>
+    Factorial,
+
+    /// <summary>
+    /// Postfix percent ('15%'). Evaluates to the operand divided by 100. When it is the right operand of '+' or '-'
+    /// it is instead a markup or discount rate on the left operand (see <c>PercentRules</c>).
+    /// </summary>
+    Percent,
 }

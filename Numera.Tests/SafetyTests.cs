@@ -8,6 +8,7 @@ public class SafetyTests
 {
     [TestMethod]
     [DataRow("factorial(1001)")]
+    [DataRow("1001!")]
     [DataRow("2^10001")]
     [DataRow("2^(-10001)")]
     [DataRow("(2^10000)*(2^10000)")]

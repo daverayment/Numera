@@ -104,7 +104,7 @@ public sealed class FunctionMetadataTests
     [TestMethod]
     public void FunctionSignaturesMatchEveryRegisteredExecutionFunction()
     {
-        // Every function listed in Canonical must be executable in ExpressionParser
+        // Every function listed in Canonical must be executable in AstEvaluator
         // without UnknownFunction error.
         foreach (var func in Functions.Canonical)
         {
