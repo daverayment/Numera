@@ -37,6 +37,8 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
                 ConstantKind.Pi => "π",
                 ConstantKind.Tau => "τ",
                 ConstantKind.Phi => "ϕ",
+                ConstantKind.True => "true",
+                ConstantKind.False => "false",
                 _ => node.Name,
             };
         }

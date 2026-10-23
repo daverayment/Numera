@@ -6,6 +6,55 @@ namespace Numera.Tests;
 public sealed class ExpressionNormalizerTests
 {
     [TestMethod]
+    [DataRow("pi : 2", "pi : 2")]
+    [DataRow("pi:2", "pi:2")]
+    [DataRow("(pi):2", "(pi)/2")]
+    [DataRow("tau:4", "tau:4")]
+    [DataRow("sin(pi) : 2", "sin(pi) / 2")]
+    [DataRow("log10(100):2", "log10(100)/2")]
+    [DataRow("(1+2):3", "(1+2)/3")]
+    [DataRow("[1, 2]:3", "[1, 2]/3")]
+    [DataRow("6 : 2 / 16:9", "6 / 2 / 16/9")]
+    [DataRow("100:2", "100/2")]
+    [DataRow("1.5:2", "1.5/2")]
+    [DataRow("5:-2", "5/-2")]
+    [DataRow("log10:2", "log10:2")]
+    [DataRow("item1:200", "item1:200")]
+    [DataRow("win32:x64", "win32:x64")]
+    [DataRow("x2:3", "x2:3")]
+    [DataRow("not:200", "not:200")]
+    [DataRow("sin:2", "sin:2")]
+    [DataRow("status:200", "status:200")]
+    [DataRow("x : 2", "x : 2")]
+    [DataRow("flag:true", "flag:true")]
+    [DataRow("true : 2", "true : 2")]
+    [DataRow("4x:200", "4x:200")]
+    [DataRow("4x : 200", "4x : 200")]
+    [DataRow("(4x) : 200", "(4x) / 200")]
+    [DataRow("0xFF:2", "0xFF/2")]
+    [DataRow("0b101:2", "0b101/2")]
+    [DataRow("0o17:2", "0o17/2")]
+    [DataRow("1e5:2", "1e5/2")]
+    [DataRow("1.5E-3 : 2", "1.5E-3 / 2")]
+    [DataRow("2x:3", "2x:3")]
+    [DataRow("1e:2", "1e:2")]
+    [DataRow("4not:200", "4not:200")]
+    [DataRow("4sin:2", "4sin:2")]
+    [DataRow("6:", "6:")]
+    [DataRow("6 : x", "6 : x")]
+    public void DivisionColonRules(string input, string expected)
+    {
+        Assert.AreEqual(expected, ExpressionNormalizer.Normalize(input));
+    }
+
+    [TestMethod]
+    public void DivisionColonCanBeDisabled()
+    {
+        var options = new NormalizationOptions { ReplaceDivisionColon = false };
+        Assert.AreEqual("6 : 2", ExpressionNormalizer.Normalize("6 : 2", options));
+    }
+
+    [TestMethod]
     [DataRow("= 2 + 2", "2 + 2")]
     [DataRow("2 + 2 =", "2 + 2")]
     [DataRow("= 2 + 2 =", "2 + 2")]
@@ -161,6 +210,67 @@ public sealed class ExpressionNormalizerTests
         var deOptions = new NormalizationOptions { Culture = new CultureInfo("de-DE") };
         Assert.AreEqual("1.2", ExpressionNormalizer.Normalize("1.2", deOptions));
         Assert.AreEqual("max(1.5, 2.5)", ExpressionNormalizer.Normalize("max(1.5, 2.5)", deOptions));
+    }
+
+    [TestMethod]
+    [DataRow("2:3:4", "2/3/4")]
+    [DataRow("(2):(3)", "(2)/(3)")]
+    [DataRow("6\t:\t2", "6\t/\t2")]
+    [DataRow("6 :\n2", "6 /\n2")]
+    [DataRow(": 2", ": 2")]
+    [DataRow("6 :", "6 :")]
+    [DataRow("1.5e3:2", "1.5e3/2")]
+    [DataRow("6:+2", "6/+2")]
+    [DataRow("6:(1+1)", "6/(1+1)")]
+    [DataRow("6:[1]", "6/[1]")]
+    [DataRow("1e-5:2", "1e-5/2")]
+    [DataRow("1E+5 : 2", "1E+5 / 2")]
+    [DataRow("1.5e-3:2", "1.5e-3/2")]
+    [DataRow("6:1e-5", "6/1e-5")]
+    [DataRow("6:1E+5", "6/1E+5")]
+    [DataRow("6:1e-", "6:1e-")]
+    [DataRow("6 : - 2", "6 : - 2")]
+    [DataRow("6:0xFF", "6/0xFF")]
+    [DataRow("6:1e5", "6/1e5")]
+    [DataRow("6 : -0b101", "6 / -0b101")]
+    [DataRow("6:2x", "6:2x")]
+    [DataRow("6:2pi", "6:2pi")]
+    [DataRow("6:1e", "6:1e")]
+    [DataRow("6:-x", "6:-x")]
+    [DataRow("x:2 + 6:3", "x:2 + 6/3")]
+    public void DivisionColonEdgeCases(string input, string expected)
+    {
+        Assert.AreEqual(expected, ExpressionNormalizer.Normalize(input));
+    }
+
+    [TestMethod]
+    public void DivisionColonIsIndependentOfUnicodeOperatorOption()
+    {
+        var noUnicode = new NormalizationOptions { ReplaceUnicodeOperators = false };
+        Assert.AreEqual("6 / 2 × 3", ExpressionNormalizer.Normalize("6 : 2 × 3", noUnicode));
+
+        var noColon = new NormalizationOptions { ReplaceDivisionColon = false };
+        Assert.AreEqual("6 : 2 * 3", ExpressionNormalizer.Normalize("6 : 2 × 3", noColon));
+    }
+
+    [TestMethod]
+    public void DivisionColonCombinesWithCultureNormalization()
+    {
+        var options = new NormalizationOptions { Culture = new CultureInfo("de-DE") };
+        string normalized = ExpressionNormalizer.Normalize("1.000,5 : 2", options);
+        Assert.AreEqual("1000.5 / 2", normalized);
+        Assert.AreEqual(new MathValue(500.25m), Calculator.Evaluate(normalized));
+    }
+
+    [TestMethod]
+    [DataRow("6 : 2", 3)]
+    [DataRow("0xFF:3", 85)]
+    [DataRow("(2 + 4):3", 2)]
+    public void DivisionColonOutputEvaluates(string input, int expected)
+    {
+        // Compare numerically: the result's representation (integer or decimal) is not what this test is about.
+        double actual = Calculator.Evaluate(ExpressionNormalizer.Normalize(input)).AsDouble();
+        Assert.AreEqual(expected, actual);
     }
 
     [TestMethod]

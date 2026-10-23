@@ -68,11 +68,15 @@ Strips leading and trailing equals characters without disturbing equality compar
 Converts copied Unicode mathematical symbols, dashes, and Fortran/Python power operators to standard ASCII equivalents:
 - Multiplication: `×`, `•`, `·`, `∗` $\to$ `*`
 - Division: `÷`, `∕`, `⁄` $\to$ `/`
-- Division Colon: Flanked European ratio colon `6 : 2` $\to$ `6 / 2`
 - Minus & Dashes: Math minus `−`, en-dash `–`, em-dash `—`, horizontal bar `―` $\to$ `-`
 - Exponentiation: `2 ** 3` $\to$ `2 ^ 3`
 
-### 3. Culture & Digit Grouping Normalization
+### 3. Division Colon
+Rewrites a European ratio colon to `/` only when the left side is a number (decimal, scientific such as `1e5`, or radix-prefixed such as `0xFF`) or a closing `)` / `]`, and the right side starts with a digit, `(`, `[`, `+` or `-`. Controlled by `ReplaceDivisionColon`.
+- `6 : 2` $\to$ `6 / 2`, `16:9` $\to$ `16/9`, `log10(100):2` $\to$ `log10(100)/2`
+- Identifiers are never guessed at, so launcher-style text is preserved: `status:200`, `pi:2`, `item1:200`. Parenthesise
+
+### 4. Culture & Digit Grouping Normalization
 Disambiguates decimal points, digit separators, and argument delimiters based on the specified `CultureInfo`:
 - **Swiss & ISO Grouping:** Apostrophe thousands separators (`1'000'000.50`) and space or non-breaking space grouping (`1 000 000.50`) are stripped to standard format `1000000.50`.
 - **European Cultures (Comma Decimal):** Period grouping (`1.000.000,50`) is stripped and the decimal comma is normalized to `1000000.50`. Semicolon argument separators inside parentheses (`max(1,5; 2,5)` or `round(2,5; 1)`) are normalized to standard commas (`max(1.5, 2.5)`). Semicolons inside square brackets (`[...]`) are intentionally preserved for future matrix row definitions.
@@ -109,6 +113,7 @@ var options = new NormalizationOptions
 {
 	Culture = CultureInfo.CurrentCulture,
 	ReplaceUnicodeOperators = true,
+	ReplaceDivisionColon = true,
 	TrimLauncherEquals = true
 };
 ```

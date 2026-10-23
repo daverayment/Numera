@@ -75,7 +75,13 @@ public static class ExpressionNormalizer
             current = SanitizeUnicodeOperators(current);
         }
 
-        // Pass 3: Culture & number formatting (decimal comma, digit grouping, argument
+        // Pass 3: European ratio colon as division.
+        if (options.ReplaceDivisionColon)
+        {
+            current = ReplaceDivisionColons(current);
+        }
+
+        // Pass 4: Culture & number formatting (decimal comma, digit grouping, argument
         // semicolons).
         if (!NormalizeCultureAndSeparators(current, options.Culture, out current, out errorMessage))
         {
@@ -154,11 +160,6 @@ public static class ExpressionNormalizer
                     i++;
                     break;
 
-                // European colon ':' used as division (e.g. '6 : 2').
-                case ':' when IsDivisionColon(text, i):
-                    sb.Append('/');
-                    break;
-
                 default:
                     sb.Append(c);
                     break;
@@ -168,24 +169,163 @@ public static class ExpressionNormalizer
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Rewrites European ratio colons to '/'. This is separate from the typographic pass because it
+    /// depends on context, and it is deliberately conservative: anything that could be an identifier
+    /// or launcher qualifier ("status:200", "pi:2") is left alone rather than guessed at.
+    /// </summary>
+    private static string ReplaceDivisionColons(string text)
+    {
+        if (!text.Contains(':'))
+        {
+            return text;
+        }
+
+        var sb = new StringBuilder(text.Length);
+        for (int i = 0; i < text.Length; i++)
+        {
+            sb.Append(text[i] == ':' && IsDivisionColon(text, i) ? '/' : text[i]);
+        }
+
+        return sb.ToString();
+    }
+
     private static bool IsDivisionColon(string text, int index)
     {
-        // Colon is division if it's flanked by operands (typically numbers or parentheses)
-        // rather than part of a symbol or label.
         int left = index - 1;
         while (left >= 0 && char.IsWhiteSpace(text[left])) left--;
         if (left < 0) return false;
 
         char prev = text[left];
-        if (!char.IsLetterOrDigit(prev) && prev != ')' && prev != ']') return false;
 
-        int right = index + 1;
-        while (right < text.Length && char.IsWhiteSpace(text[right])) right++;
-        if (right >= text.Length) return false;
+        // A closing group is always a valid dividend: "(a+b):2", "log10(100):2", "[1, 2]:3".
+        // Identifiers must be parenthesised to take part: "(pi):2".
+        if (prev is ')' or ']')
+        {
+            return IsValidRightOperand(text.AsSpan(index + 1));
+        }
 
-        char next = text[right];
-        return char.IsLetterOrDigit(next) || next == '(' || next == '[' || next == '+' || next == '-';
+        // The left term
+        // ("log10", "item1", "x2") or letters ("pi", "status") are left alone.
+        if (!EndsWithNumericLiteral(text.AsSpan(0, left + 1)))
+        {
+            return false;
+        }
+
+        return IsValidRightOperand(text.AsSpan(index + 1));
     }
+
+    /// <summary>
+    /// True when the span ends with a complete numeric literal. The whole trailing word is taken as one
+    /// token and must be a single literal, which is what rejects identifiers such as "x2" or "win32".
+    /// The walk deliberately stops at '+' and '-', so for "1e-5" only "5" is examined. That is safe
+    /// because only the final operand next to the colon matters, and a trailing "5" is always a valid
+    /// operand whatever precedes the sign.
+    /// </summary>
+    private static bool EndsWithNumericLiteral(ReadOnlySpan<char> span)
+    {
+        int start = span.Length;
+        while (start > 0 && (IsWordChar(span[start - 1]) || span[start - 1] == '.'))
+        {
+            start--;
+        }
+
+        var token = span[start..];
+        return TryConsumeNumber(token, out int consumed) && consumed == token.Length;
+    }
+
+    /// <summary>
+    /// True when the divisor starts with an optionally signed complete numeric literal or an opening
+    /// group. Uses the same literal grammar as the dividend, so the two sides cannot drift apart.
+    /// </summary>
+    private static bool IsValidRightOperand(ReadOnlySpan<char> span)
+    {
+        int i = 0;
+        while (i < span.Length && char.IsWhiteSpace(span[i])) i++;
+        if (i >= span.Length) return false;
+
+        if (span[i] is '+' or '-')
+        {
+            i++;
+            if (i >= span.Length) return false;
+        }
+
+        if (span[i] is '(' or '[')
+        {
+            return true;
+        }
+
+        // A literal that runs straight into letters ("2x", "2pi") is an implicit product, not a divisor.
+        var rest = span[i..];
+        return TryConsumeNumber(rest, out int consumed) &&
+            (consumed == rest.Length || !IsWordChar(rest[consumed]));
+    }
+
+    /// <summary>
+    /// Reads one numeric literal from the start of the span: 0x/0b/0o radix integers, or a decimal with an
+    /// optional exponent. This is the single definition of "number" used for both sides of the colon.
+    /// </summary>
+    private static bool TryConsumeNumber(ReadOnlySpan<char> span, out int consumed)
+    {
+        consumed = 0;
+
+        if (span.Length >= 3 && span[0] == '0' && IsRadixPrefix(span[1]))
+        {
+            char prefix = char.ToLowerInvariant(span[1]);
+            int j = 2;
+            while (j < span.Length && IsRadixDigit(prefix, span[j])) j++;
+
+            if (j == 2) return false;
+            consumed = j;
+            return true;
+        }
+
+        int i = 0;
+        bool hasDigits = false;
+        while (i < span.Length && char.IsAsciiDigit(span[i]))
+        {
+            hasDigits = true;
+            i++;
+        }
+
+        if (i < span.Length && span[i] == '.')
+        {
+            i++;
+            while (i < span.Length && char.IsAsciiDigit(span[i]))
+            {
+                hasDigits = true;
+                i++;
+            }
+        }
+
+        if (!hasDigits) return false;
+
+        // An exponent only counts if digits follow; otherwise the 'e' is left for the caller to reject.
+        if (i < span.Length && (span[i] is 'e' or 'E'))
+        {
+            int j = i + 1;
+            if (j < span.Length && (span[j] is '+' or '-')) j++;
+
+            int digitsStart = j;
+            while (j < span.Length && char.IsAsciiDigit(span[j])) j++;
+
+            if (j > digitsStart) i = j;
+        }
+
+        consumed = i;
+        return true;
+    }
+
+    private static bool IsRadixPrefix(char c) => char.ToLowerInvariant(c) is 'x' or 'b' or 'o';
+
+    private static bool IsRadixDigit(char lowerPrefix, char c) => lowerPrefix switch
+    {
+        'x' => char.IsAsciiHexDigit(c),
+        'b' => c is '0' or '1',
+        _ => c is >= '0' and <= '7',
+    };
+
+    private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 
     private static bool NormalizeCultureAndSeparators(
         string text,

@@ -412,7 +412,15 @@ internal sealed class AstParser
         if (c == '(') return true;
 
         // Deliberately not digits or '.': "1 000" would otherwise silently become 1 * 0.
-        return IsIdentifierStart(c) && !IsKeywordAt("and") && !IsKeywordAt("or") && !IsKeywordAt("xor") && !IsKeywordAt("of");
+        // Reject boolean literals and keywords from starting an implicit product, e.g.
+        // allow "2x" but not "2true" or "2and(3,4)".
+        return IsIdentifierStart(c) &&
+            !IsKeywordAt("and") &&
+            !IsKeywordAt("or") &&
+            !IsKeywordAt("xor") &&
+            !IsKeywordAt("of") &&
+            !IsKeywordAt("true") &&
+            !IsKeywordAt("false");
     }
 
     private ExpressionNode ParseUnary()

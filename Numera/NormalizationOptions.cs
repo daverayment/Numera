@@ -22,6 +22,14 @@ public sealed record NormalizationOptions
     public bool ReplaceUnicodeOperators { get; init; } = true;
 
     /// <summary>
+    /// Whether to replace European ratio/division colons flanked by numeric operands or
+    /// closing parentheses (e.g. '6 : 2' or '16:9') with standard division slashes ('/').
+    /// Identifiers must be parenthesised to take part, e.g. '(pi):2'. Defaults to
+    /// <c>true</c>.
+    /// </summary>
+    public bool ReplaceDivisionColon { get; init; } = true;
+
+    /// <summary>
     /// Whether to strip leading activation equals ('= 2 + 2') and trailing evaluation
     /// equals ('2 + 2 =') commonly produced by launcher inputs or physical desktop
     /// calculator habits.
