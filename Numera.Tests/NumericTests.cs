@@ -388,13 +388,42 @@ public class NumericTests
         // When constructed directly with an input requiring more than MaxIntegerBits bits,
         // AstParser throws CalculationLimitException before or immediately after BigInteger parsing.
         string hugeDecimal = new string('9', 6000);
-        var options = new EvaluationOptions
+        var options = new CalculatorOptions
         {
             MaxInputLength = 100000
         };
 
         var parser = new AstParser(hugeDecimal, options);
         Assert.Throws<CalculationLimitException>(() => parser.Parse());
+    }
+
+    [TestMethod]
+    public void ScientificNotation_PromotionBoundary_AroundMaxIntegerBits()
+    {
+        // MaxIntegerBits = 16384 bits.
+        // log10(2^16384) = 16384 * 0.301029995664... ~= 4932.18 decimal digits.
+        // 1e4932 has 4933 decimal digits and requires 16384 bits.
+        // 1e4933 requires ~16387 bits, exceeding MaxIntegerBits (16384).
+
+        // Test near upper bound of BigInteger promotion from scientific notation:
+        // 1e4932 needs 16384 bits (4932 * log2(10) ~= 16383.9) and is the largest exponent
+        // that fits; 1e4933 needs ~16387 bits and must be rejected.
+        var boundaryVal = Calculator.Evaluate("1e4932");
+        Assert.AreEqual(MathValue.DataType.Integer, boundaryVal.Type);
+        Assert.IsTrue(boundaryVal.IntVal.GetBitLength() <= CalculationLimits.MaxIntegerBits);
+
+        // 1e4933 exceeds MaxIntegerBits, so TryPromoteScientificToBigInteger rejects it and falls back to NumericOverflow:
+        var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("1e4933"));
+        Assert.AreEqual(EvaluationError.NumericOverflow, ex.Diagnostic.Code);
+    }
+
+    [TestMethod]
+    public void ContextSupplied_BigIntegerExceedingLimit_IsRejectedByMathValueConstructor()
+    {
+        // A caller trying to construct a poisoned MathValue with > 16384 bits to supply via context
+        // is rejected at MathValue construction time before it can even enter the engine.
+        var hugeBigInt = BigInteger.One << (CalculationLimits.MaxIntegerBits + 1);
+        Assert.Throws<CalculationLimitException>(() => new MathValue(hugeBigInt));
     }
 
     [TestMethod]
@@ -751,8 +780,7 @@ public class NumericTests
     [DataRow("csc(270)", -1.0)]
     public void TrigonometricFunctionsInDegreesModeEvaluateExactCardinalValues(string expression, double expected)
     {
-        var options = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
-        var result = Calculator.Evaluate(expression, options);
+        var result = TestEngines.DegreesEngine.Evaluate(expression);
 
         Assert.AreEqual(MathValue.DataType.Double, result.Type);
         Assert.AreEqual(expected, result.DblVal, 0.0);
@@ -761,27 +789,25 @@ public class NumericTests
     [TestMethod]
     public void TrigonometricFunctionsSupportGradiansMode()
     {
-        var options = new EvaluationOptions { AngleUnit = AngleUnit.Gradians };
-        Assert.AreEqual(1.0, Calculator.Evaluate("sin(100)", options).DblVal, 1e-15);
-        Assert.AreEqual(0.0, Calculator.Evaluate("cos(100)", options).DblVal, 1e-15);
-        Assert.AreEqual(1.0, Calculator.Evaluate("tan(50)", options).DblVal, 1e-15);
+        var gradians = TestEngines.GradiansEngine;
+        Assert.AreEqual(1.0, gradians.Evaluate("sin(100)").DblVal, 1e-15);
+        Assert.AreEqual(0.0, gradians.Evaluate("cos(100)").DblVal, 1e-15);
+        Assert.AreEqual(1.0, gradians.Evaluate("tan(50)").DblVal, 1e-15);
     }
 
     [TestMethod]
     public void InverseTrigonometricFunctionsRespectAngleUnit()
     {
-        var degOptions = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
-        Assert.AreEqual(90.0, Calculator.Evaluate("arcsin(1)", degOptions).DblVal, 0.0);
-        Assert.AreEqual(30.0, Calculator.Evaluate("arcsin(0.5)", degOptions).DblVal, 1e-14);
-        Assert.AreEqual(180.0, Calculator.Evaluate("arccos(-1)", degOptions).DblVal, 0.0);
-        Assert.AreEqual(90.0, Calculator.Evaluate("arccos(0)", degOptions).DblVal, 0.0);
-        Assert.AreEqual(45.0, Calculator.Evaluate("arctan(1)", degOptions).DblVal, 0.0);
-        Assert.AreEqual(0.0, Calculator.Evaluate("arctan(0)", degOptions).DblVal, 0.0);
+        Assert.AreEqual(90.0, TestEngines.DegreesEngine.Evaluate("arcsin(1)").DblVal, 0.0);
+        Assert.AreEqual(30.0, TestEngines.DegreesEngine.Evaluate("arcsin(0.5)").DblVal, 1e-14);
+        Assert.AreEqual(180.0, TestEngines.DegreesEngine.Evaluate("arccos(-1)").DblVal, 0.0);
+        Assert.AreEqual(90.0, TestEngines.DegreesEngine.Evaluate("arccos(0)").DblVal, 0.0);
+        Assert.AreEqual(45.0, TestEngines.DegreesEngine.Evaluate("arctan(1)").DblVal, 0.0);
+        Assert.AreEqual(0.0, TestEngines.DegreesEngine.Evaluate("arctan(0)").DblVal, 0.0);
 
-        var gradOptions = new EvaluationOptions { AngleUnit = AngleUnit.Gradians };
-        Assert.AreEqual(100.0, Calculator.Evaluate("arcsin(1)", gradOptions).DblVal, 0.0);
-        Assert.AreEqual(200.0, Calculator.Evaluate("arccos(-1)", gradOptions).DblVal, 0.0);
-        Assert.AreEqual(50.0, Calculator.Evaluate("arctan(1)", gradOptions).DblVal, 0.0);
+        Assert.AreEqual(100.0, TestEngines.GradiansEngine.Evaluate("arcsin(1)").DblVal, 0.0);
+        Assert.AreEqual(200.0, TestEngines.GradiansEngine.Evaluate("arccos(-1)").DblVal, 0.0);
+        Assert.AreEqual(50.0, TestEngines.GradiansEngine.Evaluate("arctan(1)").DblVal, 0.0);
     }
 
     [TestMethod]
@@ -828,11 +854,7 @@ public class NumericTests
     [DataRow("csc(deg(pi))", EvaluationError.UndefinedMathResult)]
     public void ComputedDegreeAsymptotesProduceDiagnostics(string expression, EvaluationError expectedError)
     {
-        var degOptions = new EvaluationOptions
-        {
-            AngleUnit = AngleUnit.Degrees
-        };
-        Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic, degOptions));
+        Assert.IsFalse(TestEngines.DegreesEngine.TryEvaluate(expression, out _, out var diagnostic));
         Assert.AreEqual(expectedError, diagnostic!.Code);
     }
 
@@ -993,12 +1015,10 @@ public class NumericTests
         var radResult = Calculator.Evaluate("atan2(1, 1)");
         Assert.AreEqual(Math.PI / 4.0, radResult.DblVal, 1e-12);
 
-        var degOptions = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
-        var degResult = Calculator.Evaluate("atan2(1, 1)", degOptions);
+        var degResult = TestEngines.DegreesEngine.Evaluate("atan2(1, 1)");
         Assert.AreEqual(45.0, degResult.DblVal, 0.0);
 
-        var gradOptions = new EvaluationOptions { AngleUnit = AngleUnit.Gradians };
-        var gradResult = Calculator.Evaluate("atan2(1, 1)", gradOptions);
+        var gradResult = TestEngines.GradiansEngine.Evaluate("atan2(1, 1)");
         Assert.AreEqual(50.0, gradResult.DblVal, 0.0);
     }
 
@@ -1084,12 +1104,11 @@ public class NumericTests
     [DataRow("csc(180)", EvaluationError.UndefinedMathResult)]
     public void TangentAndCotangentSingularitiesInDegreesModeProduceDiagnostics(string expression, EvaluationError expectedError)
     {
-        var degOptions = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
-        Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic, degOptions));
+        Assert.IsFalse(TestEngines.DegreesEngine.TryEvaluate(expression, out _, out var diagnostic));
         Assert.IsNotNull(diagnostic);
         Assert.AreEqual(expectedError, diagnostic.Code);
 
-        var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate(expression, degOptions));
+        var ex = Assert.Throws<ExpressionException>(() => TestEngines.DegreesEngine.Evaluate(expression));
         Assert.AreEqual(expectedError, ex.Diagnostic.Code);
     }
 
@@ -1119,12 +1138,11 @@ public class NumericTests
     [DataRow("csc(200)", EvaluationError.UndefinedMathResult)]
     public void ReciprocalTrigonometricSingularitiesInGradiansModeProduceDiagnostics(string expression, EvaluationError expectedError)
     {
-        var gradOptions = new EvaluationOptions { AngleUnit = AngleUnit.Gradians };
-        Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic, gradOptions));
+        Assert.IsFalse(TestEngines.GradiansEngine.TryEvaluate(expression, out _, out var diagnostic));
         Assert.IsNotNull(diagnostic);
         Assert.AreEqual(expectedError, diagnostic.Code);
 
-        var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate(expression, gradOptions));
+        var ex = Assert.Throws<ExpressionException>(() => TestEngines.GradiansEngine.Evaluate(expression));
         Assert.AreEqual(expectedError, ex.Diagnostic.Code);
     }
 
@@ -1156,9 +1174,9 @@ public class NumericTests
     [DataRow("cot(90)")]
     public void TrigonometricCardinalZerosProducePositiveZero(string expression)
     {
-        var degOptions = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
-        var options = expression.Contains("pi") ? null : degOptions;
-        var result = Calculator.Evaluate(expression, options);
+        var result = expression.Contains("pi")
+            ? Calculator.Evaluate(expression)
+            : TestEngines.DegreesEngine.Evaluate(expression);
 
         Assert.AreEqual(0.0, result.DblVal, 0.0);
         Assert.AreEqual(0L, BitConverter.DoubleToInt64Bits(result.DblVal), $"{expression} must evaluate to +0.0, not -0.0.");
@@ -1179,8 +1197,7 @@ public class NumericTests
     [DataRow("csc(100)", 1.0)]
     public void GradiansModeEvaluatesExactCardinalValues(string expression, double expected)
     {
-        var gradOptions = new EvaluationOptions { AngleUnit = AngleUnit.Gradians };
-        var result = Calculator.Evaluate(expression, gradOptions);
+        var result = TestEngines.GradiansEngine.Evaluate(expression);
         Assert.AreEqual(MathValue.DataType.Double, result.Type);
         Assert.AreEqual(expected, result.DblVal, 0.0);
     }
@@ -1257,40 +1274,40 @@ public class NumericTests
         // Direct (360000030.0 / 180.0) consumes significand bits on the integer quotient,
         // whereas Math.IEEERemainder(v, 360.0) reduces to 30.0 degrees before division,
         // yielding exact sin(30 deg) = 0.5.
-        var degOptions = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
-        var sinResult = Calculator.Evaluate("sin(360000030)", degOptions);
+        var degrees = TestEngines.DegreesEngine;
+        var sinResult = degrees.Evaluate("sin(360000030)");
         Assert.AreEqual(0.5, sinResult.DblVal, 1e-15);
 
         // 360,000,060 degrees -> 60 degrees; cos(60 deg) = 0.5.
-        var cosResult = Calculator.Evaluate("cos(360000060)", degOptions);
+        var cosResult = degrees.Evaluate("cos(360000060)");
         Assert.AreEqual(0.5, cosResult.DblVal, 1e-15);
 
         // 400,000,050 gradians is 1,000,000 revolutions + 50 gradians (45 degrees).
         // Beyond MaxSnappingRevolutions (100.0 revs), it falls back to double.TanPi with
         // reduced remainder.
-        var gradOptions = new EvaluationOptions { AngleUnit = AngleUnit.Gradians };
-        var tanGradResult = Calculator.Evaluate("tan(400000050)", gradOptions);
+        var gradians = TestEngines.GradiansEngine;
+        var tanGradResult = gradians.Evaluate("tan(400000050)");
         Assert.AreEqual(1.0, tanGradResult.DblVal, 1e-15);
 
         // Non-cardinal angle with many revolutions in degrees:
         // 360000000 + 37 degrees, which evaluates identically to sin(37 deg) without
         // revolution offset.
-        var baseSin = Calculator.Evaluate("sin(37)", degOptions);
-        var largeSin = Calculator.Evaluate("sin(360000037)", degOptions);
+        var baseSin = degrees.Evaluate("sin(37)");
+        var largeSin = degrees.Evaluate("sin(360000037)");
         Assert.AreEqual(baseSin.DblVal, largeSin.DblVal, 1e-15);
 
-        var baseCos = Calculator.Evaluate("cos(37)", degOptions);
-        var largeCos = Calculator.Evaluate("cos(360000037)", degOptions);
+        var baseCos = degrees.Evaluate("cos(37)");
+        var largeCos = degrees.Evaluate("cos(360000037)");
         Assert.AreEqual(baseCos.DblVal, largeCos.DblVal, 1e-15);
 
-        var baseTan = Calculator.Evaluate("tan(37)", degOptions);
-        var largeTan = Calculator.Evaluate("tan(360000037)", degOptions);
+        var baseTan = degrees.Evaluate("tan(37)");
+        var largeTan = degrees.Evaluate("tan(360000037)");
         Assert.AreEqual(baseTan.DblVal, largeTan.DblVal, 1e-15);
 
-        var largeNegSin = Calculator.Evaluate("sin(-360000030)", degOptions);
+        var largeNegSin = degrees.Evaluate("sin(-360000030)");
         Assert.AreEqual(-0.5, largeNegSin.DblVal, 1e-15);
 
-        var largeNegCos = Calculator.Evaluate("cos(-360000060)", degOptions);
+        var largeNegCos = degrees.Evaluate("cos(-360000060)");
         Assert.AreEqual(0.5, largeNegCos.DblVal, 1e-15);
     }
 
@@ -1409,23 +1426,23 @@ public class NumericTests
     [TestMethod]
     public void LargeAngleAsymptotesInDegreesModeThrowUndefinedMathResult()
     {
-        var degOptions = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
+        var degrees = TestEngines.DegreesEngine;
 
         // 360000090 is 10^6 * 360 + 90 degrees
-        var exTan = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("tan(360000090)", degOptions));
+        var exTan = Assert.Throws<ExpressionException>(() => degrees.Evaluate("tan(360000090)"));
         Assert.AreEqual(EvaluationError.UndefinedMathResult, exTan.Diagnostic.Code);
 
-        var exCot = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("cot(360000180)", degOptions));
+        var exCot = Assert.Throws<ExpressionException>(() => degrees.Evaluate("cot(360000180)"));
         Assert.AreEqual(EvaluationError.UndefinedMathResult, exCot.Diagnostic.Code);
 
-        var exSec = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("sec(360000090)", degOptions));
+        var exSec = Assert.Throws<ExpressionException>(() => degrees.Evaluate("sec(360000090)"));
         Assert.AreEqual(EvaluationError.UndefinedMathResult, exSec.Diagnostic.Code);
 
-        var exCsc = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("csc(360000180)", degOptions));
+        var exCsc = Assert.Throws<ExpressionException>(() => degrees.Evaluate("csc(360000180)"));
         Assert.AreEqual(EvaluationError.UndefinedMathResult, exCsc.Diagnostic.Code);
 
         // TryEvaluate safely reports diagnostic for large asymptote
-        Assert.IsFalse(Calculator.TryEvaluate("tan(360000090)", out _, out var diagnostic, degOptions));
+        Assert.IsFalse(degrees.TryEvaluate("tan(360000090)", out _, out var diagnostic));
         Assert.IsNotNull(diagnostic);
         Assert.AreEqual(EvaluationError.UndefinedMathResult, diagnostic.Code);
     }

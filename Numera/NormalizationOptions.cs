@@ -1,23 +1,18 @@
-using System.Globalization;
-
 namespace Numera;
 
 /// <summary>
 /// Configuration options governing how input expressions are preprocessed and normalized
-/// before evaluation.
+/// before evaluation. These flags only switch individual passes on or off; the culture used to read
+/// numbers comes from <see cref="CalculatorOptions.Culture"/> (or is passed directly to
+/// <see cref="ExpressionNormalizer"/>), and culture handling always runs.
 /// </summary>
 public sealed record NormalizationOptions
 {
     /// <summary>
-    /// The culture used to interpret decimal and thousands separators. When null,
-    /// invariant rules apply (period as decimal separator, comma as function argument    
-    /// delimiter).
-    /// </summary>
-    public CultureInfo? Culture { get; init; }
-
-    /// <summary>
-    /// Whether to replace typographic Unicode mathematical symbols (e.g. ×, •, ·, ÷, ⁄, −, –, —)
-    /// and Fortran/Python power operator '**' with canonical ASCII operators (*, /, -, ^).
+    /// Whether to replace typographic operators (such as <c>×</c>, <c>÷</c> and the Unicode minus) and
+    /// the Fortran/Python power operator <c>**</c> with the canonical ASCII operators the parser
+    /// understands (<c>*</c>, <c>/</c>, <c>-</c>, <c>^</c>), so pasted text evaluates. Defaults to
+    /// <c>true</c>.
     /// </summary>
     public bool ReplaceUnicodeOperators { get; init; } = true;
 
@@ -37,7 +32,8 @@ public sealed record NormalizationOptions
     public bool TrimLauncherEquals { get; init; } = true;
 
     /// <summary>
-    /// Default normalization options with all standard transformations enabled.
+    /// Default normalization options with all standard transformations enabled. The instance is
+    /// immutable and shared.
     /// </summary>
     public static NormalizationOptions Default { get; } = new();
 }

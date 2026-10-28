@@ -46,13 +46,14 @@ public class SafetyTests
     [TestMethod]
     public void OptionsTightenLimitsWithoutChangingOtherEvaluations()
     {
-        var options = new EvaluationOptions { MaxInputLength = 3, MaxNestingDepth = 2 };
-        Assert.AreEqual(new BigInteger(3), Calculator.Evaluate("1+2", options).IntVal);
-        Assert.IsFalse(Calculator.TryEvaluate("12+3", out _, out var diagnostic, options));
+        var tight = new CalculatorEngine(new CalculatorOptions { MaxInputLength = 3, MaxNestingDepth = 2 });
+        Assert.AreEqual(new BigInteger(3), tight.Evaluate("1+2").IntVal);
+        Assert.IsFalse(tight.TryEvaluate("12+3", out _, out var diagnostic));
         Assert.AreEqual(EvaluationError.LimitExceeded, diagnostic!.Code);
         Assert.AreEqual(new BigInteger(15), Calculator.Evaluate("12+3").IntVal);
-        Assert.IsFalse(Calculator.TryEvaluate("--1", out _, out _, options));
-        Assert.Throws<ArgumentOutOfRangeException>(() => Calculator.Evaluate("1", options with { MaxInputLength = CalculationLimits.MaxInputLength + 1 }));
+        Assert.IsFalse(tight.TryEvaluate("--1", out _, out _));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new CalculatorEngine(new CalculatorOptions { MaxInputLength = CalculationLimits.MaxInputLength + 1 }));
     }
 
     [TestMethod]

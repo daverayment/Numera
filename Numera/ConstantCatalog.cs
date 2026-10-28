@@ -72,27 +72,27 @@ internal static class ConstantCatalog
                 }
                 break;
 
-            case 2 when name.Equals("pi", StringComparison.OrdinalIgnoreCase):
+            case 2 when name.Equals("pi", Identifier.Comparison):
                 kind = ConstantKind.Pi;
                 value = PiValue;
                 return true;
 
-            case 3 when name.Equals("tau", StringComparison.OrdinalIgnoreCase):
+            case 3 when name.Equals("tau", Identifier.Comparison):
                 kind = ConstantKind.Tau;
                 value = TauValue;
                 return true;
 
-            case 3 when name.Equals("phi", StringComparison.OrdinalIgnoreCase):
+            case 3 when name.Equals("phi", Identifier.Comparison):
                 kind = ConstantKind.Phi;
                 value = PhiValue;
                 return true;
 
-            case 4 when name.Equals("true", StringComparison.OrdinalIgnoreCase):
+            case 4 when name.Equals("true", Identifier.Comparison):
                 kind = ConstantKind.True;
                 value = 1m;
                 return true;
 
-            case 5 when name.Equals("false", StringComparison.OrdinalIgnoreCase):
+            case 5 when name.Equals("false", Identifier.Comparison):
                 kind = ConstantKind.False;
                 value = 0m;
                 return true;

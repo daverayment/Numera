@@ -64,13 +64,26 @@ public enum EvaluationError
     /// violating the configured requirement for unambiguous parenthesization.
     /// </summary>
     AmbiguousLogicalNegation,
+
+    /// <summary>
+    /// Reserved for human-formatted input that normalization rejects, for example because digit grouping
+    /// or decimal separators are ambiguous for the configured culture. Normalization does not reject any
+    /// input today, so this is not currently produced; it stays so callers can rely on a stable enum.
+    /// </summary>
+    InvalidNumberFormat,
 }
 
 /// <summary>
 /// An evaluation failure with a category and a message. Position is a zero-based UTF-16
 /// offset; length counts UTF-16 code units. A null position means no source location is
-/// available, and a zero length can identify the end of input.
+/// available, and a zero length can identify the end of input. When input was normalized before
+/// parsing, positions refer to the normalized text rather than the caller's original string.
 /// </summary>
+/// <param name="Code">The stable error category; use it for programmatic decisions and localization.</param>
+/// <param name="Message">A human-readable description; not intended to be matched against.</param>
+/// <param name="Position">Zero-based UTF-16 offset of the problem in the normalized text, or <c>null</c>
+/// when there is no source location (for example, normalization failures).</param>
+/// <param name="Length">Number of UTF-16 code units the problem spans; zero can mark the end of input.</param>
 /// <remarks>
 /// Consumers should use Code for programmatic decisions or localization rather than
 /// matching message text, which is intended for human-readable diagnostics.

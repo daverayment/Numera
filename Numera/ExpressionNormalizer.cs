@@ -8,90 +8,120 @@ namespace Numera;
 /// Preprocesses and normalizes human desktop calculator and launcher expressions into
 /// standard, unambiguous Numera mathematical grammar.
 /// </summary>
+/// <remarks>
+/// Passes run in a fixed order: launcher equals, Unicode operators, division colons, then culture and
+/// number formatting. Colons inside square brackets are left alone, so they are never rewritten to
+/// division. Normalization changes character offsets, so positions in later parse diagnostics and AST
+/// spans refer to the normalized text, not the caller's original input.
+/// </remarks>
 public static class ExpressionNormalizer
 {
     /// <summary>
     /// Normalizes the specified input string according to the provided options.
-    /// Throws <see cref="FormatException"/> if unresolvable ambiguities are encountered.
+    /// Throws <see cref="ExpressionException"/> if unresolvable ambiguities are encountered.
     /// </summary>
     /// <param name="input">The raw user expression.</param>
+    /// <param name="culture">The culture used to interpret decimal and grouping separators; null means
+    /// invariant rules.</param>
     /// <param name="options">Optional normalization options; defaults to <see
     /// cref="NormalizationOptions.Default"/>.</param>
     /// <returns>The normalized expression string ready for evaluation.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="input"/> is
     /// null.</exception>
-    /// <exception cref="FormatException">Thrown if input syntax contains conflicting or
+    /// <exception cref="ExpressionException">Thrown if input syntax contains conflicting or
     /// ambiguous delimiters.</exception>
-    public static string Normalize(string input, NormalizationOptions? options = null)
+    public static string Normalize(
+        string input,
+        CultureInfo? culture = null,
+        NormalizationOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(input);
-        options ??= NormalizationOptions.Default;
 
-        if (!TryNormalize(input, out var normalized, out var errorMessage, options))
+        if (!TryNormalize(input, culture, out var normalized, out var diagnostic, options))
         {
-            throw new FormatException(errorMessage);
+            throw new ExpressionException(diagnostic);
         }
 
         return normalized;
     }
 
     /// <summary>
-    /// Safely attempts to normalize an expression. Returns false if the input contains
-    /// unresolvable delimiter conflicts or ambiguous formatting.
+    /// Safely attempts to normalize an expression, reporting failures with the same
+    /// <see cref="EvaluationDiagnostic"/> type the calculator uses. The only failure today is null input;
+    /// malformed numbers are not rejected here and surface as positioned parse diagnostics instead.
     /// </summary>
+    /// <param name="input">The raw user expression. A null input is reported as a diagnostic rather than thrown.</param>
+    /// <param name="culture">The culture used to interpret decimal and grouping separators; null means
+    /// invariant rules.</param>
+    /// <param name="normalized">On success, the normalized expression; otherwise <c>null</c>.</param>
+    /// <param name="diagnostic">On failure, the structured error (<see cref="EvaluationError.InvalidSyntax"/>
+    /// for null input); otherwise <c>null</c>.</param>
+    /// <param name="options">Optional pass configuration; defaults to <see cref="NormalizationOptions.Default"/>.</param>
+    /// <returns><c>true</c> if normalization succeeded; otherwise <c>false</c>.</returns>
     public static bool TryNormalize(
         string input,
+        CultureInfo? culture,
         [NotNullWhen(true)] out string? normalized,
-        NormalizationOptions? options = null) => TryNormalize(input, out normalized, out _, options);
+        [NotNullWhen(false)] out EvaluationDiagnostic? diagnostic,
+        NormalizationOptions? options = null) =>
+        TryNormalize(input, culture, out normalized, out diagnostic, out _, options);
 
     /// <summary>
-    /// Safely attempts to normalize an expression, providing an error message on failure.
+    /// Normalizes like the public overload and also returns a <see cref="SourceMap"/> that translates
+    /// positions in the normalized text back to the caller's original input. The map stays internal for
+    /// now; the engine uses it so spans and diagnostics refer to what the user actually typed.
     /// </summary>
-    public static bool TryNormalize(
+    internal static bool TryNormalize(
         string input,
+        CultureInfo? culture,
         [NotNullWhen(true)] out string? normalized,
-        [NotNullWhen(false)] out string? errorMessage,
+        [NotNullWhen(false)] out EvaluationDiagnostic? diagnostic,
+        out SourceMap map,
         NormalizationOptions? options = null)
     {
         if (input is null)
         {
             normalized = null;
-            errorMessage = "Input expression cannot be null.";
+            map = SourceMap.Identity(0);
+            diagnostic = new EvaluationDiagnostic(
+                EvaluationError.InvalidSyntax, "Input expression cannot be null.");
             return false;
         }
 
         options ??= NormalizationOptions.Default;
         string current = input;
 
+        // Maps are chained as each pass runs: every pass describes its output in terms of its own input,
+        // and composing them yields output-to-original-input without re-deriving any offsets.
+        map = SourceMap.Identity(input.Length);
+
         // Pass 1: Launcher quirks (leading / trailing '=').
         if (options.TrimLauncherEquals)
         {
-            current = TrimLauncherEquals(current);
+            current = TrimLauncherEquals(current, out var passMap);
+            map = passMap.Compose(map);
         }
 
         // Pass 2: Unicode and typographic operator sanitization.
         if (options.ReplaceUnicodeOperators)
         {
-            current = SanitizeUnicodeOperators(current);
+            current = SanitizeUnicodeOperators(current, out var passMap);
+            map = passMap.Compose(map);
         }
 
         // Pass 3: European ratio colon as division.
         if (options.ReplaceDivisionColon)
         {
-            current = ReplaceDivisionColons(current);
+            current = ReplaceDivisionColons(current, out var passMap);
+            map = passMap.Compose(map);
         }
 
         // Pass 4: Culture & number formatting (decimal comma, digit grouping, argument
         // semicolons).
-        if (!NormalizeCultureAndSeparators(current, options.Culture, out current, out errorMessage))
-        {
-            normalized = null;
-            errorMessage = $"Culture/number formatting normalization failed: {errorMessage}";
-            return false;
-        }
-
+        current = NormalizeCultureAndSeparators(current, culture, out var cultureMap);
+        map = cultureMap.Compose(map);
         normalized = current;
-        errorMessage = null;
+        diagnostic = null;
         return true;
     }
 
@@ -99,18 +129,24 @@ public static class ExpressionNormalizer
     /// Trim leading and trailing characters that may be added by launchers or
     /// calculators, such as '='.
     /// </summary>
-    private static string TrimLauncherEquals(string text)
+    private static string TrimLauncherEquals(string text, out SourceMap map)
     {
         var span = text.AsSpan().Trim();
         if (span.IsEmpty)
         {
+            map = SourceMap.Slice(0, 0, text.Length);
             return string.Empty;
         }
+
+        // Only leading removals move the start, so the offset is tracked here; trailing trims just shorten.
+        int offset = text.Length - text.AsSpan().TrimStart().Length;
 
         // Leading activation '=' (e.g. '= 2 + 2'), but NOT '=='.
         if (span.StartsWith("=") && !span.StartsWith("=="))
         {
-            span = span[1..].TrimStart();
+            var afterEquals = span[1..];
+            span = afterEquals.TrimStart();
+            offset += 1 + (afterEquals.Length - span.Length);
         }
 
         // Trailing calculator '=' (e.g. '2 + 2 ='), but NOT '==', '<=', '>=', '!=', '~='.
@@ -120,15 +156,19 @@ public static class ExpressionNormalizer
             span = span[..^1].TrimEnd();
         }
 
+        map = SourceMap.Slice(offset, span.Length, text.Length);
         return span.ToString();
     }
 
-    private static string SanitizeUnicodeOperators(string text)
+    private static string SanitizeUnicodeOperators(string text, out SourceMap map)
     {
         var sb = new StringBuilder(text.Length);
+        var starts = new List<int>(text.Length);
+        var ends = new List<int>(text.Length);
         for (int i = 0; i < text.Length; i++)
         {
             char c = text[i];
+            int start = i;
             switch (c)
             {
                 // Multiplication.
@@ -164,8 +204,14 @@ public static class ExpressionNormalizer
                     sb.Append(c);
                     break;
             }
+
+            // Every case appends exactly one character; for '**' the index was advanced, so the one '^'
+            // covers both original stars.
+            starts.Add(start);
+            ends.Add(i + 1);
         }
 
+        map = SourceMap.FromRanges(starts, ends, text.Length);
         return sb.ToString();
     }
 
@@ -174,17 +220,26 @@ public static class ExpressionNormalizer
     /// depends on context, and it is deliberately conservative: anything that could be an identifier
     /// or launcher qualifier ("status:200", "pi:2") is left alone rather than guessed at.
     /// </summary>
-    private static string ReplaceDivisionColons(string text)
+    private static string ReplaceDivisionColons(string text, out SourceMap map)
     {
+        // Rewrites a ':' to '/' in place, so every character keeps its offset and the identity map holds.
+        map = SourceMap.Identity(text.Length);
         if (!text.Contains(':'))
         {
             return text;
         }
 
+        // Brackets are reserved for future matrix syntax and are a syntax error today, so whatever is
+        // inside them is left exactly as written for the parser to reject.
         var sb = new StringBuilder(text.Length);
+        int bracketDepth = 0;
         for (int i = 0; i < text.Length; i++)
         {
-            sb.Append(text[i] == ':' && IsDivisionColon(text, i) ? '/' : text[i]);
+            char c = text[i];
+            if (c == '[') bracketDepth++;
+            else if (c == ']') bracketDepth = Math.Max(0, bracketDepth - 1);
+
+            sb.Append(c == ':' && bracketDepth == 0 && IsDivisionColon(text, i) ? '/' : c);
         }
 
         return sb.ToString();
@@ -198,15 +253,15 @@ public static class ExpressionNormalizer
 
         char prev = text[left];
 
-        // A closing group is always a valid dividend: "(a+b):2", "log10(100):2", "[1, 2]:3".
+        // A closing group is always a valid dividend: "(a+b):2", "log10(100):2".
         // Identifiers must be parenthesised to take part: "(pi):2".
-        if (prev is ')' or ']')
+        if (prev is ')')
         {
             return IsValidRightOperand(text.AsSpan(index + 1));
         }
 
-        // The left term
-        // ("log10", "item1", "x2") or letters ("pi", "status") are left alone.
+        // The left term must be a complete numeric literal: identifier-like words such as "log10",
+        // "item1", "x2" or "pi" are left alone.
         if (!EndsWithNumericLiteral(text.AsSpan(0, left + 1)))
         {
             return false;
@@ -250,7 +305,7 @@ public static class ExpressionNormalizer
             if (i >= span.Length) return false;
         }
 
-        if (span[i] is '(' or '[')
+        if (span[i] == '(')
         {
             return true;
         }
@@ -327,21 +382,28 @@ public static class ExpressionNormalizer
 
     private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 
-    private static bool NormalizeCultureAndSeparators(
+    private static string NormalizeCultureAndSeparators(
         string text,
         CultureInfo? culture,
-        out string result,
-        out string? errorMessage)
+        out SourceMap map)
     {
-        result = text;
-        errorMessage = null;
-
         // If culture is null, check for standard Swiss apostrophe or ISO thin space digit grouping
         // e.g., 1'000'000.50
         bool usesCommaDecimal = culture is not null && culture.NumberFormat.NumberDecimalSeparator == ",";
 
         var sb = new StringBuilder(text.Length);
+        var starts = new List<int>(text.Length);
+        var ends = new List<int>(text.Length);
         int parenDepth = 0;
+
+        // Every kept or rewritten character maps 1:1 to the input character at the same index; deleted
+        // grouping characters are simply never emitted, so they fall into the gaps between ranges.
+        void Emit(char output, int index)
+        {
+            sb.Append(output);
+            starts.Add(index);
+            ends.Add(index + 1);
+        }
 
         for (int i = 0; i < text.Length; i++)
         {
@@ -374,7 +436,7 @@ public static class ExpressionNormalizer
             // leaving square brackets '[...]' free for future matrix rows.
             if (c == ';' && parenDepth > 0)
             {
-                sb.Append(',');
+                Emit(',', i);
                 continue;
             }
 
@@ -399,7 +461,7 @@ public static class ExpressionNormalizer
                     // If between digits with no spaces: '1,5' -> '1.5'
                     if (i > 0 && i + 1 < text.Length && char.IsDigit(text[i - 1]) && char.IsDigit(text[i + 1]))
                     {
-                        sb.Append('.');
+                        Emit('.', i);
                         continue;
                     }
                 }
@@ -417,11 +479,11 @@ public static class ExpressionNormalizer
                 }
             }
 
-            sb.Append(c);
+            Emit(c, i);
         }
 
-        result = sb.ToString();
-        return true;
+        map = SourceMap.FromRanges(starts, ends, text.Length);
+        return sb.ToString();
     }
 
     private static bool IsThreeDigitGroup(string text, int startIndex)

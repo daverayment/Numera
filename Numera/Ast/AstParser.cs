@@ -12,7 +12,9 @@ namespace Numera.Ast;
 internal sealed class AstParser
 {
     private readonly string _input;
-    private readonly EvaluationOptions _options;
+    private readonly CalculatorOptions _options;
+    private readonly EvaluationContext _context;
+    private readonly SourceMap? _sourceMap;
     private int _pos;
     private int _depth;
 
@@ -26,15 +28,37 @@ internal sealed class AstParser
     private TextSpan Combine(ExpressionNode left, ExpressionNode right) =>
         TextSpan.Combine(Extent(left), Extent(right));
 
-    // The depth count alone is not a stack bound: frames per level vary and the host may already be deep
-    // in its own stack, so also check the real remaining stack.
-    private bool NestingLimitReached() =>
-        _depth >= _options.MaxNestingDepth || !RuntimeHelpers.TryEnsureSufficientExecutionStack();
+    // Positions are tracked in the normalized text, but spans and diagnostics must point
+    // at what the caller typed. Mapping happens once, where a span or position is first
+    // built from _pos; spans that come from Combine/Extent/_groupExtents are already in
+    // original coordinates and are not remapped.
+    private TextSpan Span(int start, int length) => _sourceMap is null ?
+        new TextSpan(start, length) :
+        _sourceMap.MapSpan(new TextSpan(start, length));
 
-    public AstParser(string input, EvaluationOptions options)
+    private EvaluationDiagnostic Diagnostic(
+        EvaluationError code, string message, int start, int length)
+    {
+        var span = Span(start, length);
+        return new EvaluationDiagnostic(code, message, span.Start, span.Length);
+    }
+
+    // The depth count alone is not a stack bound: frames per level vary and the host may
+    // already be deep in its own stack, so also check the real remaining stack.
+    private bool NestingLimitReached() =>
+        _depth >= _options.MaxNestingDepth ||
+        !RuntimeHelpers.TryEnsureSufficientExecutionStack();
+
+    public AstParser(
+        string input,
+        CalculatorOptions options,
+        EvaluationContext? context = null,
+        SourceMap? sourceMap = null)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(options);
+        _context = context ?? EvaluationContext.Empty;
+        _sourceMap = sourceMap;
         if (input.Length > options.MaxInputLength)
         {
             throw new CalculationLimitException();
@@ -46,23 +70,106 @@ internal sealed class AstParser
 
     public ExpressionNode Parse()
     {
-        var result = ParseLogical();
+        var result = ParseStatement();
         SkipWhitespace();
 
-        AstValidator.Validate(result, _options);
-
+        // Report unparsed trailing text before validating: until the whole input is
+        // consumed the tree is only a prefix that is never returned, and a validation
+        // error from it would mask the real syntax error with a misleading message and
+        // position.
         if (_pos < _input.Length)
         {
             char trailing = _input[_pos];
             if (trailing is '[' or ']' or ';')
             {
-                throw SyntaxError($"'{trailing}' is reserved for future matrix and array syntax.");
+                throw SyntaxError(
+                    $"'{trailing}' is reserved for future matrix and array syntax.");
             }
 
             throw SyntaxError($"Unexpected character '{trailing}'.");
         }
 
+        AstValidator.Validate(result, _options);
+
         return result;
+    }
+
+    private ExpressionNode ParseStatement()
+    {
+        SkipWhitespace();
+        int savePos = _pos;
+
+        // Check if input begins with: <Identifier> '=' (and not "==").
+        if (IsIdentifierStart(Peek()))
+        {
+            var identifierSpan = ParseIdentifier();
+            string identifier = identifierSpan.ToString();
+            SkipWhitespace();
+
+            if (Peek() == '=' && Peek(1) != '=')
+            {
+                ValidateAssignableIdentifier(identifier, savePos);
+                Consume(); // '='
+
+                int valueStart = _pos;
+
+                // Right-associative recursion: "a = b = 10" parses as "a = (b = 10)".
+                // Guarded like the other recursive paths so long assignment chains cannot
+                // recurse deeper during parsing than the validator would later allow.
+                if (NestingLimitReached())
+                {
+                    throw new CalculationLimitException();
+                }
+
+                _depth++;
+                var value = ParseStatement();
+                _depth--;
+
+                // If the right-hand side was another assignment, reuse its already-
+                // extracted definition without allocating again.
+                string? definition = value is AssignmentNode inner ?
+                    inner.Definition :
+                    _input[valueStart.._pos].Trim();
+
+                return new AssignmentNode(
+                    identifier, value, definition, Span(savePos, _pos - savePos));
+            }
+
+            // Not an assignment; reset position to parse as a logical expression.
+            _pos = savePos;
+        }
+
+        return ParseLogical();
+    }
+
+    private void ValidateAssignableIdentifier(string name, int pos)
+    {
+        if (KeywordCatalog.IsReserved(name))
+        {
+            throw new ExpressionException(Diagnostic(
+                EvaluationError.InvalidSyntax,
+                $"Cannot assign to reserved keyword '{name}'.",
+                pos,
+                name.Length));
+        }
+
+        if (ConstantCatalog.TryResolve(name, out _, out _))
+        {
+            throw new ExpressionException(Diagnostic(
+                EvaluationError.InvalidSyntax,
+                $"Cannot assign to reserved constant '{name}'.",
+                pos,
+                name.Length));
+        }
+
+        if (FunctionCatalog.TryGetInfo(name, out _))
+        {
+            throw new ExpressionException(Diagnostic(
+                EvaluationError.InvalidSyntax,
+                $"Cannot assign to function name '{name}'.",
+                pos,
+                name.Length));
+        }
     }
 
     // Operator precedence (lowest to highest):
@@ -184,7 +291,7 @@ internal sealed class AstParser
 
             if (_options.RequireExplicitLogicalNegation && operand is ComparisonChainNode && !IsFullyParenthesized(operand))
             {
-                throw new ExpressionException(new EvaluationDiagnostic(
+                throw new ExpressionException(Diagnostic(
                     EvaluationError.AmbiguousLogicalNegation,
                     "Explicit parentheses are required when logical negation is applied to a comparison expression.",
                     opStart,
@@ -192,7 +299,7 @@ internal sealed class AstParser
             }
 
             return new UnaryNode(UnaryOperator.LogicalNot, operand,
-                TextSpan.Combine(new TextSpan(opStart, opLen), Extent(operand)));
+                TextSpan.Combine(Span(opStart, opLen), Extent(operand)));
         }
 
         return ParseComparison();
@@ -395,13 +502,39 @@ internal sealed class AstParser
     private bool PercentIsModulo()
     {
         int save = _pos;
-        Consume();
+        Consume(); // '%'
         SkipWhitespace();
         char c = Peek();
-        bool modulo = char.IsDigit(c) || c == '.' || c == '(' ||
-            (IsIdentifierStart(c) && !IsKeywordAt("of") && !IsKeywordAt("and") && !IsKeywordAt("or") && !IsKeywordAt("xor"));
+
+        bool modulo = char.IsDigit(c) || c == '.' || c == '(';
+        if (!modulo)
+        {
+            int len = GetIdentifierLengthAt(_pos);
+
+            // An identifier follows: it is modulo if it is not a keyword that would start
+            // an implicit operand, e.g. "10% of 5" is a percentage but "10% x" is modulo.
+            modulo = len > 0 &&
+                !KeywordCatalog.IsOperatorKeyword(_input.AsSpan(_pos, len));
+        }
+
         _pos = save;
         return modulo;
+    }
+
+    private int GetIdentifierLengthAt(int pos)
+    {
+        if (pos >= _input.Length || !IsIdentifierStart(_input[pos]))
+        {
+            return 0;
+        }
+
+        int length = 1;
+        while (pos + length < _input.Length && IsIdentifierPart(_input[pos + length]))
+        {
+            length++;
+        }
+
+        return length;
     }
 
     private bool StartsImplicitOperand()
@@ -414,13 +547,10 @@ internal sealed class AstParser
         // Deliberately not digits or '.': "1 000" would otherwise silently become 1 * 0.
         // Reject boolean literals and keywords from starting an implicit product, e.g.
         // allow "2x" but not "2true" or "2and(3,4)".
-        return IsIdentifierStart(c) &&
-            !IsKeywordAt("and") &&
-            !IsKeywordAt("or") &&
-            !IsKeywordAt("xor") &&
-            !IsKeywordAt("of") &&
-            !IsKeywordAt("true") &&
-            !IsKeywordAt("false");
+        int len = GetIdentifierLengthAt(_pos);
+        if (len == 0) return false;
+
+        return !KeywordCatalog.PreventsImplicitMultiplication(_input.AsSpan(_pos, len));
     }
 
     private ExpressionNode ParseUnary()
@@ -439,21 +569,21 @@ internal sealed class AstParser
             Consume();
             var operand = ParseUnary();
             result = new UnaryNode(UnaryOperator.Negate, operand,
-                TextSpan.Combine(new TextSpan(opStart, 1), Extent(operand)));
+                TextSpan.Combine(Span(opStart, 1), Extent(operand)));
         }
         else if (Peek() == '+')
         {
             Consume();
             var operand = ParseUnary();
             result = new UnaryNode(UnaryOperator.Positive, operand,
-                TextSpan.Combine(new TextSpan(opStart, 1), Extent(operand)));
+                TextSpan.Combine(Span(opStart, 1), Extent(operand)));
         }
         else if (Peek() == '~')
         {
             Consume();
             var operand = ParseUnary();
             result = new UnaryNode(UnaryOperator.BitwiseNot, operand,
-                TextSpan.Combine(new TextSpan(opStart, 1), Extent(operand)));
+                TextSpan.Combine(Span(opStart, 1), Extent(operand)));
         }
         else
         {
@@ -487,7 +617,7 @@ internal sealed class AstParser
             int pctStart = _pos;
             Consume();
             return new UnaryNode(UnaryOperator.Percent, operand,
-                TextSpan.Combine(Extent(operand), new TextSpan(pctStart, 1)));
+                TextSpan.Combine(Extent(operand), Span(pctStart, 1)));
         }
 
         if (!_options.AllowPostfixFactorial)
@@ -510,7 +640,7 @@ internal sealed class AstParser
         }
 
         return new UnaryNode(UnaryOperator.Factorial, operand,
-            TextSpan.Combine(Extent(operand), new TextSpan(opStart, 1)));
+            TextSpan.Combine(Extent(operand), Span(opStart, 1)));
     }
 
     private ExpressionNode ParsePrimary()
@@ -542,7 +672,7 @@ internal sealed class AstParser
 
             Consume();
             _groupExtents ??= new Dictionary<ExpressionNode, TextSpan>(ReferenceEqualityComparer.Instance);
-            _groupExtents[value] = new TextSpan(groupStart, _pos - groupStart);
+            _groupExtents[value] = Span(groupStart, _pos - groupStart);
             return value;
         }
 
@@ -557,7 +687,7 @@ internal sealed class AstParser
             if (MatchKeyword("not"))
             {
                 _pos = kwPos;
-                throw new ExpressionException(new EvaluationDiagnostic(
+                throw new ExpressionException(Diagnostic(
                     EvaluationError.InvalidSyntax,
                     "Logical negation is only allowed at the start of a logical operand; wrap the negated expression in parentheses.",
                     kwPos,
@@ -571,7 +701,7 @@ internal sealed class AstParser
         {
             int numStart = _pos;
             var num = ParseNumber();
-            return new NumberNode(num, new TextSpan(numStart, _pos - numStart));
+            return new NumberNode(num, Span(numStart, _pos - numStart));
         }
 
         throw SyntaxError("Expected a number, constant, or '('.");
@@ -590,16 +720,16 @@ internal sealed class AstParser
 
             if (args.Count < signature.MinimumArguments || (signature.MaximumArguments is int maximum && args.Count > maximum))
             {
-                throw new ExpressionException(new EvaluationDiagnostic(
+                throw new ExpressionException(Diagnostic(
                     EvaluationError.InvalidArgumentCount, $"Invalid argument count for '{identifier}'.", identifierStart, identifier.Length));
             }
 
-            return new FunctionCallNode(identifier, args, new TextSpan(identifierStart, _pos - identifierStart));
+            return new FunctionCallNode(identifier, args, Span(identifierStart, _pos - identifierStart));
         }
 
         if (Peek() == '(' && !_options.AllowImplicitMultiplication)
         {
-            throw new ExpressionException(new EvaluationDiagnostic(
+            throw new ExpressionException(Diagnostic(
                 EvaluationError.UnknownFunction, $"Unknown function '{identifier}'.", identifierStart, identifier.Length));
         }
 
@@ -611,27 +741,27 @@ internal sealed class AstParser
 
         if (ConstantCatalog.TryResolve(identifier, out var constantKind, out _))
         {
-            return new IdentifierNode(identifier, constantKind, new TextSpan(identifierStart, identifier.Length));
+            return new IdentifierNode(identifier, constantKind, Span(identifierStart, identifier.Length));
         }
 
         if (Peek() != '(' && FunctionArity.TryGet(identifier, out _))
         {
-            throw new ExpressionException(new EvaluationDiagnostic(
+            throw new ExpressionException(Diagnostic(
                 EvaluationError.InvalidSyntax, $"Function '{identifier}' requires parentheses.", identifierStart, identifier.Length));
         }
 
-        if (_options.IsVariableDefined(identifier))
+        if (_context.TryResolveVariable(identifier, out _))
         {
-            return new IdentifierNode(identifier, null, new TextSpan(identifierStart, identifier.Length));
+            return new IdentifierNode(identifier, null, Span(identifierStart, identifier.Length));
         }
 
         if (Peek() == '(')
         {
-            throw new ExpressionException(new EvaluationDiagnostic(
+            throw new ExpressionException(Diagnostic(
                 EvaluationError.UnknownFunction, $"Unknown function '{identifier}'.", identifierStart, identifier.Length));
         }
 
-        throw new ExpressionException(new EvaluationDiagnostic(
+        throw new ExpressionException(Diagnostic(
             EvaluationError.UnknownConstant, $"Unknown constant or variable '{identifier}'.", identifierStart, identifier.Length));
     }
 
@@ -841,13 +971,13 @@ internal sealed class AstParser
                 }
 
                 throw new ExpressionException(
-                    new EvaluationDiagnostic(EvaluationError.NumericOverflow, "Literal overflowed floating-point range.", start, Math.Max(1, _pos - start)));
+                    Diagnostic(EvaluationError.NumericOverflow, "Literal overflowed floating-point range.", start, Math.Max(1, _pos - start)));
             }
 
             if (doubleValue == 0.0 && !IsZeroMantissa(numberSpan))
             {
                 throw new ExpressionException(
-                    new EvaluationDiagnostic(EvaluationError.NumericOverflow, "Literal underflowed floating-point range.", start, Math.Max(1, _pos - start)));
+                    Diagnostic(EvaluationError.NumericOverflow, "Literal underflowed floating-point range.", start, Math.Max(1, _pos - start)));
             }
 
             return new MathValue(doubleValue);
@@ -861,7 +991,7 @@ internal sealed class AstParser
         }
 
         throw new ExpressionException(
-            new EvaluationDiagnostic(EvaluationError.InvalidSyntax, "Expected a number.", start, Math.Max(1, _pos - start)));
+            Diagnostic(EvaluationError.InvalidSyntax, "Expected a number.", start, Math.Max(1, _pos - start)));
     }
 
     private static bool TryPromoteScientificToBigInteger(ReadOnlySpan<char> span,
@@ -939,12 +1069,13 @@ internal sealed class AstParser
         }
 
         long effectiveExponent = (long)exponent - fractionDigits;
-        // Upper bound check: 10^k takes about k * 3.322 bits.
-        // Perform calculations using 64-bit integers to prevent 32-bit overflow when multiplying large exponents.
+        // Upper bound check: 10^k takes about k * log2(10) bits. This is only a cheap guard
+        // against pathological Pow calls, so it must not be stricter than the authoritative
+        // bit-length check below. Use 64-bit maths to avoid overflow with large exponents.
         if (effectiveExponent > 0)
         {
             if (effectiveExponent > CalculationLimits.MaxIntegerBits ||
-                effectiveExponent * 3.322 > CalculationLimits.MaxIntegerBits)
+                effectiveExponent * 3.3219280948873623 > CalculationLimits.MaxIntegerBits)
             {
                 return false;
             }
@@ -1043,7 +1174,7 @@ internal sealed class AstParser
     }
 
     private ExpressionException SyntaxError(string message) =>
-        new(new EvaluationDiagnostic(EvaluationError.InvalidSyntax, message, _pos, _pos < _input.Length ? 1 : 0));
+        new(Diagnostic(EvaluationError.InvalidSyntax, message, _pos, _pos < _input.Length ? 1 : 0));
 
     private char Peek(int ahead = 0) => _pos + ahead < _input.Length ? _input[_pos + ahead] : '\0';
 
@@ -1059,7 +1190,7 @@ internal sealed class AstParser
 
     private bool IsKeywordAt(string keyword) =>
         _pos + keyword.Length <= _input.Length &&
-        _input.AsSpan(_pos, keyword.Length).Equals(keyword, StringComparison.OrdinalIgnoreCase) &&
+        _input.AsSpan(_pos, keyword.Length).Equals(keyword, Identifier.Comparison) &&
         (_pos + keyword.Length == _input.Length || !IsIdentifierPart(_input[_pos + keyword.Length]));
 
     private bool MatchKeyword(string keyword)

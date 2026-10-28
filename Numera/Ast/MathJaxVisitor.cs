@@ -68,6 +68,8 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
                 ConstantKind.Tau => @"\tau",
                 ConstantKind.Phi => @"\phi",
                 ConstantKind.E => "e",
+                ConstantKind.True => @"\mathbf{true}",
+                ConstantKind.False => @"\mathbf{false}",
                 _ => node.Name,
             };
         }
@@ -244,6 +246,9 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
         string escapedFn = fn.Replace("_", @"\_", StringComparison.Ordinal);
         return $@"\operatorname{{{escapedFn}}}({defaultArgs})";
     }
+
+    public string Visit(AssignmentNode node) =>
+        $"{node.VariableName} = {node.Value.Accept(this)}";
 
     private static bool TryGetLatexFunctionName(string fn, out string? latexFn)
     {

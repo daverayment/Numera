@@ -30,13 +30,13 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
 
     public string Visit(IdentifierNode node)
     {
-        if (_options.UseGreekSymbols && node.Constant is ConstantKind kind)
+        if (node.Constant is ConstantKind kind)
         {
             return kind switch
             {
-                ConstantKind.Pi => "π",
-                ConstantKind.Tau => "τ",
-                ConstantKind.Phi => "ϕ",
+                ConstantKind.Pi => _options.UseGreekSymbols ? "π" : "pi",
+                ConstantKind.Tau => _options.UseGreekSymbols ? "τ" : "tau",
+                ConstantKind.Phi => _options.UseGreekSymbols ? "ϕ" : "phi",
                 ConstantKind.True => "true",
                 ConstantKind.False => "false",
                 _ => node.Name,
@@ -88,6 +88,9 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
 
         return text;
     }
+
+    public string Visit(AssignmentNode node) =>
+        $"{node.VariableName} = {node.Value.Accept(this)}";
 
     /// <summary>
     /// Formats one binary node given the already-formatted text of its left operand (before any
@@ -299,7 +302,7 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
         _ => 12, // Number, Identifier, FunctionCall are primary
     };
 
-    private bool TryGetSuperscript(ExpressionNode node, out string? result)
+    private static bool TryGetSuperscript(ExpressionNode node, out string? result)
     {
         result = null;
         if (node is NumberNode { Value.Type: MathValue.DataType.Integer } numNode)

@@ -12,7 +12,8 @@ public class AstValidationTests
 {
     private static NumberNode Num(decimal value = 1m) => new(new MathValue(value));
 
-    private static EvaluationOptions Depth(int depth) => new() { MaxNestingDepth = depth };
+    private static CalculatorEngine EngineWithDepth(int depth) =>
+        new(new CalculatorOptions { MaxNestingDepth = depth });
 
     /// <summary>
     /// True when validation accepts the tree at the given nesting limit. Other evaluation
@@ -22,7 +23,7 @@ public class AstValidationTests
     {
         try
         {
-            Calculator.Evaluate(node, Depth(depth));
+            EngineWithDepth(depth).Evaluate(node);
             return true;
         }
         catch (CalculationLimitException)

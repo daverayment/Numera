@@ -10,9 +10,17 @@ namespace Numera.Ast;
 /// </summary>
 internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 {
-	private readonly EvaluationOptions _options;
+	private readonly CalculatorOptions _options;
+	private readonly EvaluationContext _context;
+    private List<KeyValuePair<string, MathValue>>? _assignments;
 
-	public AstEvaluator(EvaluationOptions options) => _options = options;
+    public IReadOnlyList<KeyValuePair<string, MathValue>>? Assignments => _assignments;
+
+    public AstEvaluator(CalculatorOptions options, EvaluationContext? context = null)
+	{
+		_options = options;
+		_context = context ?? EvaluationContext.Empty;
+	}
 
 	public MathValue Visit(NumberNode node) => node.Value;
 
@@ -25,7 +33,20 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 			return new MathValue(value);
 		}
 
-		if (_options.TryResolveVariable(node.Name, out var variableValue))
+        // Check recent assignments.
+        if (_assignments is not null)
+        {
+            for (int i = _assignments.Count - 1; i >= 0; i--)
+            {
+                if (string.Equals(_assignments[i].Key, node.Name, Identifier.Comparison))
+                {
+                    return _assignments[i].Value;
+                }
+            }
+        }
+
+        // Check the evaluation context variables, including previous result "ans".
+        if (_context.TryResolveVariable(node.Name, out var variableValue))
 		{
 			return variableValue;
 		}
@@ -170,6 +191,25 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 			throw Enrich(ex, node.Span);
 		}
 	}
+
+    /// <summary>
+    /// Evaluates an assignment node by evaluating the expression referred to by its Value
+    /// node.
+    /// </summary>
+    /// <param name="node">The assignment node to evaluate.</param>
+    /// <returns>The result of evaluating the assignment expression.</returns>
+    public MathValue Visit(AssignmentNode node)
+    {
+        // Evaluate the inner expression first, so chaining assignments like "x = y = 5"
+        // will assign correctly.
+        var value = node.Value.Accept(this);
+
+        // Record the assignment in the list of assignments for later retrieval. Create
+        // the list lazily.
+        (_assignments ??= []).Add(
+            new KeyValuePair<string, MathValue>(node.VariableName, value));
+        return value;
+    }
 
     /// <summary>
     /// Guards an evaluation action against runtime exceptions and enriches them with

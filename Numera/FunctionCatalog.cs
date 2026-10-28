@@ -9,6 +9,8 @@ namespace Numera;
 /// </summary>
 internal static class FunctionCatalog
 {
+    private static readonly StringComparison NameComparison = Identifier.Comparison;
+    private static readonly StringComparer NameComparer = Identifier.Comparer;
     private static readonly FunctionInfo[] CanonicalArray;
     private static readonly FunctionInfo[] AllArray;
     private static readonly FrozenDictionary<string, FunctionInfo> InfoByName;
@@ -18,11 +20,11 @@ internal static class FunctionCatalog
     static FunctionCatalog()
     {
         var canonicalList = BuildCanonicalCatalog();
-        CanonicalArray = [.. canonicalList.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)];
+        CanonicalArray = [.. canonicalList.OrderBy(f => f.Name, NameComparer)];
         CanonicalNamesArray = [.. CanonicalArray.Select(f => f.Name)];
 
         var allList = new List<FunctionInfo>(canonicalList.Count * 2);
-        var map = new Dictionary<string, FunctionInfo>(StringComparer.OrdinalIgnoreCase);
+        var map = new Dictionary<string, FunctionInfo>(NameComparer);
 
         foreach (var canonical in CanonicalArray)
         {
@@ -46,9 +48,9 @@ internal static class FunctionCatalog
             }
         }
 
-        AllArray = [.. allList.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)];
+        AllArray = [.. allList.OrderBy(f => f.Name, NameComparer)];
         AllNamesArray = [.. AllArray.Select(f => f.Name)];
-        InfoByName = map.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+        InfoByName = map.ToFrozenDictionary(NameComparer);
     }
 
     public static IReadOnlyCollection<string> AllNames => AllNamesArray;
@@ -79,7 +81,7 @@ internal static class FunctionCatalog
         }
 
         var results = new List<(FunctionInfo Info, int Tier)>();
-        var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenNames = new HashSet<string>(NameComparer);
         var source = includeAliases ? AllArray : CanonicalArray;
 
         foreach (var item in source)
@@ -98,19 +100,19 @@ internal static class FunctionCatalog
 
         return results
             .OrderBy(r => r.Tier)
-            .ThenBy(r => r.Info.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.Info.Name, NameComparer)
             .Select(r => r.Info);
     }
 
     private static int? ClassifyMatch(FunctionInfo info, string query)
     {
         // Tier 1: Exact Name or Alias match.
-        if (info.Name.Equals(query, StringComparison.OrdinalIgnoreCase))
+        if (info.Name.Equals(query, NameComparison))
         {
             return 1;
         }
 
-        if (info.Aliases.Any(a => a.Equals(query, StringComparison.OrdinalIgnoreCase)))
+        if (info.Aliases.Any(a => a.Equals(query, NameComparison)))
         {
             // If aliases are included, the alias itself will match as Tier 1 by its Name.
             // The canonical entry matches at Tier 2 for an alias query.
@@ -118,15 +120,15 @@ internal static class FunctionCatalog
         }
 
         // Tier 2: Prefix Name or Alias match.
-        if (info.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase) ||
-            info.Aliases.Any(a => a.StartsWith(query, StringComparison.OrdinalIgnoreCase)))
+        if (info.Name.StartsWith(query, NameComparison) ||
+            info.Aliases.Any(a => a.StartsWith(query, NameComparison)))
         {
             return 3;
         }
 
         // Tier 3: Substring Name or Alias match.
-        if (info.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-            info.Aliases.Any(a => a.Contains(query, StringComparison.OrdinalIgnoreCase)))
+        if (info.Name.Contains(query, NameComparison) ||
+            info.Aliases.Any(a => a.Contains(query, NameComparison)))
         {
             return 4;
         }
@@ -138,9 +140,9 @@ internal static class FunctionCatalog
         }
 
         // Tier 5: Curated keyword match.
-        if (info.Keywords.Any(k => k.Equals(query, StringComparison.OrdinalIgnoreCase) ||
-                                   k.StartsWith(query, StringComparison.OrdinalIgnoreCase) ||
-                                   (query.Length >= 3 && k.Contains(query, StringComparison.OrdinalIgnoreCase))))
+        if (info.Keywords.Any(k => k.Equals(query, NameComparison) ||
+                                   k.StartsWith(query, NameComparison) ||
+                                   (query.Length >= 3 && k.Contains(query, NameComparison))))
         {
             return 6;
         }
@@ -151,7 +153,7 @@ internal static class FunctionCatalog
     private static bool MatchesCategory(FunctionCategory category, string query)
     {
         var catName = category.ToString();
-        if (catName.Contains(query, StringComparison.OrdinalIgnoreCase))
+        if (catName.Contains(query, NameComparison))
         {
             return true;
         }
@@ -159,59 +161,59 @@ internal static class FunctionCatalog
         return category switch
         {
             FunctionCategory.Trigonometry =>
-                query.Equals("trig", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("trigonometric", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("polar", StringComparison.OrdinalIgnoreCase),
+                query.Equals("trig", NameComparison) ||
+                query.Equals("trigonometric", NameComparison) ||
+                query.Equals("polar", NameComparison),
 
             FunctionCategory.Hyperbolic =>
-                query.Equals("hyp", StringComparison.OrdinalIgnoreCase),
+                query.Equals("hyp", NameComparison),
 
             FunctionCategory.AngleConversion =>
-                query.Equals("angle", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("angles", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("deg", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("rad", StringComparison.OrdinalIgnoreCase),
+                query.Equals("angle", NameComparison) ||
+                query.Equals("angles", NameComparison) ||
+                query.Equals("deg", NameComparison) ||
+                query.Equals("rad", NameComparison),
 
             FunctionCategory.ExponentialsAndLogarithms =>
-                query.Equals("exp", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("log", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("power", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("root", StringComparison.OrdinalIgnoreCase),
+                query.Equals("exp", NameComparison) ||
+                query.Equals("log", NameComparison) ||
+                query.Equals("power", NameComparison) ||
+                query.Equals("root", NameComparison),
 
             FunctionCategory.ArithmeticAndRounding =>
-                query.Equals("arith", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("arithmetic", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("round", StringComparison.OrdinalIgnoreCase),
+                query.Equals("arith", NameComparison) ||
+                query.Equals("arithmetic", NameComparison) ||
+                query.Equals("round", NameComparison),
 
             FunctionCategory.StatisticalAndAggregation =>
-                query.Equals("stat", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("stats", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("statistics", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("agg", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("aggregate", StringComparison.OrdinalIgnoreCase),
+                query.Equals("stat", NameComparison) ||
+                query.Equals("stats", NameComparison) ||
+                query.Equals("statistics", NameComparison) ||
+                query.Equals("agg", NameComparison) ||
+                query.Equals("aggregate", NameComparison),
 
             FunctionCategory.CombinatoricsAndNumberTheory =>
-                query.Equals("comb", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("discrete", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("number theory", StringComparison.OrdinalIgnoreCase),
+                query.Equals("comb", NameComparison) ||
+                query.Equals("discrete", NameComparison) ||
+                query.Equals("number theory", NameComparison),
 
             FunctionCategory.Bitwise =>
-                query.Equals("bit", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("bits", StringComparison.OrdinalIgnoreCase),
+                query.Equals("bit", NameComparison) ||
+                query.Equals("bits", NameComparison),
 
             FunctionCategory.SpecialAndProbability =>
-                query.Equals("special", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("prob", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("probability", StringComparison.OrdinalIgnoreCase),
+                query.Equals("special", NameComparison) ||
+                query.Equals("prob", NameComparison) ||
+                query.Equals("probability", NameComparison),
 
             FunctionCategory.Inspection =>
-                query.Equals("check", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("test", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("inspect", StringComparison.OrdinalIgnoreCase),
+                query.Equals("check", NameComparison) ||
+                query.Equals("test", NameComparison) ||
+                query.Equals("inspect", NameComparison),
 
             FunctionCategory.Random =>
-                query.Equals("rand", StringComparison.OrdinalIgnoreCase) ||
-                query.Equals("rng", StringComparison.OrdinalIgnoreCase),
+                query.Equals("rand", NameComparison) ||
+                query.Equals("rng", NameComparison),
 
             _ => false,
         };

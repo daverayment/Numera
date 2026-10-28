@@ -13,7 +13,7 @@ public sealed class ExpressionNormalizerTests
     [DataRow("sin(pi) : 2", "sin(pi) / 2")]
     [DataRow("log10(100):2", "log10(100)/2")]
     [DataRow("(1+2):3", "(1+2)/3")]
-    [DataRow("[1, 2]:3", "[1, 2]/3")]
+    [DataRow("[1, 2]:3", "[1, 2]:3")]
     [DataRow("6 : 2 / 16:9", "6 / 2 / 16/9")]
     [DataRow("100:2", "100/2")]
     [DataRow("1.5:2", "1.5/2")]
@@ -51,7 +51,7 @@ public sealed class ExpressionNormalizerTests
     public void DivisionColonCanBeDisabled()
     {
         var options = new NormalizationOptions { ReplaceDivisionColon = false };
-        Assert.AreEqual("6 : 2", ExpressionNormalizer.Normalize("6 : 2", options));
+        Assert.AreEqual("6 : 2", ExpressionNormalizer.Normalize("6 : 2", options: options));
     }
 
     [TestMethod]
@@ -91,20 +91,19 @@ public sealed class ExpressionNormalizerTests
     public void EuropeanCultureFormattingIsNormalizedCorrectly()
     {
         var germanCulture = new CultureInfo("de-DE");
-        var options = new NormalizationOptions { Culture = germanCulture };
 
         // 1,5 + 2,5 -> 1.5 + 2.5
-        string normalized = ExpressionNormalizer.Normalize("1,5 + 2,5", options);
+        string normalized = ExpressionNormalizer.Normalize("1,5 + 2,5", germanCulture);
         Assert.AreEqual("1.5 + 2.5", normalized);
         Assert.AreEqual(new MathValue(4.0m), Calculator.Evaluate(normalized));
 
         // Argument semicolons in function calls: max(1,5; 2,5) -> max(1.5, 2.5)
-        string fnCall = ExpressionNormalizer.Normalize("max(1,5; 2,5)", options);
+        string fnCall = ExpressionNormalizer.Normalize("max(1,5; 2,5)", germanCulture);
         Assert.AreEqual("max(1.5, 2.5)", fnCall);
         Assert.AreEqual(new MathValue(2.5m), Calculator.Evaluate(fnCall));
 
         // German thousands period: 1.000.000,50 -> 1000000.50
-        string largeNumber = ExpressionNormalizer.Normalize("1.000.000,50", options);
+        string largeNumber = ExpressionNormalizer.Normalize("1.000.000,50", germanCulture);
         Assert.AreEqual("1000000.50", largeNumber);
         Assert.AreEqual(new MathValue(1000000.50m), Calculator.Evaluate(largeNumber));
     }
@@ -141,10 +140,10 @@ public sealed class ExpressionNormalizerTests
     {
         // Complex user paste in German locale. The normalizer only cleans launcher '=', Unicode operators
         // and culture formatting; percentages, factorials and implicit products are the parser's job.
-        var options = new NormalizationOptions { Culture = new CultureInfo("de-DE") };
+        var german = new CultureInfo("de-DE");
         string input = "= 1.000,50 × (2 + 3)! + 15% of 200 − 50% =";
 
-        Assert.IsTrue(ExpressionNormalizer.TryNormalize(input, out var normalized, options));
+        Assert.IsTrue(ExpressionNormalizer.TryNormalize(input, german, out var normalized, out _));
         Assert.AreEqual("1000.50 * (2 + 3)! + 15% of 200 - 50%", normalized);
 
         var result = Calculator.Evaluate(normalized);
@@ -173,10 +172,10 @@ public sealed class ExpressionNormalizerTests
     public void NullInputThrowsArgumentNullExceptionOrReturnsFalse()
     {
         Assert.Throws<ArgumentNullException>(() => ExpressionNormalizer.Normalize(null!));
-        Assert.IsFalse(ExpressionNormalizer.TryNormalize(null!, out var normalized, out var errorMessage));
+        Assert.IsFalse(ExpressionNormalizer.TryNormalize(null!, null, out var normalized, out var diagnostic));
         Assert.IsNull(normalized);
-        Assert.IsNotNull(errorMessage);
-        Assert.IsTrue(errorMessage.Contains("null", StringComparison.OrdinalIgnoreCase));
+        Assert.IsNotNull(diagnostic);
+        Assert.IsTrue(diagnostic.Message.Contains("null", StringComparison.OrdinalIgnoreCase));
     }
 
     [TestMethod]
@@ -191,9 +190,8 @@ public sealed class ExpressionNormalizerTests
     public void UsCultureThousandsSeparatorsAreNormalized()
     {
         var usCulture = new CultureInfo("en-US");
-        var options = new NormalizationOptions { Culture = usCulture };
 
-        string normalized = ExpressionNormalizer.Normalize("1,000,000.50", options);
+        string normalized = ExpressionNormalizer.Normalize("1,000,000.50", usCulture);
         Assert.AreEqual("1000000.50", normalized);
         Assert.AreEqual(new MathValue(1000000.50m), Calculator.Evaluate(normalized));
     }
@@ -202,14 +200,14 @@ public sealed class ExpressionNormalizerTests
     public void NonThreeDigitSeparatorsArePreservedAsDelimiters()
     {
         // 1,2 is not thousands grouping (only 1 digit after comma) -> preserved in US culture
-        var usOptions = new NormalizationOptions { Culture = new CultureInfo("en-US") };
-        Assert.AreEqual("max(1, 2)", ExpressionNormalizer.Normalize("max(1, 2)", usOptions));
-        Assert.AreEqual("1,23", ExpressionNormalizer.Normalize("1,23", usOptions));
+        var us = new CultureInfo("en-US");
+        Assert.AreEqual("max(1, 2)", ExpressionNormalizer.Normalize("max(1, 2)", us));
+        Assert.AreEqual("1,23", ExpressionNormalizer.Normalize("1,23", us));
 
         // 1.2 is decimal in US or non-grouping in DE -> preserved appropriately
-        var deOptions = new NormalizationOptions { Culture = new CultureInfo("de-DE") };
-        Assert.AreEqual("1.2", ExpressionNormalizer.Normalize("1.2", deOptions));
-        Assert.AreEqual("max(1.5, 2.5)", ExpressionNormalizer.Normalize("max(1.5, 2.5)", deOptions));
+        var de = new CultureInfo("de-DE");
+        Assert.AreEqual("1.2", ExpressionNormalizer.Normalize("1.2", de));
+        Assert.AreEqual("max(1.5, 2.5)", ExpressionNormalizer.Normalize("max(1.5, 2.5)", de));
     }
 
     [TestMethod]
@@ -222,7 +220,10 @@ public sealed class ExpressionNormalizerTests
     [DataRow("1.5e3:2", "1.5e3/2")]
     [DataRow("6:+2", "6/+2")]
     [DataRow("6:(1+1)", "6/(1+1)")]
-    [DataRow("6:[1]", "6/[1]")]
+    [DataRow("6:[1]", "6:[1]")]
+    [DataRow("[1:2]", "[1:2]")]
+    [DataRow("[1]:2", "[1]:2")]
+    [DataRow("(1):[2:3]", "(1):[2:3]")]
     [DataRow("1e-5:2", "1e-5/2")]
     [DataRow("1E+5 : 2", "1E+5 / 2")]
     [DataRow("1.5e-3:2", "1.5e-3/2")]
@@ -247,17 +248,16 @@ public sealed class ExpressionNormalizerTests
     public void DivisionColonIsIndependentOfUnicodeOperatorOption()
     {
         var noUnicode = new NormalizationOptions { ReplaceUnicodeOperators = false };
-        Assert.AreEqual("6 / 2 × 3", ExpressionNormalizer.Normalize("6 : 2 × 3", noUnicode));
+        Assert.AreEqual("6 / 2 × 3", ExpressionNormalizer.Normalize("6 : 2 × 3", options: noUnicode));
 
         var noColon = new NormalizationOptions { ReplaceDivisionColon = false };
-        Assert.AreEqual("6 : 2 * 3", ExpressionNormalizer.Normalize("6 : 2 × 3", noColon));
+        Assert.AreEqual("6 : 2 * 3", ExpressionNormalizer.Normalize("6 : 2 × 3", options: noColon));
     }
 
     [TestMethod]
     public void DivisionColonCombinesWithCultureNormalization()
     {
-        var options = new NormalizationOptions { Culture = new CultureInfo("de-DE") };
-        string normalized = ExpressionNormalizer.Normalize("1.000,5 : 2", options);
+        string normalized = ExpressionNormalizer.Normalize("1.000,5 : 2", new CultureInfo("de-DE"));
         Assert.AreEqual("1000.5 / 2", normalized);
         Assert.AreEqual(new MathValue(500.25m), Calculator.Evaluate(normalized));
     }
@@ -283,8 +283,8 @@ public sealed class ExpressionNormalizerTests
         };
 
         // None of these should transform when flags are false
-        Assert.AreEqual("= 5 = ", ExpressionNormalizer.Normalize("= 5 = ", options));
-        Assert.AreEqual("2 × 3", ExpressionNormalizer.Normalize("2 × 3", options));
+        Assert.AreEqual("= 5 = ", ExpressionNormalizer.Normalize("= 5 = ", options: options));
+        Assert.AreEqual("2 × 3", ExpressionNormalizer.Normalize("2 × 3", options: options));
     }
 
     [TestMethod]
@@ -294,8 +294,7 @@ public sealed class ExpressionNormalizerTests
         Assert.AreEqual("1 23 45", ExpressionNormalizer.Normalize("1 23 45"));
 
         // Comma in DE culture inside parentheses without semicolon
-        var deOptions = new NormalizationOptions { Culture = new CultureInfo("de-DE") };
-        Assert.AreEqual("max(1, 2)", ExpressionNormalizer.Normalize("max(1, 2)", deOptions));
+        Assert.AreEqual("max(1, 2)", ExpressionNormalizer.Normalize("max(1, 2)", new CultureInfo("de-DE")));
     }
 
     [TestMethod]

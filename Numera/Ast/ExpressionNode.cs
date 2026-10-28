@@ -273,13 +273,17 @@ public sealed record ComparisonChainNode : ExpressionNode
     public IReadOnlyList<ComparisonOperator> Operators { get; }
 
     /// <summary>
-    /// Initializes a new instance of <see cref="ComparisonChainNode"/>. Collections are always copied
-    /// and wrapped read-only (not cast-able back to arrays) so callers cannot mutate the node
-    /// afterwards; null is rejected so construction bugs surface here rather than being hidden.
+    /// Initializes a new instance of <see cref="ComparisonChainNode"/>. Collections are
+    /// always copied and wrapped read-only (not cast-able back to arrays) so callers
+    /// cannot mutate the node afterwards; null is rejected so construction bugs surface
+    /// here rather than being hidden.
     /// </summary>
-    /// <param name="operands">The ordered operands being compared (must have at least 2).</param>
-    /// <param name="operators">The comparison operators between successive operands.</param>
-    /// <param name="span">The source text span represented by the expression node.</param>
+    /// <param name="operands">The ordered operands being compared (must have at least 2).
+    /// </param>
+    /// <param name="operators">The comparison operators between successive operands.
+    /// </param>
+    /// <param name="span">The source text span represented by the expression node.
+    /// </param>
     public ComparisonChainNode(
         IReadOnlyList<ExpressionNode> operands,
         IReadOnlyList<ComparisonOperator> operators,
@@ -362,13 +366,14 @@ public sealed record FunctionCallNode : ExpressionNode
     public IReadOnlyList<ExpressionNode> Arguments { get; }
 
     /// <summary>
-    /// Initializes a new instance of <see cref="FunctionCallNode"/>. Arguments are always copied and
-    /// wrapped read-only so callers cannot mutate the node afterwards; null is rejected so
-    /// construction bugs surface here rather than being hidden.
+    /// Initializes a new instance of <see cref="FunctionCallNode"/>. Arguments are always
+    /// copied and wrapped read-only so callers cannot mutate the node afterwards; null is
+    /// rejected so construction bugs surface here rather than being hidden.
     /// </summary>
     /// <param name="functionName">The name of the function.</param>
     /// <param name="arguments">The argument expression nodes.</param>
-    /// <param name="span">The source text span represented by the expression node.</param>
+    /// <param name="span">The source text span represented by the expression node.
+    /// </param>
     public FunctionCallNode(
         string functionName,
         IReadOnlyList<ExpressionNode> arguments,
@@ -380,6 +385,7 @@ public sealed record FunctionCallNode : ExpressionNode
         FunctionName = functionName;
         Arguments = Array.AsReadOnly(arguments.ToArray());
     }
+
     /// <inheritdoc />
     public override int Height
     {
@@ -430,4 +436,98 @@ public sealed record FunctionCallNode : ExpressionNode
 
         return hash.ToHashCode();
     }
+}
+
+/// <summary>
+/// Represents a variable assignment expression (e.g. <c>bill = 65 + 15%</c> or
+/// <c>a = b = 100</c>).
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Syntactic Span vs. Semantic Definition:</b>
+/// <list type="bullet">
+///   <item>
+///     <see cref="ExpressionNode.Span"/> represents the complete source text span of the
+///     assignment expression, including the variable name, equals sign, and value
+///     expression.
+///   </item>
+///   <item>
+///     <see cref="AssignmentNode.Definition"/> represents solely the source text of the
+///     value expression being assigned to the variable, excluding the target variable
+///     name and equals sign.
+///   </item>
+/// </list>
+/// </para>
+/// <para>
+/// <b>Chained Assignments (<c>a = b = 100</c>):</b><br/><br/>
+/// In chained assignments, each node in the chain has a progressively wider
+/// <see cref="ExpressionNode.Span"/> encompassing its sub-statement, but all nodes share
+/// the same <see cref="AssignmentNode.Definition"/> text of the final value being
+/// assigned.
+/// </para>
+/// </remarks>
+public sealed record AssignmentNode : ExpressionNode
+{
+    /// <summary>
+    /// Gets the identifier name of the variable being assigned (e.g. <c>"bill"</c>).
+    /// </summary>
+    public string VariableName { get; }
+
+    /// <summary>
+    /// Gets the expression node yielding the assigned value. In chained assignments, this
+    /// is the next <see cref="AssignmentNode"/> in the chain, or the final value
+    /// expression.
+    /// </summary>
+    public ExpressionNode Value { get; }
+
+    /// <summary>
+    /// Gets the source text of the terminal value expression being assigned, excluding
+    /// the variable name and equals sign (e.g. <c>"105 + 15%"</c> or <c>"100"</c>).
+    /// Distinct from <see cref="ExpressionNode.Span"/>, which covers the entire
+    /// assignment statement. In chained assignments, all nodes share the same
+    /// <see cref="Definition"/> text of the final value being assigned.
+    /// </summary>
+    public string? Definition { get; }
+
+    /// <summary>
+    /// Initializes a new instance of <see cref="AssignmentNode"/>.
+    /// </summary>
+    /// <param name="variableName">The identifider name of the target variable.</param>
+    /// <param name="value">The expression node yielding the assigned value.</param>
+    /// <param name="definition">The text of the terminal expression assigned to the
+    /// variable.</param>
+    /// <param name="span">The source text span encompassing the full assignment
+    /// statement.</param>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="variableName"/>
+    /// or <paramref name="value"/> is null.</exception>"
+    public AssignmentNode(string variableName, ExpressionNode value,
+        string? definition = null, TextSpan span = default) : base(span)
+    {
+        ArgumentNullException.ThrowIfNull(variableName);
+        ArgumentNullException.ThrowIfNull(value);
+
+        VariableName = variableName;
+        Value = value;
+        Definition = definition;
+    }
+
+    /// <summary>
+    /// Gets the structural nesting height of this subtree (leaves have height 1).
+    /// </summary>
+    public override int Height => Value.Height + 1;
+
+    private protected override T AcceptCore<T>(IExpressionVisitor<T> visitor) => visitor.Visit(this);
+
+    /// <summary>
+    /// Compares two assignment nodes for structual equality across variable names (case-
+    /// insensitive) and assigned value expression, ignoring source span metadata.
+    /// </summary>
+    public bool Equals(AssignmentNode? other) =>
+        other is not null &&
+        string.Equals(VariableName, other.VariableName, StringComparison.OrdinalIgnoreCase) &&
+        Value.Equals(other.Value);
+
+    /// <inheritdoc />
+    public override int GetHashCode() => 
+        HashCode.Combine(StringComparer.OrdinalIgnoreCase.GetHashCode(VariableName), Value);
 }

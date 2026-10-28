@@ -1,6 +1,9 @@
 # Syntax and Functions Reference
 
-Numera implements an unambiguous mathematical grammar parsed using recursive descent, operating over real scalar numbers.
+Numera's grammar is deliberately small and unambiguous: a recursive-descent parser over real scalar numbers. This page lists every literal, operator and built-in function.
+
+> [!TIP]
+> Looking for variables and assignment (`x = 5`, `ans`)? See [Variables and Context](variables.md).
 
 ---
 
@@ -8,6 +11,9 @@ Numera implements an unambiguous mathematical grammar parsed using recursive des
 
 - **Integer & Decimal Literals:** Standard decimal representations such as `42`, `3.14159`, `0.005`.
 - **Scientific Notation:** e.g., `1e6`, `2.5e-3`, `1.23E+10`.
+
+  > [!NOTE]
+  > A scientific literal with a whole-number value too large for a `double` is promoted to an exact integer, up to the 16,384-bit ceiling (about `1e4932`). Beyond that it fails with `NumericOverflow`.
 - **Radix Literals (Exact Arbitrary-Precision Integers):**
   - Hexadecimal: `0x...` (e.g. `0xFF`, `0xDEADBEEF`)
   - Binary: `0b...` (e.g. `0b10101011`)
@@ -48,6 +54,9 @@ Evaluation follows standard mathematical and scientific computing precedence (hi
 - **Unary Signs vs Exponentiation:** Following scientific convention (Python, Julia, MATLAB, ExprTK, Wolfram), exponentiation binds tighter than unary minus:
   - `-10^4` evaluates as `-(10^4) = -10000`.
   - Use parentheses when a negative base is intended: `(-10)^4 = 10000`.
+
+  > [!WARNING]
+  > This surprises people used to calculators that apply the sign first. If you want a negative base, always parenthesise it.
 - **Chained Comparisons:** Chained comparisons evaluate conjunctively and short-circuit:
   - `1 < x <= 10` evaluates as `1 < x and x <= 10`.
   - `a == b == c` verifies that all three are equal (`a == b and b == c`), rather than folding into `(a == b) == c`.
@@ -61,7 +70,7 @@ Evaluation follows standard mathematical and scientific computing precedence (hi
 Function names are case-insensitive.
 
 ### Trigonometric Functions
-Trigonometric routines operate in radians by default, or in degrees/gradians when configured via `EvaluationOptions.AngleUnit`. In degree mode, cardinal angles (multiples of 90°/180°) evaluate to exact results without floating-point drift.
+Trigonometric routines operate in radians by default, or in degrees/gradians when configured via `CalculatorOptions.AngleUnit` on a `CalculatorEngine`. In degree mode, cardinal angles (multiples of 90°/180°) evaluate to exact results without floating-point drift.
 
 | Function | Aliases | Description |
 | :--- | :--- | :--- |

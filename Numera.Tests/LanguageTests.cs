@@ -80,7 +80,7 @@ public class LanguageTests
     {
         Assert.Throws<ArgumentNullException>(() => Calculator.TryEvaluate((string)null!, out _, out _));
         Assert.Throws<ArgumentNullException>(() => Calculator.TryEvaluate((ExpressionNode)null!, out _, out _));
-        Assert.Throws<ArgumentOutOfRangeException>(() => Calculator.Evaluate("1", new EvaluationOptions { MaxNestingDepth = 0 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CalculatorEngine(new CalculatorOptions { MaxNestingDepth = 0 }));
     }
 
     [TestMethod]
@@ -297,42 +297,42 @@ public class LanguageTests
     [TestMethod]
     public void RequireExplicitLogicalNegation_EnforcesParenthesesAroundComparisons()
     {
-        var strictOptions = new EvaluationOptions { RequireExplicitLogicalNegation = true };
+        var strict = new CalculatorEngine(new CalculatorOptions { RequireExplicitLogicalNegation = true });
 
         // Unparenthesized logical NOT on comparison chain should fail in strict mode
-        var ex1 = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("not 1 == 0", strictOptions));
+        var ex1 = Assert.Throws<ExpressionException>(() => strict.Evaluate("not 1 == 0"));
         Assert.AreEqual(EvaluationError.AmbiguousLogicalNegation, ex1.Diagnostic.Code);
 
-        var ex2 = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("!1 == 0", strictOptions));
+        var ex2 = Assert.Throws<ExpressionException>(() => strict.Evaluate("!1 == 0"));
         Assert.AreEqual(EvaluationError.AmbiguousLogicalNegation, ex2.Diagnostic.Code);
 
-        var ex3 = Assert.Throws<ExpressionException>(() => Calculator.Parse("not 1 < 2 <= 3", strictOptions));
+        var ex3 = Assert.Throws<ExpressionException>(() => strict.Parse("not 1 < 2 <= 3"));
         Assert.AreEqual(EvaluationError.AmbiguousLogicalNegation, ex3.Diagnostic.Code);
 
         // Partial parentheses around only the left/right operand do not span the comparison and must still be rejected
-        var ex4 = Assert.Throws<ExpressionException>(() => Calculator.Parse("not (1) == 0", strictOptions));
+        var ex4 = Assert.Throws<ExpressionException>(() => strict.Parse("not (1) == 0"));
         Assert.AreEqual(EvaluationError.AmbiguousLogicalNegation, ex4.Diagnostic.Code);
 
-        var ex5 = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("not (1) == 0", strictOptions));
+        var ex5 = Assert.Throws<ExpressionException>(() => strict.Evaluate("not (1) == 0"));
         Assert.AreEqual(EvaluationError.AmbiguousLogicalNegation, ex5.Diagnostic.Code);
 
-        var ex6 = Assert.Throws<ExpressionException>(() => Calculator.Parse("not (1) == (0)", strictOptions));
+        var ex6 = Assert.Throws<ExpressionException>(() => strict.Parse("not (1) == (0)"));
         Assert.AreEqual(EvaluationError.AmbiguousLogicalNegation, ex6.Diagnostic.Code);
 
-        var ex7 = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("not (1) == (0)", strictOptions));
+        var ex7 = Assert.Throws<ExpressionException>(() => strict.Evaluate("not (1) == (0)"));
         Assert.AreEqual(EvaluationError.AmbiguousLogicalNegation, ex7.Diagnostic.Code);
 
         // Explicitly parenthesized logical NOT remains valid in strict mode (including nested groups)
-        Assert.AreEqual(1m, Calculator.Evaluate("not (1 == 0)", strictOptions).DecVal);
-        Assert.AreEqual(1m, Calculator.Evaluate("!(1 == 0)", strictOptions).DecVal);
-        Assert.AreEqual(1m, Calculator.Evaluate("not ((1) == 0)", strictOptions).DecVal);
-        Assert.AreEqual(0m, Calculator.Evaluate("not (1 < 2 <= 3)", strictOptions).DecVal);
-        Assert.IsNotNull(Calculator.Parse("not (1 == 0)", strictOptions));
-        Assert.IsNotNull(Calculator.Parse("not ((1) == 0)", strictOptions));
+        Assert.AreEqual(1m, strict.Evaluate("not (1 == 0)").DecVal);
+        Assert.AreEqual(1m, strict.Evaluate("!(1 == 0)").DecVal);
+        Assert.AreEqual(1m, strict.Evaluate("not ((1) == 0)").DecVal);
+        Assert.AreEqual(0m, strict.Evaluate("not (1 < 2 <= 3)").DecVal);
+        Assert.IsNotNull(strict.Parse("not (1 == 0)"));
+        Assert.IsNotNull(strict.Parse("not ((1) == 0)"));
 
         // Logical NOT applied to non-comparison does not require extra parentheses
-        Assert.AreEqual(0m, Calculator.Evaluate("not 1", strictOptions).DecVal);
-        Assert.AreEqual(1m, Calculator.Evaluate("!0", strictOptions).DecVal);
+        Assert.AreEqual(0m, strict.Evaluate("not 1").DecVal);
+        Assert.AreEqual(1m, strict.Evaluate("!0").DecVal);
     }
 
     [TestMethod]
@@ -689,7 +689,7 @@ public class LanguageTests
         //    42: start 10, length 2
         //    cos(  0  ): start 18, length 11
         var expr = "  pi   +  42   *  cos(  0  )  ";
-        var parsed = (BinaryNode)Calculator.Parse(expr);
+        var parsed = (BinaryNode)new CalculatorEngine(new CalculatorOptions { Normalization = null }).Parse(expr);
 
         var leftPi = (IdentifierNode)parsed.Left;
         Assert.AreEqual("pi", leftPi.Name);
@@ -731,7 +731,8 @@ public class LanguageTests
     public void CallerSuppliedVariablesAndPreviousResultAnsAreSupported()
     {
         // 1. Standalone 'ans' convenience via PreviousResult
-        var optionsAns = new EvaluationOptions { PreviousResult = new MathValue(42m) };
+        var optionsAns = new EvaluationContext(
+            variables: null, previousResult: new MathValue(42m));
         var ansResult = Calculator.Evaluate("ans * 2 + 1", optionsAns);
         Assert.AreEqual(85m, ansResult.DecVal);
 
@@ -745,7 +746,7 @@ public class LanguageTests
             ["x"] = new MathValue(new BigInteger(10)),
             ["y"] = new MathValue(2.5m),
         };
-        var optionsVars = new EvaluationOptions { Variables = variables };
+        var optionsVars = new EvaluationContext(variables, null);
         var varsResult = Calculator.Evaluate("3 * x + 4 * y", optionsVars);
         Assert.AreEqual(40m, varsResult.DecVal);
 

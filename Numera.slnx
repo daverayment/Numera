@@ -6,6 +6,12 @@
     <File Path="LICENSE" />
     <File Path="README.md" />
   </Folder>
+  <Folder Name="/Solution Items/docs/">
+    <File Path="docs/architecture.md" />
+    <File Path="docs/normalization.md" />
+    <File Path="docs/safety-and-limits.md" />
+    <File Path="docs/syntax.md" />
+  </Folder>
   <Project Path="MinimalCalc/MinimalCalc.csproj" Id="9f2a1b8e-8246-4ee2-a47d-b226c9db8467" />
   <Project Path="Numera.Tests/Numera.Tests.csproj" />
   <Project Path="Numera/Numera.csproj" />

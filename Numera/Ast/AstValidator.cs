@@ -24,12 +24,12 @@ internal static class AstValidator
     /// options.
     /// </summary>
     /// <param name="root">The tree to validate.</param>
-    /// <param name="options">The evaluation options the tree will be checked against.
-    /// </param>
+    /// <param name="options">The <see cref="CalculatorOptions" /> options against which
+    /// the tree will be checked.</param>
     /// <param name="allowUnknownFunctions">Formatting intentionally supports custom
     /// function names (rendered escaped), so the formatting path skips the unknown-
     /// function check. Evaluation keeps it, mirroring what the parser enforces.</param>
-    public static void Validate(ExpressionNode root, EvaluationOptions options,
+    public static void Validate(ExpressionNode root, CalculatorOptions options,
         bool allowUnknownFunctions = false)
     {
         ArgumentNullException.ThrowIfNull(root);
@@ -210,6 +210,30 @@ internal static class AstValidator
                     throw Invalid(node, EvaluationError.InvalidSyntax, $"Identifier '{identifier.Name}' is a constant and must be marked as one.");
                 }
                 break;
+
+            case AssignmentNode assignment:
+                if (string.IsNullOrWhiteSpace(assignment.VariableName))
+                {
+                    throw Invalid(node, EvaluationError.InvalidSyntax, "Assignment must specify a valid variable name.");
+                }
+                if (assignment.Value is null)
+                {
+                    // TODO: possible?
+                    throw Invalid(node, EvaluationError.InvalidSyntax, "Assignment must specify a value.");
+                }
+                if (ConstantCatalog.TryResolve(assignment.VariableName, out _, out _))
+                {
+                    throw Invalid(node, EvaluationError.InvalidSyntax, $"Cannot assign to constant name '{assignment.VariableName}'.");
+                }
+                if (FunctionCatalog.TryGetInfo(assignment.VariableName, out _))
+                {
+                    throw Invalid(node, EvaluationError.InvalidSyntax, $"Cannot assign to function name '{assignment.VariableName}'.");
+                }
+                if (KeywordCatalog.IsReserved(assignment.VariableName))
+                {
+                    throw Invalid(node, EvaluationError.InvalidSyntax, $"Cannot assign to reserved name '{assignment.VariableName}'.");
+                }
+                break;
         }
     }
 
@@ -219,6 +243,7 @@ internal static class AstValidator
         UnaryNode => 1,
         FunctionCallNode fn => fn.Arguments.Count,
         ComparisonChainNode comp => comp.Operands.Count,
+        AssignmentNode => 1,
         _ => 0,
     };
 
@@ -228,6 +253,7 @@ internal static class AstValidator
         UnaryNode un => un.Operand,
         FunctionCallNode fn => fn.Arguments[index],
         ComparisonChainNode comp => comp.Operands[index],
+        AssignmentNode assign => index == 0 ? assign.Value : throw new ArgumentOutOfRangeException(nameof(index)),
         _ => throw new ArgumentOutOfRangeException(nameof(index)),
     };
 }

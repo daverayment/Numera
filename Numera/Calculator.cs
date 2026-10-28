@@ -1,170 +1,181 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using Numera.Ast;
 
 namespace Numera;
 
 /// <summary>
-/// Evaluates mathematical expressions using a polymorphic number system based on
-/// BigInteger, Decimal, and Double. Stateless and zero-dependency.
+/// Static convenience facade for quick scripts, one-liners and tests. It delegates to a shared
+/// <see cref="CalculatorEngine"/> built from <see cref="CalculatorOptions.Default"/>: invariant culture,
+/// radians, and human-input normalization (launcher equals, Unicode operators, division colons)
+/// enabled. Applications that need another culture, angle unit or limits, or that want results
+/// formatted in the user's culture, should create their own <see cref="CalculatorEngine"/>.
 /// </summary>
+/// <remarks>
+/// Input is always read with invariant-culture rules here, so <c>1.5</c> is one and a half and a comma
+/// is an argument separator. <see cref="FormatResult"/>, however, defaults to the current culture for
+/// display, so a displayed result may not be re-parseable by this facade. A <see cref="CalculatorEngine"/>
+/// avoids that by using one culture in both directions. Session state (variables and <c>ans</c>) is
+/// supplied per call through <see cref="EvaluationContext"/>; the facade itself holds none and is thread-safe.
+/// <code>
+/// MathValue four = Calculator.Evaluate("2 + 2");
+/// var context = new EvaluationContext { PreviousResult = four };
+/// MathValue eight = Calculator.Evaluate("ans * 2", context);
+/// </code>
+/// </remarks>
 public static class Calculator
 {
+    private static readonly CalculatorEngine DefaultEngine = new(CalculatorOptions.Default);
+
     /// <summary>
-    /// Evaluates a mathematical expression and returns a polymorphic <see
-    /// cref="MathValue"/>.
+    /// Evaluates a mathematical expression and returns a polymorphic <see cref="MathValue"/>.
     /// </summary>
-    /// <param name="expression">The expression to evaluate, e.g. "2 + 2 * sqrt(16)".
-    /// </param>
-    /// <param name="options">Optional constraints for evaluation to prevent memory/CPU
-    /// exhaustion on untrusted inputs.</param>
+    /// <param name="expression">The expression to evaluate, e.g. <c>2 + 2 * sqrt(16)</c>.</param>
+    /// <param name="context">Optional variables and previous result.</param>
     /// <returns>The result of the evaluation as a <see cref="MathValue"/>.</returns>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
-    /// null.</exception>
-    /// <exception cref="NumeraException">Thrown if the expression contains syntax errors,
-    /// unknown functions, invalid arguments, division by zero, or exceeds computational limits.
-    /// Check <see cref="NumeraException.Diagnostic"/> for structured failure details.</exception>
-    /// <remarks>
-    /// To evaluate an expression without throwing exceptions for expected
-    /// failures, use <see cref="TryEvaluate(string, out MathValue, out EvaluationDiagnostic?, EvaluationOptions?)"/>.
-    /// </remarks>
-    public static MathValue Evaluate(string expression, EvaluationOptions? options = null)
-    {
-        ArgumentNullException.ThrowIfNull(expression);
-        options ??= new EvaluationOptions();
-        options.Validate();
-
-        try
-        {
-            return Evaluate(new AstParser(expression, options).Parse(), options);
-        }
-        catch (DivideByZeroException exception)
-        {
-            throw new ExpressionException(
-                new EvaluationDiagnostic(EvaluationError.DivisionByZero, exception.Message), exception);
-        }
-        catch (OverflowException exception)
-        {
-            // Arithmetic operators handle their own decimal-to-double fallback. Any
-            // overflow that still escapes evaluation is reported as a failure here.
-            throw new ExpressionException(
-                new EvaluationDiagnostic(EvaluationError.NumericOverflow, exception.Message), exception);
-        }
-    }
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is null.</exception>
+    /// <exception cref="NumeraException">Thrown if the expression cannot be normalized or parsed, or
+    /// evaluation fails. Check <see cref="NumeraException.Diagnostic"/> for structured details.</exception>
+    public static MathValue Evaluate(string expression, EvaluationContext? context = null) =>
+        DefaultEngine.Evaluate(expression, context);
 
     /// <summary>
-    /// Evaluates an already parsed expression tree, enabling single-parse workflows that
-    /// both format and evaluate without duplicating parsing work.
+    /// Evaluates an already parsed expression tree, so a caller that both formats and evaluates an
+    /// expression only parses it once. The tree is validated against the default limits first.
     /// </summary>
-    /// <param name="node">The root node of the parsed expression tree.</param>
-    /// <param name="options">Optional evaluation constraints.</param>
+    /// <param name="node">The tree to evaluate, typically from <see cref="Parse(string, EvaluationContext?)"/>.</param>
+    /// <param name="context">Optional variables and previous result used to resolve identifiers.</param>
     /// <returns>The result of the evaluation as a <see cref="MathValue"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="node"/> is null.</exception>
-    /// <exception cref="NumeraException">Thrown if evaluation fails.</exception>
-    public static MathValue Evaluate(ExpressionNode node, EvaluationOptions? options = null)
-    {
-        ArgumentNullException.ThrowIfNull(node);
-        options ??= new EvaluationOptions();
-        options.Validate();
-
-        AstValidator.Validate(node, options);
-
-        try
-        {
-            return node.Accept(new AstEvaluator(options));
-        }
-        catch (DivideByZeroException exception)
-        {
-            throw new ExpressionException(
-                new EvaluationDiagnostic(EvaluationError.DivisionByZero, exception.Message), exception);
-        }
-        catch (OverflowException exception)
-        {
-            throw new ExpressionException(
-                new EvaluationDiagnostic(EvaluationError.NumericOverflow, exception.Message), exception);
-        }
-    }
+    /// <exception cref="NumeraException">Thrown if the tree breaches limits or evaluation fails; check
+    /// <see cref="NumeraException.Diagnostic"/>.</exception>
+    public static MathValue Evaluate(ExpressionNode node, EvaluationContext? context = null) =>
+        DefaultEngine.Evaluate(node, context);
 
     /// <summary>
-    /// Safely attempts to evaluate a parsed expression tree without throwing exceptions for standard
-    /// mathematical or evaluation errors.
+    /// Attempts to evaluate an expression without throwing for expected failures. Invalid API
+    /// arguments (such as a null expression) still throw.
     /// </summary>
-    /// <param name="node">The parsed expression tree node.</param>
-    /// <param name="value">The resulting value if evaluation succeeds; otherwise, default.</param>
-    /// <param name="diagnostic">Contains detailed error information if evaluation failed; otherwise null.</param>
-    /// <param name="options">Optional evaluation constraints.</param>
-    /// <returns><c>true</c> if evaluation succeeded; otherwise, <c>false</c>.</returns>
-    public static bool TryEvaluate(
-        ExpressionNode node,
-        out MathValue value,
-        [NotNullWhen(false)] out EvaluationDiagnostic? diagnostic,
-        EvaluationOptions? options = null)
-    {
-        try
-        {
-            value = Evaluate(node, options);
-            diagnostic = null;
-            return true;
-        }
-        catch (NumeraException exception)
-        {
-            diagnostic = exception.Diagnostic;
-        }
-
-        value = default;
-        return false;
-    }
-
-    /// <summary>
-    /// Safely attempts to evaluate an expression without throwing exceptions for standard
-    /// mathematical or syntax errors. Invalid API arguments still throw exceptions.
-    /// </summary>
-    /// <param name="expression">The mathematical expression to evaluate.</param>
-    /// <param name="value">The resulting value if evaluation succeeds; otherwise, the
-    /// default value.</param>
-    /// <param name="diagnostic">Contains detailed error information if the evaluation
-    /// failed; otherwise, null.</param>
-    /// <param name="options">Optional constraints for evaluation to prevent memory/CPU
-    /// exhaustion on untrusted input.</param>
-    /// <returns><c>true</c> if the expression was successfully evaluated; otherwise,
-    /// <c>false</c>.</returns>
-    /// <remarks>
-    /// Invalid API arguments (e.g., null expression) will still throw standard
-    /// exceptions.
-    /// </remarks>
+    /// <param name="expression">The expression to evaluate.</param>
+    /// <param name="result">On success, the result; otherwise <c>default</c> and not meaningful.</param>
+    /// <param name="diagnostic">On failure, the structured error (code, message and, where known, source
+    /// position); otherwise <c>null</c>. Positions refer to the normalized text.</param>
+    /// <param name="context">Optional variables and previous result.</param>
+    /// <returns><c>true</c> if evaluation succeeded; <c>false</c> if normalization, parsing or evaluation failed.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is null.</exception>
     public static bool TryEvaluate(
         string expression,
-        out MathValue value,
+        out EvaluationResult result,
         [NotNullWhen(false)] out EvaluationDiagnostic? diagnostic,
-        EvaluationOptions? options = null)
-    {
-        try
-        {
-            value = Evaluate(expression, options);
-            diagnostic = null;
-            return true;
-        }
-        catch (NumeraException exception)
-        {
-            diagnostic = exception.Diagnostic;
-        }
-
-        value = default;
-        return false;
-    }
+        EvaluationContext? context = null) =>
+        DefaultEngine.TryEvaluate(expression, out result, out diagnostic, context);
 
     /// <summary>
-    /// Formats a calculated <see cref="MathValue"/> into a structured <see cref="FormattedCalculation"/>,
-    /// providing primary user-facing localized text, invariant machine-readable text, and optional
-    /// radix representations (hexadecimal, binary, octal) for integer results.
+    /// Attempts to evaluate an already parsed expression tree without throwing for
+    /// expected failures.
+    /// </summary>
+    /// <param name="node">The tree to evaluate.</param>
+    /// <param name="result">On success, the result; otherwise <c>default</c> and not
+    /// meaningful.</param>
+    /// <param name="diagnostic">On failure, the structured error; otherwise <c>null</c>.
+    /// </param>
+    /// <param name="context">Optional variables and previous result.</param>
+    /// <returns><c>true</c> if evaluation succeeded; otherwise <c>false</c>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="node"/> is null.
+    /// </exception>
+    public static bool TryEvaluate(
+        ExpressionNode node,
+        out EvaluationResult result,
+        [NotNullWhen(false)] out EvaluationDiagnostic? diagnostic,
+        EvaluationContext? context = null) =>
+        DefaultEngine.TryEvaluate(node, out result, out diagnostic, context);
+
+    /// <summary>
+    /// Parses an expression into an abstract syntax tree without evaluating it.
+    /// Normalization runs first, so node spans refer to the normalized text rather than
+    /// the original input.
+    /// </summary>
+    /// <param name="expression">The expression to parse.</param>
+    /// <param name="context">Optional variables; supplying them lets their names parse as
+    /// identifiers (for example, enabling implicit multiplication such as <c>2x</c>).
+    /// </param>
+    /// <returns>The root node of the syntax tree.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
+    /// null.</exception>
+    /// <exception cref="NumeraException">Thrown if normalization or parsing fails, or
+    /// limits are exceeded.</exception>
+    public static ExpressionNode Parse(string expression, EvaluationContext? context = null) =>
+        DefaultEngine.Parse(expression, context);
+
+    /// <summary>
+    /// Attempts to parse an expression without throwing for syntax or normalization
+    /// errors.
+    /// </summary>
+    /// <param name="expression">The expression to parse.</param>
+    /// <param name="node">On success, the root of the syntax tree; otherwise <c>null</c>.
+    /// </param>
+    /// <param name="diagnostic">On failure, the structured error; otherwise <c>null</c>.
+    /// </param>
+    /// <param name="context">Optional variables so their names parse as identifiers.
+    /// </param>
+    /// <returns><c>true</c> if parsing succeeded; otherwise <c>false</c>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
+    /// null.</exception>
+    public static bool TryParse(
+        string expression,
+        [NotNullWhen(true)] out ExpressionNode? node,
+        [NotNullWhen(false)] out EvaluationDiagnostic? diagnostic,
+        EvaluationContext? context = null) =>
+        DefaultEngine.TryParse(expression, out node, out diagnostic, context);
+
+    /// <summary>
+    /// Parses and re-renders an expression, for example to show a tidied or typeset
+    /// version of what the user typed. The expression is not evaluated.
+    /// </summary>
+    /// <param name="expression">The expression to format.</param>
+    /// <param name="options">Rendering style; defaults to
+    /// <see cref="ExpressionFormatOptions.Typographic"/>.</param>
+    /// <returns>The rendered expression text.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
+    /// null.</exception>
+    /// <exception cref="NumeraException">Thrown if the expression cannot be normalized or
+    /// parsed.</exception>
+    public static string FormatExpression(string expression, ExpressionFormatOptions? options = null) =>
+        DefaultEngine.FormatExpression(expression, options);
+
+    /// <summary>
+    /// Renders an existing expression tree. Unknown function names are tolerated so
+    /// partially understood input can still be displayed.
+    /// </summary>
+    /// <param name="node">The tree to render.</param>
+    /// <param name="options">Rendering style; defaults to
+    /// <see cref="ExpressionFormatOptions.Typographic"/>.</param>
+    /// <returns>The rendered expression text.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="node"/> is null.
+    /// </exception>
+    /// <exception cref="NumeraException">Thrown if the tree breaches nesting or length
+    /// limits.</exception>
+    public static string FormatExpression(ExpressionNode node, ExpressionFormatOptions? options = null) =>
+        DefaultEngine.FormatExpression(node, options);
+
+    /// <summary>
+    /// Formats a calculated <see cref="MathValue"/> into a structured
+    /// <see cref="FormattedCalculation"/>, providing primary user-facing localized text,
+    /// invariant machine-readable text, and radix representations (hexadecimal, binary,
+    /// octal) for integer results.
     /// </summary>
     /// <param name="value">The evaluated calculation result.</param>
-    /// <param name="culture">The culture to use for primary display formatting; defaults to <see cref="System.Globalization.CultureInfo.CurrentCulture"/>.</param>
-    /// <returns>A structured record containing the formatted values.</returns>
-    public static FormattedCalculation FormatResult(MathValue value, System.Globalization.CultureInfo? culture = null)
+    /// <param name="culture">The culture for the primary display; defaults to
+    /// <see cref="CultureInfo.CurrentCulture"/>. A <see cref="CalculatorEngine"/> formats
+    /// with its own culture instead, which keeps display and input symmetrical.</param>
+    /// <returns>A <see cref="FormattedCalculation"/> holding the original value, the
+    /// culture-specific display text, an invariant-culture string safe for machine use,
+    /// and prefixed hex, binary and octal forms.</returns>
+    public static FormattedCalculation FormatResult(MathValue value, CultureInfo? culture = null)
     {
-        culture ??= System.Globalization.CultureInfo.CurrentCulture;
+        culture ??= CultureInfo.CurrentCulture;
         string primaryDisplay = value.ToString(culture);
-        string machineReadable = value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        string machineReadable = value.ToString(CultureInfo.InvariantCulture);
 
         return new FormattedCalculation(
             Value: value,
@@ -173,88 +184,5 @@ public static class Calculator
             HexRepresentation: value.ToHexString(prefix: true),
             BinaryRepresentation: value.ToBinaryString(prefix: true),
             OctalRepresentation: value.ToOctalString(prefix: true));
-    }
-
-    /// <summary>
-    /// Parses a mathematical expression into an abstract syntax tree (<see cref="ExpressionNode"/>)
-    /// on demand, without evaluating it.
-    /// </summary>
-    /// <param name="expression">The mathematical expression to parse.</param>
-    /// <param name="options">Optional evaluation constraints and limits.</param>
-    /// <returns>The root <see cref="ExpressionNode"/> of the parsed expression tree.</returns>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is null.</exception>
-    /// <exception cref="NumeraException">Thrown if the expression contains syntax errors or invalid function names.</exception>
-    public static ExpressionNode Parse(string expression, EvaluationOptions? options = null)
-    {
-        ArgumentNullException.ThrowIfNull(expression);
-        options ??= new EvaluationOptions();
-        options.Validate();
-
-        return new AstParser(expression, options).Parse();
-    }
-
-    /// <summary>
-    /// Safely attempts to parse a mathematical expression into an abstract syntax tree (<see cref="ExpressionNode"/>)
-    /// without throwing exceptions for syntax errors.
-    /// </summary>
-    /// <param name="expression">The mathematical expression to parse.</param>
-    /// <param name="node">The resulting <see cref="ExpressionNode"/> if parsing succeeds; otherwise, null.</param>
-    /// <param name="diagnostic">Contains detailed error information if parsing failed; otherwise, null.</param>
-    /// <param name="options">Optional evaluation constraints and limits.</param>
-    /// <returns><c>true</c> if parsing succeeded; otherwise, <c>false</c>.</returns>
-    public static bool TryParse(
-        string expression,
-        [NotNullWhen(true)] out ExpressionNode? node,
-        [NotNullWhen(false)] out EvaluationDiagnostic? diagnostic,
-        EvaluationOptions? options = null)
-    {
-        try
-        {
-            node = Parse(expression, options);
-            diagnostic = null;
-            return true;
-        }
-        catch (NumeraException exception)
-        {
-            diagnostic = exception.Diagnostic;
-        }
-
-        node = null;
-        return false;
-    }
-
-    /// <summary>
-    /// Formats a mathematical expression string into a rendered representation using the specified format options.
-    /// </summary>
-    /// <param name="expression">The mathematical expression string to format.</param>
-    /// <param name="options">Formatting style and typographical options; defaults to <see cref="ExpressionFormatOptions.Typographic"/>.</param>
-    /// <returns>The formatted expression string.</returns>
-    public static string FormatExpression(string expression, ExpressionFormatOptions? options = null)
-    {
-        ArgumentNullException.ThrowIfNull(expression);
-        var node = Parse(expression);
-        return FormatExpression(node, options);
-    }
-
-    /// <summary>
-    /// Formats an <see cref="ExpressionNode"/> abstract syntax tree into a rendered representation using the specified format options.
-    /// </summary>
-    /// <param name="node">The syntax tree node to format.</param>
-    /// <param name="options">Formatting style and typographical options; defaults to <see cref="ExpressionFormatOptions.Typographic"/>.</param>
-    /// <returns>The formatted expression string.</returns>
-    public static string FormatExpression(ExpressionNode node, ExpressionFormatOptions? options = null)
-    {
-        ArgumentNullException.ThrowIfNull(node);
-        options ??= ExpressionFormatOptions.Typographic;
-
-        AstValidator.Validate(node, new EvaluationOptions(), allowUnknownFunctions: true);
-
-        IExpressionVisitor<string> visitor = options.Style switch
-        {
-            ExpressionFormatStyle.MathJax => new MathJaxVisitor(options),
-            _ => new TypographicVisitor(options),
-        };
-
-        return node.Accept(visitor);
     }
 }

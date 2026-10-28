@@ -117,8 +117,8 @@ public sealed class PercentageTortureTests
     [TestMethod]
     public void ComplexPasteEvaluatesAfterCultureNormalization()
     {
-        var options = new NormalizationOptions { Culture = new CultureInfo("de-DE") };
-        Assert.IsTrue(ExpressionNormalizer.TryNormalize("= 1.000,50 × (2 + 3)! + 15% of 200 − 50% =", out var normalized, options));
+        var german = new CultureInfo("de-DE");
+        Assert.IsTrue(ExpressionNormalizer.TryNormalize("= 1.000,50 × (2 + 3)! + 15% of 200 − 50% =", german, out var normalized, out _));
 
         // (1000.50 * 120 + 30) is halved by the trailing "- 50%": 120090 * 0.5.
         AssertEvaluatesTo("60045", normalized);

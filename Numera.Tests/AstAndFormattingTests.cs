@@ -1,6 +1,5 @@
 using System.Numerics;
 using System.Text;
-using Numera;
 using Numera.Ast;
 
 namespace Numera.Tests;
@@ -30,7 +29,7 @@ public sealed class AstAndFormattingTests
     [TestMethod]
     public void Parse_Precedence_PreservesStructure()
     {
-        // 2 + 3 * 4 should be 2 + (3 * 4)
+        // 2 + 3 * 4 should be 2 + (3 * 4).
         var node = Calculator.Parse("2 + 3 * 4");
         Assert.IsInstanceOfType<BinaryNode>(node);
         var addNode = (BinaryNode)node;
@@ -207,8 +206,8 @@ public sealed class AstAndFormattingTests
     [TestMethod]
     public void Parse_ParenthesizedExpression_SpansEncompassParentheses()
     {
-        // (1+2)*3: outer binary span must encompass grouping parentheses: [0, 7)
-        // while the inner grouped node maintains its tight child span: [1, 4)
+        // (1+2)*3: outer binary span must encompass grouping parentheses: [0, 7) while
+        // the inner grouped node maintains its tight child span: [1, 4).
         var node1 = Calculator.Parse("(1+2)*3");
         Assert.IsInstanceOfType<BinaryNode>(node1);
         var bin1 = (BinaryNode)node1;
@@ -216,7 +215,7 @@ public sealed class AstAndFormattingTests
         Assert.AreEqual(new TextSpan(1, 3), bin1.Left.Span);
         Assert.AreEqual(new TextSpan(6, 1), bin1.Right.Span);
 
-        // 3*(1+2): outer binary span is [0, 7) and inner node remains tight: [3, 6)
+        // 3*(1+2): outer binary span is [0, 7) and inner node remains tight: [3, 6).
         var node2 = Calculator.Parse("3*(1+2)");
         Assert.IsInstanceOfType<BinaryNode>(node2);
         var bin2 = (BinaryNode)node2;
@@ -224,25 +223,31 @@ public sealed class AstAndFormattingTests
         Assert.AreEqual(new TextSpan(0, 1), bin2.Left.Span);
         Assert.AreEqual(new TextSpan(3, 3), bin2.Right.Span);
 
-        // -(1+2): unary negation encompasses the group: [0, 6)
+        // -(1+2): unary negation encompasses the group: [0, 6).
         var node3 = Calculator.Parse("-(1+2)");
         Assert.IsInstanceOfType<UnaryNode>(node3);
         var un3 = (UnaryNode)node3;
         Assert.AreEqual(new TextSpan(0, 6), un3.Span);
         Assert.AreEqual(new TextSpan(2, 3), un3.Operand.Span);
 
-        // not (a == b): logical negation outer span includes 'not' through closing ')': [0, 12)
-        var options = new EvaluationOptions
-        {
-            Variables = new Dictionary<string, MathValue> { ["a"] = new(1m), ["b"] = new(2m) }
-        };
+        // not (a == b): logical negation outer span includes 'not' through closing ')':
+        // [0, 12).
+        var options = new EvaluationContext(
+            variables: new Dictionary<string, MathValue>
+            {
+                ["a"] = new(1m),
+                ["b"] = new(2m),
+            },
+            previousResult: null);
+
         var node4 = Calculator.Parse("not (a == b)", options);
         Assert.IsInstanceOfType<UnaryNode>(node4);
         var un4 = (UnaryNode)node4;
         Assert.AreEqual(new TextSpan(0, 12), un4.Span);
         Assert.AreEqual(new TextSpan(5, 6), un4.Operand.Span);
 
-        // 10 + (5 / 0) with trailing whitespace: root binary span ignores trailing spaces: [0, 12)
+        // 10 + (5 / 0) with trailing whitespace: root binary span ignores trailing
+        // spaces: [0, 12).
         var node5 = Calculator.Parse("10 + (5 / 0)   ");
         Assert.IsInstanceOfType<BinaryNode>(node5);
         var bin5 = (BinaryNode)node5;
@@ -319,20 +324,23 @@ public sealed class AstAndFormattingTests
     [TestMethod]
     public void Parse_SafetyLimits_EnforcesMaxInputLengthAndNestingDepth()
     {
-        var optionsLength = new EvaluationOptions { MaxInputLength = 5 };
-        Assert.Throws<CalculationLimitException>(() => Calculator.Parse("1 + 2 + 3", optionsLength));
+        var optionsLength = new CalculatorEngine(
+            new CalculatorOptions { MaxInputLength = 5 });
+        Assert.Throws<CalculationLimitException>(() => optionsLength.Parse("1 + 2 + 3"));
 
-        var optionsDepth = new EvaluationOptions { MaxNestingDepth = 2 };
-        Assert.Throws<CalculationLimitException>(() => Calculator.Parse("---1", optionsDepth));
+        var optionsDepth = new CalculatorEngine(
+            new CalculatorOptions { MaxNestingDepth = 2 });
+        Assert.Throws<CalculationLimitException>(() => optionsDepth.Parse("---1"));
 
         // Right-associative power chains and nested groupings increment nesting height.
-        // With MaxNestingDepth = 3, "2^3^4" creates BinaryNode(^, 2, BinaryNode(^, 3, 4)) with height 3 (allowed),
-        // but "2^3^4^5" has height 4 and must be rejected.
-        var chainAllowed = Calculator.Parse("2^3^4", new EvaluationOptions { MaxNestingDepth = 3 });
+        // With MaxNestingDepth = 3, "2^3^4" creates BinaryNode(^, 2, BinaryNode(^, 3, 4))
+        // with height 3 (allowed), but "2^3^4^5" has height 4 and must be rejected.
+        var depth3 = new CalculatorEngine(
+            new CalculatorOptions { MaxNestingDepth = 3 });
+        var chainAllowed = depth3.Parse("2^3^4");
         Assert.AreEqual(3, chainAllowed.Height);
 
-        Assert.Throws<CalculationLimitException>(() =>
-            Calculator.Parse("2^3^4^5", new EvaluationOptions { MaxNestingDepth = 3 }));
+        Assert.Throws<CalculationLimitException>(() => depth3.Parse("2^3^4^5"));
     }
 
     [TestMethod]
@@ -440,18 +448,6 @@ public sealed class AstAndFormattingTests
         // LaTeX unary positive
         string pos = Calculator.FormatExpression("+5", ExpressionFormatOptions.LaTeX);
         Assert.AreEqual("+5", pos);
-    }
-
-    [TestMethod]
-    public void EvaluationOptions_Validate_ThrowsOnInvalidRanges()
-    {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new EvaluationOptions { MaxInputLength = 0 }.Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new EvaluationOptions { MaxInputLength = CalculationLimits.MaxInputLength + 1 }.Validate());
-
-        Assert.Throws<ArgumentOutOfRangeException>(() => new EvaluationOptions { MaxNestingDepth = 0 }.Validate());
-        Assert.Throws<ArgumentOutOfRangeException>(() => new EvaluationOptions { MaxNestingDepth = CalculationLimits.MaxNestingDepth + 1 }.Validate());
-
-        Assert.Throws<ArgumentOutOfRangeException>(() => new EvaluationOptions { AngleUnit = (AngleUnit)999 }.Validate());
     }
 
     [TestMethod]
@@ -710,8 +706,12 @@ public sealed class AstAndFormattingTests
         Assert.AreEqual(new BigInteger(720), Calculator.Evaluate("(3!)!").IntVal);
 
         // (n+1)!
-        var options = new EvaluationOptions { Variables = new Dictionary<string, MathValue> { ["n"] = new(2m) } };
-        Assert.AreEqual(new BigInteger(6), Calculator.Evaluate("(n+1)!", options).IntVal);
+        var variablesContext = new EvaluationContext(
+            variables: new Dictionary<string, MathValue> { ["n"] = new(2m) },
+            previousResult: null);
+        Assert.AreEqual(
+            new BigInteger(6),
+            Calculator.Evaluate("(n+1)!", variablesContext).IntVal);
     }
 
     [TestMethod]
@@ -724,8 +724,9 @@ public sealed class AstAndFormattingTests
     [TestMethod]
     public void Factorial_DisabledOption_RejectsPostfix()
     {
-        var options = new EvaluationOptions { AllowPostfixFactorial = false };
-        var ex = Assert.Throws<ExpressionException>(() => Calculator.Parse("5!", options));
+        var engine = new CalculatorEngine(
+            new CalculatorOptions { AllowPostfixFactorial = false });
+        var ex = Assert.Throws<ExpressionException>(() => engine.Parse("5!"));
         Assert.AreEqual(EvaluationError.InvalidSyntax, ex.Diagnostic.Code);
     }
 
@@ -746,28 +747,31 @@ public sealed class AstAndFormattingTests
     [TestMethod]
     public void ImplicitMultiplication_EvaluationAndAst_WorksCorrectly()
     {
-        var options = new EvaluationOptions
-        {
-            Variables = new Dictionary<string, MathValue> { ["x"] = new(3m), ["y"] = new(4m) }
-        };
+        var options = new EvaluationContext(
+            variables: new Dictionary<string, MathValue>
+            {
+                ["x"] = new(3m),
+                ["y"] = new(4m),
+            },
+            previousResult: null);
 
-        // Juxtaposition with variable and grouping
+        // Juxtaposition with variable and grouping.
         Assert.AreEqual(6m, Calculator.Evaluate("2x", options).DecVal);
         Assert.AreEqual(12m, Calculator.Evaluate("x y", options).DecVal);
         Assert.AreEqual(new BigInteger(14), Calculator.Evaluate("2(3 + 4)").IntVal);
         Assert.AreEqual(new BigInteger(21), Calculator.Evaluate("(1 + 2)(3 + 4)").IntVal);
 
-        // AST structure verification: IsImplicit is true
+        // AST structure verification: IsImplicit is true.
         var ast = Calculator.Parse("2x", options);
         Assert.IsInstanceOfType<BinaryNode>(ast);
         var bin = (BinaryNode)ast;
         Assert.AreEqual(BinaryOperator.Multiply, bin.Op);
         Assert.IsTrue(bin.IsImplicit);
 
-        // Precedence: 2x^2 parses as 2*(x^2) = 2*9 = 18
+        // Precedence: 2x^2 parses as 2*(x^2) = 2*9 = 18.
         Assert.AreEqual(18m, Calculator.Evaluate("2x^2", options).DecVal);
 
-        // Greek tokens as standalone symbols
+        // Greek tokens as standalone symbols.
         Assert.AreEqual(Calculator.Evaluate("2 * pi").DecVal, Calculator.Evaluate("2π").DecVal);
     }
 
@@ -783,39 +787,40 @@ public sealed class AstAndFormattingTests
     [TestMethod]
     public void ImplicitMultiplication_DisabledOption_RejectsImplicit()
     {
-        var options = new EvaluationOptions
-        {
-            AllowImplicitMultiplication = false,
-            Variables = new Dictionary<string, MathValue> { ["x"] = new(3m) }
-        };
-        var ex = Assert.Throws<ExpressionException>(() => Calculator.Parse("2x", options));
+        var engine = new CalculatorEngine(
+            new CalculatorOptions { AllowImplicitMultiplication = false });
+        var variablesContext = new EvaluationContext(
+            variables: new Dictionary<string, MathValue> { ["x"] = new(3m) },
+            previousResult: null);
+        var ex = Assert.Throws<ExpressionException>(() =>
+            engine.Parse("2x", variablesContext));
         Assert.AreEqual(EvaluationError.InvalidSyntax, ex.Diagnostic.Code);
 
-        // Strict mode on pi(2) reports unknown function instead of unexpected '('
-        var exPi = Assert.Throws<ExpressionException>(() => Calculator.Parse("pi(2)", options));
+        // Strict mode on pi(2) reports unknown function instead of unexpected '('.
+        var exPi = Assert.Throws<ExpressionException>(() =>
+            engine.Parse("pi(2)", variablesContext));
         Assert.AreEqual(EvaluationError.UnknownFunction, exPi.Diagnostic.Code);
     }
 
     [TestMethod]
     public void ImplicitMultiplication_UnicodeVariablesAndKeywordBoundaries()
     {
-        var options = new EvaluationOptions
-        {
-            Variables = new Dictionary<string, MathValue>
+        var variablesContext = new EvaluationContext(
+            variables: new Dictionary<string, MathValue>
             {
                 ["θ"] = new(5m),
                 ["android"] = new(10m),
                 ["x"] = new(2m)
-            }
-        };
+            },
+            previousResult: null);
 
-        // Unicode variables like θ work cleanly
-        Assert.AreEqual(10m, Calculator.Evaluate("2θ", options).DecVal);
+        // Unicode variables like θ work cleanly.
+        Assert.AreEqual(10m, Calculator.Evaluate("2θ", variablesContext).DecVal);
 
-        // Keyword boundary: android is a variable, not the keyword 'and'
-        Assert.AreEqual(20m, Calculator.Evaluate("2 android", options).DecVal);
+        // Keyword boundary: android is a variable, not the keyword 'and'.
+        Assert.AreEqual(20m, Calculator.Evaluate("2 android", variablesContext).DecVal);
 
-        // Function without parentheses reports requires parentheses error
+        // Function without parentheses reports requires parentheses error.
         var exSin = Assert.Throws<ExpressionException>(() => Calculator.Parse("sin"));
         Assert.AreEqual(EvaluationError.InvalidSyntax, exSin.Diagnostic.Code);
     }
@@ -823,27 +828,23 @@ public sealed class AstAndFormattingTests
     [TestMethod]
     public void ImplicitMultiplication_SpansAndEquivalence()
     {
-        var options = new EvaluationOptions
-        {
-            Variables = new Dictionary<string, MathValue>
-            {
-                ["x"] = new(3m)
-            }
-        };
+        var variablesContext = new EvaluationContext(
+            variables: new Dictionary<string, MathValue> { ["x"] = new(3m) },
+            previousResult: null);
 
-        // Spans: (2)(3) is [0, 6), 2pi is [0, 3), -2x is [0, 3)
+        // Spans: (2)(3) is [0, 6), 2pi is [0, 3), -2x is [0, 3).
         var node1 = Calculator.Parse("(2)(3)");
         Assert.AreEqual(new TextSpan(0, 6), node1.Span);
 
         var node2 = Calculator.Parse("2pi");
         Assert.AreEqual(new TextSpan(0, 3), node2.Span);
 
-        var node3 = Calculator.Parse("-2x", options);
+        var node3 = Calculator.Parse("-2x", variablesContext);
         Assert.AreEqual(new TextSpan(0, 3), node3.Span);
 
         // AST Equivalence: 2*x and 2x produce structurally equal BinaryNodes
-        var explicitNode = Calculator.Parse("2 * x", options);
-        var implicitNode = Calculator.Parse("2x", options);
+        var explicitNode = Calculator.Parse("2 * x", variablesContext);
+        var implicitNode = Calculator.Parse("2x", variablesContext);
         Assert.AreEqual(explicitNode, implicitNode);
         Assert.AreEqual(explicitNode.GetHashCode(), implicitNode.GetHashCode());
     }
@@ -867,18 +868,18 @@ public sealed class AstAndFormattingTests
         Assert.AreEqual(id1.GetHashCode(), id2.GetHashCode());
 
         var comp1 = new ComparisonChainNode(
-            new ExpressionNode[] { num1, num2 },
-            new ComparisonOperator[] { ComparisonOperator.Equal },
+            [num1, num2],
+            [ComparisonOperator.Equal],
             new TextSpan(0, 5));
         var comp2 = new ComparisonChainNode(
-            new ExpressionNode[] { num1, num2 },
-            new ComparisonOperator[] { ComparisonOperator.Equal },
+            [num1, num2],
+            [ComparisonOperator.Equal],
             new TextSpan(10, 8));
         Assert.AreEqual(comp1, comp2);
         Assert.AreEqual(comp1.GetHashCode(), comp2.GetHashCode());
 
-        var call1 = new FunctionCallNode("sin", new ExpressionNode[] { num1 }, new TextSpan(0, 6));
-        var call2 = new FunctionCallNode("sin", new ExpressionNode[] { num1 }, new TextSpan(20, 6));
+        var call1 = new FunctionCallNode("sin", [num1], new TextSpan(0, 6));
+        var call2 = new FunctionCallNode("sin", [num1], new TextSpan(20, 6));
         Assert.AreEqual(call1, call2);
         Assert.AreEqual(call1.GetHashCode(), call2.GetHashCode());
     }
@@ -886,7 +887,7 @@ public sealed class AstAndFormattingTests
     [TestMethod]
     public void IdentifierNode_ConstantsAndVariables_EqualityAndHashEquivalence()
     {
-        // 2PI, 2pi, and 2π compare equal and hash equal
+        // 2PI, 2pi, and 2π compare equal and hash equal.
         var piUpper = Calculator.Parse("PI");
         var piLower = Calculator.Parse("pi");
         var piGreek = Calculator.Parse("π");
@@ -895,13 +896,13 @@ public sealed class AstAndFormattingTests
         Assert.AreEqual(piUpper.GetHashCode(), piLower.GetHashCode());
         Assert.AreEqual(piLower.GetHashCode(), piGreek.GetHashCode());
 
-        // Function call names compare equal regardless of casing: SIN(x) == sin(x)
+        // Function call names compare equal regardless of casing: SIN(x) == sin(x).
         var sinUpper = Calculator.Parse("SIN(1)");
         var sinLower = Calculator.Parse("sin(1)");
         Assert.AreEqual(sinUpper, sinLower);
         Assert.AreEqual(sinUpper.GetHashCode(), sinLower.GetHashCode());
 
-        // Variable identifiers compare case-insensitively
+        // Variable identifiers compare case-insensitively.
         var varUpper = new IdentifierNode("ABC");
         var varLower = new IdentifierNode("abc");
         Assert.AreEqual(varUpper, varLower);
@@ -911,19 +912,20 @@ public sealed class AstAndFormattingTests
     [TestMethod]
     public void DeepTrees_ParseOrLimitSafelyWithoutCrashing()
     {
-        // Deep nested function calls: sin(sin(...(1)...))
+        // Deep nested function calls: sin(sin(...(1)...)).
         int depth = 200;
-        string deepSin = new string('s', 0);
+        string deepSin = new('s', 0);
         var sbSin = new StringBuilder();
         for (int i = 0; i < depth; i++) sbSin.Append("sin(");
         sbSin.Append('1');
         for (int i = 0; i < depth; i++) sbSin.Append(')');
         string sinExpr = sbSin.ToString();
 
-        // 200-deep nesting exceeds MaxNestingDepth (128) and rejects with CalculationLimitException
+        // 200-deep nesting exceeds MaxNestingDepth (128) and rejects with
+        // CalculationLimitException.
         Assert.Throws<CalculationLimitException>(() => Calculator.Parse(sinExpr));
 
-        // 200-deep parenthesised comparisons: (((1 == 1) == 1)...)
+        // 200-deep parenthesised comparisons: (((1 == 1) == 1)...).
         var sbComp = new StringBuilder();
         for (int i = 0; i < depth; i++) sbComp.Append('(');
         sbComp.Append("1 == 1");
@@ -937,36 +939,38 @@ public sealed class AstAndFormattingTests
     public void FlatSum_5000Terms_EvaluatesOrLimitsSafelyWithoutCrashing()
     {
         // Construct a flat chain of 5,000 terms: 1 + 1 + 1 + ...
-        // Since MaxInputLength is 4096, parsing from raw string limits early,
-        // but evaluating a manually built 5,000-term left-spine BinaryNode tests the spine visitor.
+        // Since MaxInputLength is 4096, parsing from raw string limits early, but
+        // evaluating a manually built 5,000-term left-spine BinaryNode tests the spine
+        // visitor.
         ExpressionNode root = new NumberNode(new MathValue(1m));
         for (int i = 1; i < 5000; i++)
         {
             root = new BinaryNode(BinaryOperator.Add, root, new NumberNode(new MathValue(1m)));
         }
 
-        // Height of flat left spine of leaves is 2 (1 for leaf + 1 for binary operator)
+        // Height of flat left spine of leaves is 2 (1 for leaf + 1 for binary operator).
         Assert.AreEqual(2, root.Height);
 
-        // Manually built tree with 10,000 nodes exceeds nodeCount safety bound in AstValidator
+        // Manually built tree with 10,000 nodes exceeds nodeCount safety bound in
+        // AstValidator.
         Assert.Throws<CalculationLimitException>(() => Calculator.Evaluate(root));
     }
 
     [TestMethod]
     public void AstValidator_RejectsMalformedManualAsts()
     {
-        // Null child in unary node
+        // Null child in unary node.
         var invalidUnary = new UnaryNode(UnaryOperator.Negate, null!);
         Assert.Throws<ExpressionException>(() => Calculator.Evaluate(invalidUnary));
 
-        // Malformed ComparisonChainNode: Operators.Count != Operands.Count - 1
+        // Malformed ComparisonChainNode: Operators.Count != Operands.Count - 1.
         var invalidComp = new ComparisonChainNode(
-            new ExpressionNode[] { new NumberNode(new MathValue(1m)), new NumberNode(new MathValue(2m)) },
-            Array.Empty<ComparisonOperator>());
+            [new NumberNode(new MathValue(1m)), new NumberNode(new MathValue(2m))],
+            []);
         Assert.Throws<ExpressionException>(() => Calculator.Evaluate(invalidComp));
 
-        // Function call with invalid arity
-        var invalidCall = new FunctionCallNode("sqrt", Array.Empty<ExpressionNode>());
+        // Function call with invalid arity.
+        var invalidCall = new FunctionCallNode("sqrt", []);
         Assert.Throws<ExpressionException>(() => Calculator.Evaluate(invalidCall));
     }
 }

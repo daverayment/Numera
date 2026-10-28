@@ -257,7 +257,13 @@ public readonly struct MathValue : IFormattable, ISpanFormattable, IUtf8SpanForm
 
         bool isNegative = IntVal < BigInteger.Zero;
         BigInteger absVal = BigInteger.Abs(IntVal);
-        string hex = absVal.ToString("X");
+        // BigInteger's "X" format pads with a leading zero when the top bit is set so the value
+        // cannot be misread as negative; that padding is noise here because the sign is added explicitly.
+        string hex = absVal.ToString("X").TrimStart('0');
+        if (hex.Length == 0)
+        {
+            hex = "0";
+        }
 
         if (!prefix)
         {

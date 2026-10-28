@@ -35,4 +35,9 @@ public interface IExpressionVisitor<T>
     /// <param name="node">The function call node.</param>
     /// <returns>The result of processing the node.</returns>
     T Visit(FunctionCallNode node);
+
+    /// <summary>Visits an <see cref="AssignmentNode"/> assignment expression.</summary>
+    /// <param name="node">The assignment node.</param>
+    /// <returns>The result of processing the node.</returns>
+    T Visit(AssignmentNode node);
 }
