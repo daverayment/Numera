@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Text;
 
 namespace Numera.Ast;
 
@@ -9,6 +11,7 @@ namespace Numera.Ast;
 /// </summary>
 /// <param name="Start">The zero-based UTF-16 starting character offset.</param>
 /// <param name="Length">The number of UTF-16 code units in the span.</param>
+[DebuggerDisplay("[{Start}..{End}) (len {Length})")]
 public readonly record struct TextSpan(int Start, int Length)
 {
     /// <summary>
@@ -17,7 +20,14 @@ public readonly record struct TextSpan(int Start, int Length)
     public bool HasValue => Length > 0;
 
     /// <summary>
-    /// Creates a span covering the range from the start of <paramref name="first"/> to the end of <paramref name="last"/>.
+    /// Gets the zero-based UTF-16 character offset of the end of the span, which is
+    /// exclusive.
+    /// </summary>
+    public int End => Start + Length;
+
+    /// <summary>
+    /// Creates a span covering the range from the start of <paramref name="first"/> to
+    /// the end of <paramref name="last"/>.
     /// </summary>
     public static TextSpan Combine(TextSpan first, TextSpan last)
     {
@@ -33,8 +43,16 @@ public readonly record struct TextSpan(int Start, int Length)
 /// Abstract base record for all nodes in the Numera abstract syntax tree.
 /// </summary>
 /// <param name="Span">The source text span represented by the expression node.</param>
+[DebuggerDisplay("{DebuggerDisplay,nq}")]
 public abstract record ExpressionNode(TextSpan Span = default)
 {
+#if DEBUG
+    internal virtual string DebuggerDisplay =>
+        $"{ToDisplayString()}  [{Span.Start}..{Span.End})";
+
+    internal abstract string ToDisplayString(int maxDepth = 3);
+#endif
+
     /// <summary>
     /// Compares two AST nodes for structural equality, ignoring source span metadata.
     /// Uses EqualityContract to ensure type identity without incorporating Span.
@@ -84,6 +102,10 @@ public abstract record ExpressionNode(TextSpan Span = default)
 /// <param name="Span">The source text span represented by the expression node.</param>
 public sealed record NumberNode(MathValue Value, TextSpan Span = default) : ExpressionNode(Span)
 {
+#if DEBUG
+    internal override string ToDisplayString(int maxDepth = 3) => Value.ToString();
+#endif
+
     /// <inheritdoc />
     private protected override T AcceptCore<T>(IExpressionVisitor<T> visitor) => visitor.Visit(this);
 
@@ -106,6 +128,11 @@ public sealed record NumberNode(MathValue Value, TextSpan Span = default) : Expr
 /// <param name="Span">The source text span represented by the expression node.</param>
 public sealed record IdentifierNode(string Name, ConstantKind? Constant = null, TextSpan Span = default) : ExpressionNode(Span)
 {
+#if DEBUG
+    internal override string ToDisplayString(int maxDepth = 3) =>
+        Constant is { } kind ? $"{Name} (={kind})" : Name;
+#endif
+
     /// <inheritdoc />
     private protected override T AcceptCore<T>(IExpressionVisitor<T> visitor) => visitor.Visit(this);
 
@@ -136,6 +163,29 @@ public sealed record IdentifierNode(string Name, ConstantKind? Constant = null, 
 /// <param name="Span">The source text span represented by the expression node.</param>
 public sealed record UnaryNode(UnaryOperator Op, ExpressionNode Operand, TextSpan Span = default) : ExpressionNode(Span)
 {
+#if DEBUG
+    internal override string ToDisplayString(int maxDepth = 3)
+    {
+        string opStr = Op switch
+        {
+            UnaryOperator.Negate => "-",
+            UnaryOperator.Positive => "+",
+            UnaryOperator.LogicalNot => "!",
+            UnaryOperator.BitwiseNot => "~",
+            UnaryOperator.Factorial => "!",
+            UnaryOperator.Percent => "%",
+            _ => Op.ToString()
+        };
+
+        if (maxDepth <= 0) return $"{opStr}...";
+
+        string inner = Operand?.ToDisplayString(maxDepth - 1) ?? "null";
+        return Op is UnaryOperator.Factorial or UnaryOperator.Percent ?
+            $"{inner}{opStr}" :
+            $"{opStr}{inner}";
+    }
+#endif
+
     /// <inheritdoc />
     public override int Height => 1 + Operand.Height;
 
@@ -167,6 +217,43 @@ public sealed record BinaryNode(
     TextSpan Span = default,
     bool IsImplicit = false) : ExpressionNode(Span)
 {
+#if DEBUG
+    internal override string DebuggerDisplay =>
+        $"{ToDisplayString()}  [{Span.Start}..{Span.End}){(IsImplicit ? " (implicit)" : "")}";
+
+    internal override string ToDisplayString(int maxDepth = 3)
+    {
+        string opStr = Op switch
+        {
+            BinaryOperator.Add => "+",
+            BinaryOperator.Subtract => "-",
+            BinaryOperator.Multiply => IsImplicit ? "" : "*",
+            BinaryOperator.Divide => "/",
+            BinaryOperator.Modulo => "%",
+            BinaryOperator.Power => "^",
+            BinaryOperator.ShiftLeft => "<<",
+            BinaryOperator.ShiftRight => ">>",
+            BinaryOperator.LogicalAnd => "&&",
+            BinaryOperator.LogicalOr => "||",
+            BinaryOperator.LogicalXor => "xor",
+            BinaryOperator.Of => "of",
+            _ => Op.ToString()
+        };
+
+        if (maxDepth <= 0) return $"... {opStr} ...";
+
+        string l = Left is BinaryNode or ComparisonChainNode ?
+            $"({Left.ToDisplayString(maxDepth - 1)})"
+            : Left?.ToDisplayString(maxDepth - 1) ?? "null";
+
+        string r = Right is BinaryNode or ComparisonChainNode ?
+            $"({Right.ToDisplayString(maxDepth - 1)})" :
+            Right?.ToDisplayString(maxDepth - 1) ?? "null";
+
+        return IsImplicit ? $"{l} {r}" : $"{l} {opStr} {r}";
+    }
+#endif
+
     /// <inheritdoc />
     public override int Height
     {
@@ -262,6 +349,36 @@ public sealed record BinaryNode(
 /// </summary>
 public sealed record ComparisonChainNode : ExpressionNode
 {
+#if DEBUG
+    internal override string ToDisplayString(int maxDepth = 3)
+    {
+        if (maxDepth < 0) return "... <=> ...";
+        var sb = new StringBuilder();
+        for (int i = 0; i < Operands.Count; i++)
+        {
+            if (i > 0)
+            {
+                string op = Operators[i - 1] switch
+                {
+                    ComparisonOperator.Equal => " == ",
+                    ComparisonOperator.NotEqual => " != ",
+                    ComparisonOperator.LessThan => " < ",
+                    ComparisonOperator.LessThanOrEqual => " <= ",
+                    ComparisonOperator.GreaterThan => " > ",
+                    ComparisonOperator.GreaterThanOrEqual => " >= ",
+                    _ => $" {Operators[i - 1]} "
+                };
+
+                sb.Append(op);
+            }
+
+            sb.Append(Operands[i]?.ToDisplayString(maxDepth - 1) ?? "null");
+        }
+
+        return sb.ToString();
+    }
+#endif
+
     /// <summary>
     /// Gets the ordered list of operands being compared (must have at least 2 operands).
     /// </summary>
@@ -355,6 +472,15 @@ public sealed record ComparisonChainNode : ExpressionNode
 /// </summary>
 public sealed record FunctionCallNode : ExpressionNode
 {
+#if DEBUG
+    internal override string ToDisplayString(int maxDepth = 3)
+    {
+        if (maxDepth <= 0) return $"{FunctionName}(...)";
+        string args = string.Join(", ", Arguments.Select(a => a?.ToDisplayString(maxDepth - 1) ?? "null"));
+        return $"{FunctionName}({args})";
+    }
+#endif
+
     /// <summary>
     /// Gets the name of the function.
     /// </summary>
@@ -468,6 +594,11 @@ public sealed record FunctionCallNode : ExpressionNode
 /// </remarks>
 public sealed record AssignmentNode : ExpressionNode
 {
+#if DEBUG
+    internal override string ToDisplayString(int maxDepth = 3) =>
+        $"{VariableName} = {(Definition ?? Value?.ToDisplayString(maxDepth - 1) ?? "null")}";
+#endif
+
     /// <summary>
     /// Gets the identifier name of the variable being assigned (e.g. <c>"bill"</c>).
     /// </summary>
