@@ -387,7 +387,7 @@ public class NumericTests
     {
         // When constructed directly with an input requiring more than MaxIntegerBits bits,
         // AstParser throws CalculationLimitException before or immediately after BigInteger parsing.
-        string hugeDecimal = new string('9', 6000);
+        string hugeDecimal = new('9', 6000);
         var options = new CalculatorOptions
         {
             MaxInputLength = 100000
@@ -410,7 +410,7 @@ public class NumericTests
         // that fits; 1e4933 needs ~16387 bits and must be rejected.
         var boundaryVal = Calculator.Evaluate("1e4932");
         Assert.AreEqual(MathValue.DataType.Integer, boundaryVal.Type);
-        Assert.IsTrue(boundaryVal.IntVal.GetBitLength() <= CalculationLimits.MaxIntegerBits);
+        Assert.IsLessThanOrEqualTo(CalculationLimits.MaxIntegerBits, boundaryVal.IntVal.GetBitLength());
 
         // 1e4933 exceeds MaxIntegerBits, so TryPromoteScientificToBigInteger rejects it and falls back to NumericOverflow:
         var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("1e4933"));
@@ -2190,5 +2190,249 @@ public class NumericTests
         var ceilNegInf = Calculator.Evaluate("ceil(-exp(1000))");
         Assert.AreEqual(MathValue.DataType.Double, ceilNegInf.Type);
         Assert.IsTrue(double.IsNegativeInfinity(ceilNegInf.DblVal));
+    }
+
+    [TestMethod]
+    public void BigIntegerAndDouble_PrecisionBoundary_NeverLossy()
+    {
+        // 2^54 = 18014398509481984 is the first integer that cannot be exactly
+        // represented as a double. Previously, casting 2^54 + 1 to double rounded down,
+        // causing false equality.
+        var baseVal = BigInteger.One << 54;
+        double dbl = Math.Pow(2, 54);
+
+        var exactBase = new MathValue(baseVal);
+        var exactPlus = new MathValue(baseVal + 1);
+        var exactMinus = new MathValue(baseVal - 1);
+        var dblVal = new MathValue(dbl);
+
+        // Exact equality for 2^54.
+        Assert.AreEqual(0, MathValue.Compare(exactBase, dblVal));
+        Assert.AreEqual(0, MathValue.Compare(dblVal, exactBase));
+        Assert.AreEqual(1, MathValue.AreEqual(exactBase, dblVal).DecVal);
+
+        // (2^54 + 1) must be strictly greater than double 2^54.0.
+        Assert.IsGreaterThan(0, MathValue.Compare(exactPlus, dblVal));
+        Assert.IsLessThan(0, MathValue.Compare(dblVal, exactPlus));
+        Assert.AreEqual(0m, MathValue.AreEqual(exactPlus, dblVal).DecVal);
+        Assert.AreEqual(1m, MathValue.GreaterThan(exactPlus, dblVal).DecVal);
+
+        // (2^54 - 1) must be strictly less than double 2^54.0.
+        Assert.IsLessThan(0, MathValue.Compare(exactMinus, dblVal));
+        Assert.IsGreaterThan(0, MathValue.Compare(dblVal, exactMinus));
+        Assert.AreEqual(0m, MathValue.AreEqual(exactMinus, dblVal).DecVal);
+        Assert.AreEqual(1m, MathValue.LessThan(exactMinus, dblVal).DecVal);
+
+        // Negative counterpart: -(2^54 + 1) must be less than -(2^54.0).
+        var negExactPlus = new MathValue(-(baseVal + 1));
+        var negDblVal = new MathValue(-dbl);
+        Assert.IsLessThan(0, MathValue.Compare(negExactPlus, negDblVal));
+        Assert.IsGreaterThan(0, MathValue.Compare(negDblVal, negExactPlus));
+        Assert.AreEqual(1m, MathValue.LessThan(negExactPlus, negDblVal).DecVal);
+    }
+
+
+    [TestMethod]
+    [DataRow(3, 3.1, -1)]
+    [DataRow(4, 3.1, 1)]
+    [DataRow(3, 2.9, 1)]
+    [DataRow(2, 2.9, -1)]
+    [DataRow(-3, -3.1, 1)]
+    [DataRow(-4, -3.1, -1)]
+    [DataRow(-3, -2.9, -1)]
+    [DataRow(-2, -2.9, 1)]
+    [DataRow(0, 0.5, -1)]
+    [DataRow(0, -0.5, 1)]
+    [DataRow(1, 0.9999999999999999, 1)]
+    [DataRow(0, 0.0000000000000001, -1)]
+    public void BigIntegerAndFractionalDouble_AlwaysUnequal_OrderedCorrectly(int intVal, double dblVal, int expectedSign)
+    {
+        var integer = new MathValue(new BigInteger(intVal));
+        var dbl = new MathValue(dblVal);
+
+        int cmpForward = MathValue.Compare(integer, dbl);
+        int cmpReverse = MathValue.Compare(dbl, integer);
+
+        Assert.AreEqual(expectedSign, cmpForward);
+        Assert.AreEqual(-expectedSign, cmpReverse);
+
+        // Exact equality should never hold between integer and fractional double.
+        Assert.AreEqual(0m, MathValue.AreEqual(integer, dbl).DecVal);
+        Assert.AreEqual(1m, MathValue.AreNotEqual(integer, dbl).DecVal);
+    }
+
+    [TestMethod]
+    public void BigInteger_ExceedingDoubleExponent_OrdersTrivially()
+    {
+        // 2^1025 has 1026 bits, exceeding double.MaxValue bits (1024). It should always
+        // be greater than any finite double.
+        var hugePos = new MathValue(BigInteger.One << 1025);
+        var hugeNeg = new MathValue(-(BigInteger.One << 1025));
+
+        var maxDbl = new MathValue(double.MaxValue);
+        var minDbl = new MathValue(double.MinValue);
+
+        Assert.IsGreaterThan(0, MathValue.Compare(hugePos, maxDbl));
+        Assert.IsGreaterThan(0, MathValue.Compare(hugePos, minDbl));
+        Assert.IsLessThan(0, MathValue.Compare(hugeNeg, maxDbl));
+        Assert.IsLessThan(0, MathValue.Compare(hugeNeg, minDbl));
+    }
+
+    [TestMethod]
+    public void DecimalAndDouble_WholeNumbers_CompareExactly()
+    {
+        var decZero = new MathValue(0m);
+        var dblPosZero = new MathValue(0.0);
+        var dblNegZero = new MathValue(-0.0);
+
+        Assert.AreEqual(0, MathValue.Compare(decZero, dblPosZero));
+        Assert.AreEqual(0, MathValue.Compare(decZero, dblNegZero));
+        Assert.AreEqual(1m, MathValue.AreEqual(decZero, dblPosZero).DecVal);
+
+        // Exact large decimal integer vs whole double.
+        decimal largeDec = 1_000_000_000_000_000_000m; // 10^18
+        double largeDbl = 1e18; // 10^18
+
+        var a = new MathValue(largeDec);
+        var b = new MathValue(largeDbl);
+        var aPlus = new MathValue(largeDec + 1m);
+
+        Assert.AreEqual(0, MathValue.Compare(a, b));
+        Assert.AreEqual(1m, MathValue.AreEqual(a, b).DecVal);
+
+        Assert.IsGreaterThan(0, MathValue.Compare(aPlus, b));
+        Assert.AreEqual(0m, MathValue.AreEqual(aPlus, b).DecVal);
+    }
+
+    [TestMethod]
+    public void DecimalAndDouble_BeyondDecimalRange_OrdersCorrectly()
+    {
+        // 1e35 is well beyond decimal.MaxValue (~7.92e28).
+        var decVal = new MathValue(100m);
+        var hugePosDbl = new MathValue(1e35);
+        var hugeNegDbl = new MathValue(-1e35);
+
+        Assert.IsLessThan(0, MathValue.Compare(decVal, hugePosDbl));
+        Assert.IsGreaterThan(0, MathValue.Compare(decVal, hugeNegDbl));
+
+        Assert.IsGreaterThan(0, MathValue.Compare(hugePosDbl, decVal));
+        Assert.IsLessThan(0, MathValue.Compare(hugeNegDbl, decVal));
+
+        // Test boundary near decimal.MaxValue.
+        var maxDec = new MathValue(decimal.MaxValue);
+        Assert.IsLessThan(0, MathValue.Compare(maxDec, hugePosDbl));
+        Assert.IsGreaterThan(0, MathValue.Compare(maxDec, hugeNegDbl));
+    }
+
+    [TestMethod]
+    public void DecimalAndDouble_ExactDyadicFractions_CompareExactly()
+    {
+        // Negative powers of 2 have finite, exact expansions in both base-2 and base-10.
+        // Cross-multiplication must evaluate them as strictly equal.
+        (decimal Dec, double Dbl)[] exactPairs =
+        [
+            (0.5m, 0.5),
+            (0.25m, 0.25),
+            (0.125m, 0.125),
+            (0.0625m, 0.0625),
+            (0.03125m, 0.03125),
+            (-0.5m, -0.5),
+            (-0.125m, -0.125)
+        ];
+
+        foreach (var (dec, dbl) in exactPairs)
+        {
+            var decVal = new MathValue(dec);
+            var dblVal = new MathValue(dbl);
+
+            Assert.AreEqual(0, MathValue.Compare(decVal, dblVal), $"Failed equality for {dec} vs {dbl}.");
+            Assert.AreEqual(0, MathValue.Compare(dblVal, decVal), $"Failed symmetric equality for {dbl} vs {dec}.");
+            Assert.AreEqual(1m, MathValue.AreEqual(decVal, dblVal).DecVal);
+        }
+    }
+
+    [TestMethod]
+    public void DecimalAndDouble_BinaryDriftDistinction_ResolvesExactDifference()
+    {
+        // 0.1 in IEEE 754 double is 0.10000000000000000555111512312578...
+        // 0.1m in decimal is exactly 1/10.
+        // Therefore, exact decimal 0.1m is strictly LESS than double 0.1.
+        var decTenth = new MathValue(0.1m);
+        var dblTenth = new MathValue(0.1);
+
+        Assert.IsLessThan(0, MathValue.Compare(decTenth, dblTenth));
+        Assert.IsGreaterThan(0, MathValue.Compare(dblTenth, decTenth));
+        Assert.AreEqual(0m, MathValue.AreEqual(decTenth, dblTenth).DecVal);
+
+        // 0.3 in IEEE 754 double is 0.299999999999999988897769753748...
+        // 0.3m in decimal is exactly 3/10.
+        // Therefore, exact decimal 0.3m is strictly GREATER than double 0.3.
+        var decThreeTenths = new MathValue(0.3m);
+        var dblThreeTenths = new MathValue(0.3);
+
+        Assert.IsGreaterThan(0, MathValue.Compare(decThreeTenths, dblThreeTenths));
+        Assert.IsLessThan(0, MathValue.Compare(dblThreeTenths, decThreeTenths));
+        Assert.AreEqual(0m, MathValue.AreEqual(decThreeTenths, dblThreeTenths).DecVal);
+    }
+
+    [TestMethod]
+    public void DecimalAndSubnormalDouble_ComparesExactly()
+    {
+        // Smallest positive non-zero subnormal double (~4.94e-324).
+        double subnormal = BitConverter.Int64BitsToDouble(1L);
+
+        var dblSub = new MathValue(subnormal);
+        var decZero = new MathValue(0m);
+        var smallDec = new MathValue(0.0000000000000000000000000001m); // 10^-28
+
+        // 0m < subnormal.
+        Assert.IsLessThan(0, MathValue.Compare(decZero, dblSub));
+        Assert.IsGreaterThan(0, MathValue.Compare(dblSub, decZero));
+
+        // 10^-28 > subnormal (~5e-324).
+        Assert.IsGreaterThan(0, MathValue.Compare(smallDec, dblSub));
+        Assert.IsLessThan(0, MathValue.Compare(dblSub, smallDec));
+    }
+
+    [TestMethod]
+    public void RelationalOperators_WithNaN_ObeyIeee754()
+    {
+        var nan = new MathValue(double.NaN);
+        var one = new MathValue(1m);
+        var intVal = new MathValue(new BigInteger(42));
+
+        // Every comparison with NaN is false, except for inequality (!=).
+        Assert.AreEqual(0m, MathValue.AreEqual(nan, nan).DecVal);
+        Assert.AreEqual(0m, MathValue.AreEqual(nan, one).DecVal);
+        Assert.AreEqual(0m, MathValue.AreEqual(one, nan).DecVal);
+        Assert.AreEqual(0m, MathValue.AreEqual(nan, intVal).DecVal);
+
+        Assert.AreEqual(1m, MathValue.AreNotEqual(nan, nan).DecVal);
+        Assert.AreEqual(1m, MathValue.AreNotEqual(nan, one).DecVal);
+        Assert.AreEqual(1m, MathValue.AreNotEqual(one, nan).DecVal);
+
+        Assert.AreEqual(0m, MathValue.LessThan(nan, one).DecVal);
+        Assert.AreEqual(0m, MathValue.LessThan(one, nan).DecVal);
+        Assert.AreEqual(0m, MathValue.LessThanOrEqual(nan, one).DecVal);
+        Assert.AreEqual(0m, MathValue.GreaterThan(nan, one).DecVal);
+        Assert.AreEqual(0m, MathValue.GreaterThanOrEqual(nan, one).DecVal);
+    }
+
+    [TestMethod]
+    public void EvaluatorEngine_CrossTypeComparisons_EndToEnd()
+    {
+        // AST comparison chain verifying the 2^54 boundary.
+        Assert.AreEqual(1m, Calculator.Evaluate("(2^54 + 1) > 2^54.0").DecVal);
+        Assert.AreEqual(0m, Calculator.Evaluate("(2^54 + 1) == 2^54.0").DecVal);
+        Assert.AreEqual(1m, Calculator.Evaluate("(2^54 + 1) != 2^54.0").DecVal);
+
+        // Cardinal trig vs exact decimal.
+        // In degrees mode, cos(60) is 0.5 (double) and matches decimal 0.5 exactly.
+        Assert.AreEqual(1m, TestEngines.DegreesEngine.Evaluate("cos(60) == 0.5").DecVal);
+        Assert.AreEqual(1m, TestEngines.DegreesEngine.Evaluate("sin(90) == 1").DecVal);
+
+        // Huge integer vs large scientific double.
+        Assert.AreEqual(1m, Calculator.Evaluate("10^35 < 1e36").DecVal);
+        Assert.AreEqual(0m, Calculator.Evaluate("10^35 == 1e36").DecVal);
     }
 }

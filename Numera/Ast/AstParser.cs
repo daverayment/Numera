@@ -170,6 +170,15 @@ internal sealed class AstParser
                 pos,
                 name.Length));
         }
+
+        if (_options.CustomFunctions.TryGet(name, out _))
+        {
+            throw new ExpressionException(Diagnostic(
+                EvaluationError.InvalidSyntax,
+                $"Cannot assign to function name '{name}'.",
+                pos,
+                name.Length));
+        }
     }
 
     // Operator precedence (lowest to highest):
@@ -464,7 +473,7 @@ internal sealed class AstParser
     private ExpressionNode ParseImplicitProduct()
     {
         var left = ParseUnary();
-        while (StartsImplicitOperand())
+        while (StartsImplicitOperand(left))
         {
             var right = ParseUnary();
             left = new BinaryNode(BinaryOperator.Multiply, left, right, Combine(left, right), IsImplicit: true);
@@ -537,14 +546,37 @@ internal sealed class AstParser
         return length;
     }
 
-    private bool StartsImplicitOperand()
+    private bool StartsImplicitOperand(ExpressionNode left)
     {
         if (!_options.AllowImplicitMultiplication) return false;
         SkipWhitespace();
         char c = Peek();
         if (c == '(') return true;
 
-        // Deliberately not digits or '.': "1 000" would otherwise silently become 1 * 0.
+        // Find the rightmost term of the preceding expression, but stop unwrapping if
+        // the node itself is a parenthesized group (e.g. do not unwrap inside (3 + 4).
+        ExpressionNode rightmost = left;
+        while (_groupExtents is null || !_groupExtents.ContainsKey(rightmost))
+        {
+            if (rightmost is BinaryNode binary)
+            {
+                rightmost = binary.Right;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        // Allow adjacent numeric literals after function calls or parenthesized
+        // expressions, e.g. "triple(3)4", "(2)3", or "(1+2)(3+4)2", but never after bare
+        // numbers ("1 000", "2 3").
+        if ((char.IsAsciiDigit(c) || c == '.') &&
+            (rightmost is FunctionCallNode || (_groupExtents is not null && _groupExtents.ContainsKey(rightmost))))
+        {
+            return true;
+        }
+
         // Reject boolean literals and keywords from starting an implicit product, e.g.
         // allow "2x" but not "2true" or "2and(3,4)".
         int len = GetIdentifierLengthAt(_pos);
@@ -714,7 +746,7 @@ internal sealed class AstParser
         string identifier = identifierSpan.ToString();
         SkipWhitespace();
 
-        if (Peek() == '(' && FunctionArity.TryGet(identifier, out var signature))
+        if (Peek() == '(' && FunctionArity.TryGet(identifier, _options.CustomFunctions, out var signature))
         {
             var args = ParseArgumentList();
 
@@ -744,7 +776,7 @@ internal sealed class AstParser
             return new IdentifierNode(identifier, constantKind, Span(identifierStart, identifier.Length));
         }
 
-        if (Peek() != '(' && FunctionArity.TryGet(identifier, out _))
+        if (Peek() != '(' && FunctionArity.TryGet(identifier, _options.CustomFunctions, out _))
         {
             throw new ExpressionException(Diagnostic(
                 EvaluationError.InvalidSyntax, $"Function '{identifier}' requires parentheses.", identifierStart, identifier.Length));

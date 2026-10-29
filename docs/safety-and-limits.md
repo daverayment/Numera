@@ -1,8 +1,6 @@
 # Safety Limits & Error Diagnostics
 
-When evaluating untrusted or dynamic expressions, applications must be protected against denial-of-service (DoS) vectors such as deeply nested expressions, massive integer memory allocations, and expensive algorithms.
-
-Numera enforces strict, configurable limits and provides rich structured diagnostics on failure.
+If you evaluate expressions typed by someone else, you need to expect the awkward ones: deeply nested brackets, enormous integers, and calculations that would run for hours. Numera guards against these with strict, configurable limits, and reports every failure as a structured diagnostic rather than a crash.
 
 ---
 
@@ -20,20 +18,21 @@ Numera defines hard safety bounds via `CalculationLimits`:
 | **Primality Testing** | `MaxPrimalityBits` | `2,048` bits | Limits Miller-Rabin primality testing to prevent CPU exhaustion on huge primes |
 | **Factorization Bound** | `MaxFactorizationBits` | `128` bits | Prevents denial of service on arbitrary-precision prime factorization |
 
-### Customizing Limits per Evaluation
-Callers can configure stricter ceilings via `EvaluationOptions`:
+### Customizing Limits
+Limits are long-lived configuration, so set them on a `CalculatorOptions` and create a `CalculatorEngine` once. The engine validates the options at construction and can be reused across calls and threads. The static `Calculator` facade always uses the defaults.
 
 ```csharp
-var options = new EvaluationOptions
+var engine = new CalculatorEngine(new CalculatorOptions
 {
 	MaxInputLength = 512,  // Stricter than default 4096
 	MaxNestingDepth = 32   // Stricter than default 128
-};
+});
 
-var result = Calculator.Evaluate("1 + 2", options);
+var result = engine.Evaluate("1 + 2");
 ```
 
-*(Note: Custom limits cannot exceed the hard ceilings defined in `CalculationLimits`.)*
+> [!NOTE]
+> Custom limits cannot exceed the hard ceilings defined in `CalculationLimits`. Out-of-range values throw `ArgumentOutOfRangeException` when the engine is created.
 
 ---
 
@@ -42,6 +41,10 @@ var result = Calculator.Evaluate("1 + 2", options);
 Numera offers two equivalent error handling styles:
 
 ### Pattern A: Structured Try Pattern (Recommended)
+
+> [!TIP]
+> Prefer this pattern for user-typed input. Bad input is normal there, so it shouldn't cost you an exception.
+
 `Calculator.TryEvaluate` returns `false` with an `EvaluationDiagnostic` record without throwing exceptions:
 
 ```csharp
@@ -72,7 +75,8 @@ catch (NumeraException ex)
 }
 ```
 
-*(Programmer misuse, such as passing `null` or invalid arguments to library methods, throws standard .NET exceptions such as `ArgumentNullException`.)*
+> [!NOTE]
+> Programmer misuse, such as passing `null` or invalid arguments to library methods, throws standard .NET exceptions such as `ArgumentNullException`, not `NumeraException`.
 
 ---
 
@@ -90,3 +94,5 @@ When evaluation fails, `EvaluationDiagnostic.Code` reports a stable, strongly ty
 - `IntegerRequired`: An operation requires integer operands, but received a non-integer or fractional value (e.g. bit shifts, combinatorics).
 - `ArgumentOutOfRange`: An argument value is outside the permitted numerical range for the operation (e.g. negative base with fractional power).
 - `UndefinedMathResult`: A mathematical function has no defined real-valued result for the given argument (e.g. `sqrt(-1)`).
+- `AmbiguousLogicalNegation`: A logical negation was applied directly to a comparison without explicit parentheses while `RequireExplicitLogicalNegation` is enabled.
+- `InvalidNumberFormat`: Reserved for human-formatted numbers that normalization rejects as ambiguous. Normalization does not currently reject any input, so this is not produced today; malformed numbers surface as positioned `InvalidSyntax` parse diagnostics.

@@ -1,8 +1,8 @@
 namespace Numera.Tests;
 
 /// <summary>
-/// Unit tests for <see cref="VariableCollection"/>, verifying ordering, MRU update semantics,
-/// immutability, indexers, and case-insensitivity.
+/// Unit tests for <see cref="VariableCollection"/>, verifying ordering, MRU update
+/// semantics, immutability, indexers, and case-insensitivity.
 /// </summary>
 [TestClass]
 public sealed class VariableCollectionTests
@@ -13,8 +13,8 @@ public sealed class VariableCollectionTests
         var empty = VariableCollection.Empty;
 
         Assert.AreEqual(0, empty.Count);
-        Assert.IsFalse(empty.Keys.Any());
-        Assert.IsFalse(empty.Values.Any());
+        Assert.IsEmpty(empty.Keys);
+        Assert.IsEmpty(empty.Values);
         Assert.IsFalse(empty.ContainsKey("x"));
         Assert.IsFalse(empty.TryGetValue("x", out _));
         Assert.Throws<KeyNotFoundException>(() => _ = empty["x"]);
@@ -30,14 +30,14 @@ public sealed class VariableCollectionTests
             .Add("c", new MathValue(3m));
 
         Assert.AreEqual(3, vars.Count);
-        CollectionAssert.AreEqual(new[] { "a", "b", "c" }, vars.Keys.ToArray());
-        CollectionAssert.AreEqual(new[] { 1m, 2m, 3m }, vars.Values.Select(v => v.DecVal).ToArray());
+        Assert.AreSequenceEqual(["a", "b", "c"], vars.Keys.ToArray());
+        Assert.AreSequenceEqual([1m, 2m, 3m], vars.Values.Select(v => v.DecVal).ToArray());
 
-        Assert.AreEqual("a", vars[0].Key);
+        Assert.AreEqual("a", vars[0].Name);
         Assert.AreEqual(1m, vars[0].Value.DecVal);
-        Assert.AreEqual("b", vars[1].Key);
+        Assert.AreEqual("b", vars[1].Name);
         Assert.AreEqual(2m, vars[1].Value.DecVal);
-        Assert.AreEqual("c", vars[2].Key);
+        Assert.AreEqual("c", vars[2].Name);
         Assert.AreEqual(3m, vars[2].Value.DecVal);
     }
 
@@ -49,18 +49,19 @@ public sealed class VariableCollectionTests
             .Add("b", new MathValue(2m))
             .Add("c", new MathValue(3m));
 
-        // Re-adding "a" (case-insensitively) should update its value and move it to the end (MRU order).
+        // Re-adding "a" (case-insensitively) should update its value and move it to the
+        // end (MRU order).
         var updated = vars.Add("A", new MathValue(10m));
 
         Assert.AreEqual(3, updated.Count);
-        CollectionAssert.AreEqual(new[] { "b", "c", "A" }, updated.Keys.ToArray());
-        CollectionAssert.AreEqual(new[] { 2m, 3m, 10m }, updated.Values.Select(v => v.DecVal).ToArray());
+        Assert.AreSequenceEqual(["b", "c", "A"], updated.Keys.ToArray());
+        Assert.AreSequenceEqual([2m, 3m, 10m], updated.Values.Select(v => v.DecVal).ToArray());
         Assert.AreEqual(10m, updated["a"].DecVal);
         Assert.AreEqual(10m, updated["A"].DecVal);
 
         // Original remains unchanged.
         Assert.AreEqual(1m, vars["a"].DecVal);
-        CollectionAssert.AreEqual(new[] { "a", "b", "c" }, vars.Keys.ToArray());
+        Assert.AreSequenceEqual(["a", "b", "c"], vars.Keys.ToArray());
     }
 
     [TestMethod]
@@ -71,39 +72,45 @@ public sealed class VariableCollectionTests
             .Add("y", new MathValue(20m))
             .Add("z", new MathValue(30m));
 
-        var updates = new[]
+        var updates = new Variable[]
         {
-            new KeyValuePair<string, MathValue>("X", new MathValue(100m)),
-            new KeyValuePair<string, MathValue>("w", new MathValue(40m)),
+            new("X", new MathValue(100m), "2 * 50"),
+            new("w", new MathValue(40m)),
         };
 
         var next = initial.SetItems(updates);
 
         Assert.AreEqual(4, next.Count);
         // "x" was updated, so it moves to after "z"; then "w" is added.
-        CollectionAssert.AreEqual(new[] { "y", "z", "X", "w" }, next.Keys.ToArray());
+        Assert.AreSequenceEqual(["y", "z", "X", "w"], next.Keys.ToArray());
         Assert.AreEqual(100m, next["x"].DecVal);
         Assert.AreEqual(20m, next["y"].DecVal);
         Assert.AreEqual(30m, next["z"].DecVal);
         Assert.AreEqual(40m, next["w"].DecVal);
+
+        // Metadata preservation
+        Assert.IsTrue(next.TryGetVariable("x", out var xVar));
+        Assert.AreEqual("2 * 50", xVar.Definition);
     }
 
     [TestMethod]
     public void Constructor_WithDuplicates_RetainsLastOccurrenceInChronologicalOrder()
     {
-        var pairs = new[]
+        var vars = new Variable[]
         {
-            new KeyValuePair<string, MathValue>("alpha", new MathValue(1m)),
-            new KeyValuePair<string, MathValue>("beta", new MathValue(2m)),
-            new KeyValuePair<string, MathValue>("ALPHA", new MathValue(10m)),
+            new("alpha", new MathValue(1m), "init alpha"),
+            new("beta", new MathValue(2m)),
+            new("ALPHA", new MathValue(10m), "updated alpha"),
         };
 
-        var collection = new VariableCollection(pairs);
+        var collection = new VariableCollection(vars);
 
         Assert.AreEqual(2, collection.Count);
-        CollectionAssert.AreEqual(new[] { "beta", "ALPHA" }, collection.Keys.ToArray());
+        Assert.AreSequenceEqual(["beta", "ALPHA"], collection.Keys.ToArray());
         Assert.AreEqual(10m, collection["alpha"].DecVal);
         Assert.AreEqual(2m, collection["beta"].DecVal);
+        Assert.IsTrue(collection.TryGetVariable("alpha", out var alphaVar));
+        Assert.AreEqual("updated alpha", alphaVar.Definition);
     }
 
     [TestMethod]
@@ -114,5 +121,31 @@ public sealed class VariableCollectionTests
         Assert.Throws<IndexOutOfRangeException>(() => _ = vars[-1]);
         Assert.Throws<IndexOutOfRangeException>(() => _ = vars[1]);
         Assert.Throws<KeyNotFoundException>(() => _ = vars["nonexistent"]);
+    }
+
+    [TestMethod]
+    public void Enumeration_YieldsFullVariableInstancesPreservingMetadata()
+    {
+        var vars = new VariableCollection(
+        [
+            new Variable("a", new MathValue(1m), "definition a"),
+            new Variable("b", new MathValue(2m), "definition b")
+        ]);
+
+        var list = vars.ToList();
+        Assert.HasCount(2, list);
+        Assert.AreEqual("a", list[0].Name);
+        Assert.AreEqual(1m, list[0].Value.DecVal);
+        Assert.AreEqual("definition a", list[0].Definition);
+
+        Assert.AreEqual("b", list[1].Name);
+        Assert.AreEqual(2m, list[1].Value.DecVal);
+        Assert.AreEqual("definition b", list[1].Definition);
+
+        // Deconstruction test.
+        var (name, val, def) = vars[0];
+        Assert.AreEqual("a", name);
+        Assert.AreEqual(1m, val.DecVal);
+        Assert.AreEqual("definition a", def);
     }
 }

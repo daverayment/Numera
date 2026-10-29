@@ -12,9 +12,9 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 {
 	private readonly CalculatorOptions _options;
 	private readonly EvaluationContext _context;
-    private List<KeyValuePair<string, MathValue>>? _assignments;
+    private List<Variable>? _assignments;
 
-    public IReadOnlyList<KeyValuePair<string, MathValue>>? Assignments => _assignments;
+    public IReadOnlyList<Variable>? Assignments => _assignments;
 
     public AstEvaluator(CalculatorOptions options, EvaluationContext? context = null)
 	{
@@ -38,7 +38,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         {
             for (int i = _assignments.Count - 1; i >= 0; i--)
             {
-                if (string.Equals(_assignments[i].Key, node.Name, Identifier.Comparison))
+                if (_assignments[i].Name.Equals(node.Name, Identifier.Comparison))
                 {
                     return _assignments[i].Value;
                 }
@@ -182,6 +182,29 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 			args.Add(arg.Accept(this));
 		}
 
+		if (_options.CustomFunctions.TryGet(node.FunctionName, out var customFunction))
+		{
+			try
+			{
+				var result = customFunction.Implementation(args);
+				if (result.Type is MathValue.DataType.Integer &&
+					BigInteger.Abs(result.IntVal).GetBitLength() > CalculationLimits.MaxIntegerBits)
+				{
+					throw new CalculationLimitException();
+				}
+
+				return result;
+			}
+			catch (CalculationLimitException)
+			{
+				throw;
+			}
+			catch (Exception ex)
+			{
+				throw Enrich(ex, node.Span);
+			}
+		}
+
 		try
 		{
 			return EvaluateFunction(node.FunctionName, args);
@@ -207,7 +230,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         // Record the assignment in the list of assignments for later retrieval. Create
         // the list lazily.
         (_assignments ??= []).Add(
-            new KeyValuePair<string, MathValue>(node.VariableName, value));
+            new Variable(node.VariableName, value, node.Definition));
         return value;
     }
 
@@ -247,9 +270,11 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 		{
 			ExpressionException ee => ee.Diagnostic,
 			DivideByZeroException => new EvaluationDiagnostic(
-                EvaluationError.DivisionByZero, "Division by zero."),
+				EvaluationError.DivisionByZero, "Division by zero."),
+			OverflowException => new EvaluationDiagnostic(
+				EvaluationError.NumericOverflow, "Numeric overflow."),
 			_ => new EvaluationDiagnostic(
-                EvaluationError.NumericOverflow, "Numeric overflow."),
+				EvaluationError.EvaluationFailed, ex.Message),
 		};
 
 		if (diagnostic.Position is null && span.HasValue)

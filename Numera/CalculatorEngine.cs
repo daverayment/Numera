@@ -325,4 +325,14 @@ public sealed class CalculatorEngine
         var card = Calculator.FormatResult(result, Options.Culture);
         return card with { AssignedVariables = result.HasAssignments ? result.AssignedVariables : null };
     }
+
+    /// <summary>
+    /// Formats a calculation value using this engine's culture.
+    /// </summary>
+    /// <param name="value">Calculation value to format.</param>
+    /// <returns>A <see cref="FormattedCalculation"/> holding the original value, the
+    /// display text in this engine's culture, an invariant-culture string for machine
+    /// use, and prefixed hex, binary and octal forms.</returns>
+    public FormattedCalculation FormatResult(MathValue value) =>
+        Calculator.FormatResult(value, Options.Culture);
 }

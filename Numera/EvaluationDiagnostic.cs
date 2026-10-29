@@ -71,6 +71,11 @@ public enum EvaluationError
     /// input today, so this is not currently produced; it stays so callers can rely on a stable enum.
     /// </summary>
     InvalidNumberFormat,
+
+    /// <summary>
+    /// A custom function callback threw an unhandled exception or failed during evaluation.
+    /// </summary>
+    EvaluationFailed,
 }
 
 /// <summary>

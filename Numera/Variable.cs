@@ -59,6 +59,25 @@ public readonly record struct Variable
         new(pair.Name, pair.Value);
 
     /// <summary>
+    /// Deconstructs the variable into its name and value.
+    /// </summary>
+    public void Deconstruct(out string name, out MathValue value)
+    {
+        name = Name;
+        value = Value;
+    }
+
+    /// <summary>
+    /// Deconstructs the variable into its name, value, and definition expression.
+    /// </summary>
+    public void Deconstruct(out string name, out MathValue value, out string? definition)
+    {
+        name = Name;
+        value = Value;
+        definition = Definition;
+    }
+
+    /// <summary>
     /// Outputs the variable name and value, and the definition, if provided.
     /// </summary>
     public override string ToString() =>

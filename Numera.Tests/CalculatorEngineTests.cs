@@ -53,9 +53,9 @@ public class CalculatorEngineTests
         Parallel.For(0, 500, i =>
         {
             var context = new EvaluationContext(
-                variables: new Dictionary<string, MathValue>
+                variables: new Variable[]
                 {
-                    ["x"] = new MathValue((System.Numerics.BigInteger)i),
+                    new("x", new MathValue((System.Numerics.BigInteger)i)),
                 },
                 previousResult: null);
             if (engine.Evaluate("x + 0", context).IntVal != i ||

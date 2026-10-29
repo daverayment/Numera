@@ -30,7 +30,8 @@ namespace Numera;
 public sealed record EvaluationContext
 {
     /// <summary>
-    /// The string comparer used for variable names, forwarding to <see cref="Identifier.Comparer"/>.
+    /// The string comparer used for variable names, forwarding to
+    /// <see cref="Identifier.Comparer"/>.
     /// </summary>
     public static StringComparer NameComparer => Identifier.Comparer;
 
@@ -43,7 +44,7 @@ public sealed record EvaluationContext
     /// A shared context with no variables and no previous result; the same instance is
     /// returned every time, which is safe because contexts are immutable.
     /// </summary>
-    public static EvaluationContext Empty { get; } = new(null, null);
+    public static EvaluationContext Empty { get; } = new();
 
     /// <summary>
     /// The variables currently assigned to values. Lookups are case-insensitive. The
@@ -70,7 +71,7 @@ public sealed record EvaluationContext
     /// <param name="variables">The variables to include in the context.</param>
     /// <param name="previousResult">The previous result to include in the context.
     /// </param>
-    public EvaluationContext(VariableCollection? variables, MathValue? previousResult)
+    public EvaluationContext(VariableCollection? variables, MathValue? previousResult = null)
     {
         Variables = variables ?? VariableCollection.Empty;
         PreviousResult = previousResult;
@@ -86,7 +87,7 @@ public sealed record EvaluationContext
     /// <see langword="null"/>, no variables are provided.</param>
     /// <param name="previousResult">Result from a previous evaluation that can be reused
     /// by subsequent expressions.</param>
-    public EvaluationContext(IEnumerable<KeyValuePair<string, MathValue>>? variables,
+    public EvaluationContext(IEnumerable<Variable>? variables,
         MathValue? previousResult = null)
         : this(variables is null ? null : new VariableCollection(variables), previousResult)
     {
@@ -118,7 +119,7 @@ public sealed record EvaluationContext
     }
 
     internal EvaluationContext Advance(
-        IReadOnlyList<KeyValuePair<string, MathValue>>? assignments,
+        IReadOnlyList<Variable>? assignments,
         MathValue result)
     {
         // If there are no assignments, we can reuse the existing variables dictionary.
@@ -171,10 +172,10 @@ public sealed record EvaluationContext
             return true;
         }
 
-        foreach (var kvp in Variables!)
+        foreach (var variable in Variables!)
         {
-            if (!other.Variables!.TryGetValue(kvp.Key, out MathValue otherValue) ||
-                !EqualityComparer<MathValue>.Default.Equals(kvp.Value, otherValue))
+            if (!other.Variables!.TryGetValue(variable.Name, out MathValue otherValue) ||
+                !EqualityComparer<MathValue>.Default.Equals(variable.Value, otherValue))
             {
                 return false;
             }
@@ -194,9 +195,9 @@ public sealed record EvaluationContext
         int variablesHash = 0;
         if (Variables is not null)
         {
-            foreach (var kvp in Variables)
+            foreach (var variable in Variables)
             {
-                variablesHash += HashCode.Combine(NameComparer.GetHashCode(kvp.Key), kvp.Value);
+                variablesHash += HashCode.Combine(NameComparer.GetHashCode(variable.Name), variable.Value);
             }
         }
 

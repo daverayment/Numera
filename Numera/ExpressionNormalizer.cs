@@ -9,55 +9,52 @@ namespace Numera;
 /// standard, unambiguous Numera mathematical grammar.
 /// </summary>
 /// <remarks>
-/// Passes run in a fixed order: launcher equals, Unicode operators, division colons, then culture and
-/// number formatting. Colons inside square brackets are left alone, so they are never rewritten to
-/// division. Normalization changes character offsets, so positions in later parse diagnostics and AST
-/// spans refer to the normalized text, not the caller's original input.
+/// Passes run in a fixed order: launcher equals, Unicode operators, division colons, then
+/// culture and number formatting. Colons inside square brackets are left alone, so they
+/// are never rewritten to division. Normalization changes character offsets, so positions
+/// in later parse diagnostics and AST spans refer to the normalized text, not the
+/// caller's original input. A source map is returned to translate normalized offsets back
+/// to the original input.
 /// </remarks>
 public static class ExpressionNormalizer
 {
     /// <summary>
     /// Normalizes the specified input string according to the provided options.
-    /// Throws <see cref="ExpressionException"/> if unresolvable ambiguities are encountered.
+    /// Throws <see cref="ExpressionException"/> if unresolvable ambiguities are
+    /// encountered.
     /// </summary>
     /// <param name="input">The raw user expression.</param>
-    /// <param name="culture">The culture used to interpret decimal and grouping separators; null means
-    /// invariant rules.</param>
+    /// <param name="culture">The culture used to interpret decimal and grouping
+    /// separators; null means invariant rules.</param>
     /// <param name="options">Optional normalization options; defaults to <see
     /// cref="NormalizationOptions.Default"/>.</param>
     /// <returns>The normalized expression string ready for evaluation.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="input"/> is
     /// null.</exception>
-    /// <exception cref="ExpressionException">Thrown if input syntax contains conflicting or
-    /// ambiguous delimiters.</exception>
+    /// <exception cref="ExpressionException">Thrown if input syntax contains conflicting
+    /// or ambiguous delimiters.</exception>
     public static string Normalize(
         string input,
         CultureInfo? culture = null,
-        NormalizationOptions? options = null)
-    {
-        ArgumentNullException.ThrowIfNull(input);
-
-        if (!TryNormalize(input, culture, out var normalized, out var diagnostic, options))
-        {
-            throw new ExpressionException(diagnostic);
-        }
-
-        return normalized;
-    }
+        NormalizationOptions? options = null) =>
+        Normalize(input, out _, culture, options);
 
     /// <summary>
-    /// Safely attempts to normalize an expression, reporting failures with the same
-    /// <see cref="EvaluationDiagnostic"/> type the calculator uses. The only failure today is null input;
-    /// malformed numbers are not rejected here and surface as positioned parse diagnostics instead.
+    /// Attempts to normalize an input expression using the specified culture and
+    /// normalization options.
     /// </summary>
-    /// <param name="input">The raw user expression. A null input is reported as a diagnostic rather than thrown.</param>
-    /// <param name="culture">The culture used to interpret decimal and grouping separators; null means
-    /// invariant rules.</param>
-    /// <param name="normalized">On success, the normalized expression; otherwise <c>null</c>.</param>
-    /// <param name="diagnostic">On failure, the structured error (<see cref="EvaluationError.InvalidSyntax"/>
-    /// for null input); otherwise <c>null</c>.</param>
-    /// <param name="options">Optional pass configuration; defaults to <see cref="NormalizationOptions.Default"/>.</param>
-    /// <returns><c>true</c> if normalization succeeded; otherwise <c>false</c>.</returns>
+    /// <param name="input">The expression text to normalize.</param>
+    /// <param name="culture">The culture used for culture-sensitive normalization rules,
+    /// or <see langword="null"/> to use the default behavior.</param>
+    /// <param name="normalized">When the method returns <see langword="true"/>, contains
+    /// the normalized expression; otherwise <see langword="null"/>.</param>
+    /// <param name="diagnostic">When the method returns <see langword="false"/>, contains
+    /// diagnostic information describing why normalization failed; otherwise
+    /// <see langword="null"/>.</param>
+    /// <param name="options">Optional settings that control normalization behavior. If
+    /// <see langword="null"/>, default normalization options are used.</param>
+    /// <returns><see langword="true"/> if normalization succeeds; otherwise,
+    /// <see langword="false"/>.</returns>
     public static bool TryNormalize(
         string input,
         CultureInfo? culture,
@@ -67,22 +64,71 @@ public static class ExpressionNormalizer
         TryNormalize(input, culture, out normalized, out diagnostic, out _, options);
 
     /// <summary>
-    /// Normalizes like the public overload and also returns a <see cref="SourceMap"/> that translates
-    /// positions in the normalized text back to the caller's original input. The map stays internal for
-    /// now; the engine uses it so spans and diagnostics refer to what the user actually typed.
+    /// Normalizes the specified input string according to the provided options.
+    /// Throws <see cref="ExpressionException"/> if unresolvable ambiguities are
+    /// encountered.
     /// </summary>
-    internal static bool TryNormalize(
+    /// <param name="input">The raw user expression.</param>
+    /// <param name="sourceMap">A map that translates positions in the normalized text
+    /// back to the caller's original input.</param>
+    /// <param name="culture">The culture used to interpret decimal and grouping
+    /// separators; null means invariant rules.</param>
+    /// <param name="options">Optional normalization options; defaults to <see
+    /// cref="NormalizationOptions.Default"/>.</param>
+    /// <returns>The normalized expression string ready for evaluation.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="input"/> is
+    /// null.</exception>
+    /// <exception cref="ExpressionException">Thrown if input syntax contains conflicting
+    /// or ambiguous delimiters.</exception>
+    public static string Normalize(
+        string input,
+        out SourceMap sourceMap,
+        CultureInfo? culture = null,
+        NormalizationOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+
+        if (!TryNormalize(input, culture, out var normalized, out var diagnostic, out sourceMap, options))
+        {
+            throw new ExpressionException(diagnostic);
+        }
+
+        return normalized;
+    }
+
+    /// <summary>
+    /// Safely attempts to normalize an expression, reporting failures with the same
+    /// <see cref="EvaluationDiagnostic"/> type the calculator uses. The only failure
+    /// is null input; malformed numbers are not rejected here and surface as positioned
+    /// parse diagnostics instead.
+    /// </summary>
+    /// <param name="input">The raw user expression. A null input is reported as a
+    /// diagnostic rather than thrown.</param>
+    /// <param name="culture">The culture used to interpret decimal and grouping
+    /// separators; null means invariant rules.</param>
+    /// <param name="normalized">On success, the normalized expression; otherwise
+    /// <c>null</c>.</param>
+    /// <param name="diagnostic">On failure, the structured error (
+    /// <see cref="EvaluationError.InvalidSyntax"/> for null input); otherwise
+    /// <c>null</c>.</param>
+    /// <param name="sourceMap">On success, a map that translates positions in the
+    /// normalized text back to the caller's original input; otherwise <c>null</c>.
+    /// </param>
+    /// <param name="options">Optional pass configuration; defaults to
+    /// <see cref="NormalizationOptions.Default"/>.</param>
+    /// <returns><c>true</c> if normalization succeeded; otherwise <c>false</c>.</returns>
+    public static bool TryNormalize(
         string input,
         CultureInfo? culture,
         [NotNullWhen(true)] out string? normalized,
         [NotNullWhen(false)] out EvaluationDiagnostic? diagnostic,
-        out SourceMap map,
+        out SourceMap sourceMap,
         NormalizationOptions? options = null)
     {
         if (input is null)
         {
             normalized = null;
-            map = SourceMap.Identity(0);
+            sourceMap = SourceMap.Identity(0);
             diagnostic = new EvaluationDiagnostic(
                 EvaluationError.InvalidSyntax, "Input expression cannot be null.");
             return false;
@@ -93,33 +139,33 @@ public static class ExpressionNormalizer
 
         // Maps are chained as each pass runs: every pass describes its output in terms of its own input,
         // and composing them yields output-to-original-input without re-deriving any offsets.
-        map = SourceMap.Identity(input.Length);
+        sourceMap = SourceMap.Identity(input.Length);
 
         // Pass 1: Launcher quirks (leading / trailing '=').
         if (options.TrimLauncherEquals)
         {
             current = TrimLauncherEquals(current, out var passMap);
-            map = passMap.Compose(map);
+            sourceMap = passMap.Compose(sourceMap);
         }
 
         // Pass 2: Unicode and typographic operator sanitization.
         if (options.ReplaceUnicodeOperators)
         {
             current = SanitizeUnicodeOperators(current, out var passMap);
-            map = passMap.Compose(map);
+            sourceMap = passMap.Compose(sourceMap);
         }
 
         // Pass 3: European ratio colon as division.
         if (options.ReplaceDivisionColon)
         {
             current = ReplaceDivisionColons(current, out var passMap);
-            map = passMap.Compose(map);
+            sourceMap = passMap.Compose(sourceMap);
         }
 
         // Pass 4: Culture & number formatting (decimal comma, digit grouping, argument
         // semicolons).
         current = NormalizeCultureAndSeparators(current, culture, out var cultureMap);
-        map = cultureMap.Compose(map);
+        sourceMap = cultureMap.Compose(sourceMap);
         normalized = current;
         diagnostic = null;
         return true;

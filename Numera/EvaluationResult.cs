@@ -1,10 +1,16 @@
-﻿namespace Numera;
+﻿using Numera.Ast;
+
+namespace Numera;
 
 /// <summary>
 /// The result of evaluating an expression, including the value, updated context, and any 
 /// variables assigned by the expression.
 /// </summary>
-public readonly record struct EvaluationResult : IEquatable<MathValue>
+public readonly record struct EvaluationResult :
+    IEquatable<MathValue>,
+    IFormattable,
+    ISpanFormattable,
+    IUtf8SpanFormattable
 {
     /// <summary>
     /// Gets the evaluated value of the expression.
@@ -133,6 +139,76 @@ public readonly record struct EvaluationResult : IEquatable<MathValue>
     /// Determines whether a math value and an evaluation result are not equal.
     /// </summary>
     public static bool operator !=(MathValue left, EvaluationResult right) => !left.Equals(right.Value);
+
+    /// <summary>
+    /// Returns the hexadecimal string representation of the underlying
+    /// <see cref="MathValue" /> if it is an integer; otherwise <see langword="null" />.
+    /// </summary>
+    /// <param name="prefix">Whether to include the "0x" prefix.</param>
+    /// <returns>The hexadecimal string representation or <see langword="null" /> if not
+    /// an integer.</returns>
+    public string? ToHexString(bool prefix = true) =>
+        Value.ToHexString(prefix);
+
+    /// <summary>
+    /// Returns the binary string representation of the underlying
+    /// <see cref="MathValue" /> if it is an integer; otherwise <see langword="null" />.
+    /// </summary>
+    /// <param name="prefix">Whether to include the "0b" prefix.</param>
+    /// <returns>The binary string representation or <see langword="null" /> if not an
+    /// integer.</returns>
+    public string? ToBinaryString(bool prefix = true) =>
+        Value.ToBinaryString(prefix);
+
+    /// <summary>
+    /// Returns the octal string representation of the underlying <see cref="MathValue" />
+    /// if it is an integer; otherwise <see langword="null" />.
+    /// </summary>
+    /// <param name="prefix">Whether to include the "0o" prefix.</param>
+    /// <returns>The octal string representation or <see langword="null" /> if not an
+    /// integer.</returns>
+    public string? ToOctalString(bool prefix = true) =>
+        Value.ToOctalString(prefix);
+
+    // Formatting interfaces: IFormattable, ISpanFormattable, IUtf8SpanFormattable.
+    /// <summary>
+    /// Formats the value of the current instance using the specified format string and
+    /// format provider.
+    /// </summary>
+    /// <param name="format">A format string that defines the output representation.
+    /// </param>
+    /// <param name="formatProvider">An object that supplies culture-specific formatting
+    /// information.</param>
+    /// <returns>The string representation of the value of the current instance as
+    /// specified by format and formatProvider.</returns>
+    /// <remarks>
+    /// If the active representation is <see cref="MathValue.DataType.Double"/>
+    /// and no format is specified, defaults to "G17" to preserve floating-point
+    /// round-trip precision.
+    /// </remarks>
+    public string ToString(string? format, IFormatProvider? formatProvider) =>
+        Value.ToString(format, formatProvider);
+
+    /// <summary>
+    /// Formats the result's value using the specified format provider and no format
+    /// string.
+    /// </summary>
+    /// <param name="formatProvider">The format provider to use.</param>
+    /// <returns>The formatted string representation of the value.</returns>
+    public string ToString(IFormatProvider? formatProvider) =>
+        ToString(null, formatProvider);
+
+    /// <summary>
+    /// Formats the value into a character span.
+    /// </summary>
+    public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider? provider = null) =>
+        Value.TryFormat(destination, out charsWritten, format, provider);
+
+    /// <summary>
+    /// Formats the value into a UTF-8 byte span.
+    /// </summary>
+    public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format = default, IFormatProvider? provider = null) =>
+        Value.TryFormat(utf8Destination, out bytesWritten, format, provider);
 
     /// <summary>
     /// Returns the hash code of the underlying <see cref="MathValue" />.

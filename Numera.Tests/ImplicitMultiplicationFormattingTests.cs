@@ -1,5 +1,3 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 namespace Numera.Tests;
 
 [TestClass]
@@ -38,4 +36,3 @@ public class ImplicitMultiplicationFormattingTests
         Assert.StartsWith("(", formatted);
     }
 }
-

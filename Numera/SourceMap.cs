@@ -26,7 +26,7 @@ namespace Numera;
 /// ensuring passes that leave text unchanged incur zero allocations.
 /// </para>
 /// </remarks>
-internal sealed class SourceMap
+public sealed class SourceMap
 {
     private readonly int[]? _starts;
     private readonly int[]? _ends;

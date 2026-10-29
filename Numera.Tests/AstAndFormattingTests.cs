@@ -233,10 +233,10 @@ public sealed class AstAndFormattingTests
         // not (a == b): logical negation outer span includes 'not' through closing ')':
         // [0, 12).
         var options = new EvaluationContext(
-            variables: new Dictionary<string, MathValue>
+            variables: new Variable[]
             {
-                ["a"] = new(1m),
-                ["b"] = new(2m),
+                new("a", new(1m)),
+                new("b", new(2m)),
             },
             previousResult: null);
 
@@ -707,7 +707,7 @@ public sealed class AstAndFormattingTests
 
         // (n+1)!
         var variablesContext = new EvaluationContext(
-            variables: new Dictionary<string, MathValue> { ["n"] = new(2m) },
+            variables: new Variable[] { new("n", new(2m)) },
             previousResult: null);
         Assert.AreEqual(
             new BigInteger(6),
@@ -748,10 +748,10 @@ public sealed class AstAndFormattingTests
     public void ImplicitMultiplication_EvaluationAndAst_WorksCorrectly()
     {
         var options = new EvaluationContext(
-            variables: new Dictionary<string, MathValue>
+            variables: new Variable[]
             {
-                ["x"] = new(3m),
-                ["y"] = new(4m),
+                new("x", new(3m)),
+                new("y", new(4m)),
             },
             previousResult: null);
 
@@ -790,7 +790,7 @@ public sealed class AstAndFormattingTests
         var engine = new CalculatorEngine(
             new CalculatorOptions { AllowImplicitMultiplication = false });
         var variablesContext = new EvaluationContext(
-            variables: new Dictionary<string, MathValue> { ["x"] = new(3m) },
+            variables: new Variable[] { new("x", new(3m)) },
             previousResult: null);
         var ex = Assert.Throws<ExpressionException>(() =>
             engine.Parse("2x", variablesContext));
@@ -806,11 +806,11 @@ public sealed class AstAndFormattingTests
     public void ImplicitMultiplication_UnicodeVariablesAndKeywordBoundaries()
     {
         var variablesContext = new EvaluationContext(
-            variables: new Dictionary<string, MathValue>
+            variables: new Variable[]
             {
-                ["θ"] = new(5m),
-                ["android"] = new(10m),
-                ["x"] = new(2m)
+                new("θ", new(5m)),
+                new("android", new(10m)),
+                new("x", new(2m))
             },
             previousResult: null);
 
@@ -829,7 +829,7 @@ public sealed class AstAndFormattingTests
     public void ImplicitMultiplication_SpansAndEquivalence()
     {
         var variablesContext = new EvaluationContext(
-            variables: new Dictionary<string, MathValue> { ["x"] = new(3m) },
+            variables: new Variable[] { new("x", new(3m)) },
             previousResult: null);
 
         // Spans: (2)(3) is [0, 6), 2pi is [0, 3), -2x is [0, 3).

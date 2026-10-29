@@ -5,18 +5,22 @@ using Numera.Ast;
 namespace Numera;
 
 /// <summary>
-/// Static convenience facade for quick scripts, one-liners and tests. It delegates to a shared
-/// <see cref="CalculatorEngine"/> built from <see cref="CalculatorOptions.Default"/>: invariant culture,
-/// radians, and human-input normalization (launcher equals, Unicode operators, division colons)
-/// enabled. Applications that need another culture, angle unit or limits, or that want results
-/// formatted in the user's culture, should create their own <see cref="CalculatorEngine"/>.
+/// Static convenience facade for quick scripts, one-liners and tests. It delegates to a
+/// shared <see cref="CalculatorEngine"/> built from
+/// <see cref="CalculatorOptions.Default"/>: invariant culture, radians, and human-input
+/// normalization (launcher equals, Unicode operators, division colons) enabled.
+/// Applications that need another culture, angle unit or limits, or that want results
+/// formatted in the user's culture, should create their own
+/// <see cref="CalculatorEngine"/>.
 /// </summary>
 /// <remarks>
-/// Input is always read with invariant-culture rules here, so <c>1.5</c> is one and a half and a comma
-/// is an argument separator. <see cref="FormatResult"/>, however, defaults to the current culture for
-/// display, so a displayed result may not be re-parseable by this facade. A <see cref="CalculatorEngine"/>
-/// avoids that by using one culture in both directions. Session state (variables and <c>ans</c>) is
-/// supplied per call through <see cref="EvaluationContext"/>; the facade itself holds none and is thread-safe.
+/// Input is always read with invariant-culture rules here, so <c>1.5</c> is one and a
+/// half and a comma as an argument separator.
+/// <see cref="FormatResult(MathValue, CultureInfo?)"/>, however, defaults to the current
+/// culture for display, so a displayed result may not be re-parseable by this facade. A
+/// <see cref="CalculatorEngine"/> avoids that by using one culture in both directions.
+/// Session state (variables and <c>ans</c>) is supplied per call through
+/// <see cref="EvaluationContext"/>; the facade itself holds none and is thread-safe.
 /// <code>
 /// MathValue four = Calculator.Evaluate("2 + 2");
 /// var context = new EvaluationContext { PreviousResult = four };
@@ -28,41 +32,55 @@ public static class Calculator
     private static readonly CalculatorEngine DefaultEngine = new(CalculatorOptions.Default);
 
     /// <summary>
-    /// Evaluates a mathematical expression and returns a polymorphic <see cref="MathValue"/>.
+    /// Evaluates a mathematical expression and returns a result containing a polymorphic
+    /// <see cref="MathValue"/>.
     /// </summary>
-    /// <param name="expression">The expression to evaluate, e.g. <c>2 + 2 * sqrt(16)</c>.</param>
+    /// <param name="expression">The expression to evaluate, e.g. <c>2 + 2 * sqrt(16)</c>.
+    /// </param>
     /// <param name="context">Optional variables and previous result.</param>
-    /// <returns>The result of the evaluation as a <see cref="MathValue"/>.</returns>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is null.</exception>
-    /// <exception cref="NumeraException">Thrown if the expression cannot be normalized or parsed, or
-    /// evaluation fails. Check <see cref="NumeraException.Diagnostic"/> for structured details.</exception>
-    public static MathValue Evaluate(string expression, EvaluationContext? context = null) =>
+    /// <returns>The result of the evaluation and the updated exectuion context as an
+    /// <see cref="EvaluationResult"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/>
+    /// is null.</exception>
+    /// <exception cref="NumeraException">Thrown if the expression cannot be normalized or
+    /// parsed, or evaluation fails. Check <see cref="NumeraException.Diagnostic"/> for
+    /// structured details.</exception>
+    public static EvaluationResult Evaluate(string expression, EvaluationContext? context = null) =>
         DefaultEngine.Evaluate(expression, context);
 
     /// <summary>
-    /// Evaluates an already parsed expression tree, so a caller that both formats and evaluates an
-    /// expression only parses it once. The tree is validated against the default limits first.
+    /// Evaluates an already parsed expression tree, so a caller that both formats and
+    /// evaluates an expression only parses it once. The tree is validated against the
+    /// default limits first.
     /// </summary>
-    /// <param name="node">The tree to evaluate, typically from <see cref="Parse(string, EvaluationContext?)"/>.</param>
-    /// <param name="context">Optional variables and previous result used to resolve identifiers.</param>
-    /// <returns>The result of the evaluation as a <see cref="MathValue"/>.</returns>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="node"/> is null.</exception>
-    /// <exception cref="NumeraException">Thrown if the tree breaches limits or evaluation fails; check
-    /// <see cref="NumeraException.Diagnostic"/>.</exception>
-    public static MathValue Evaluate(ExpressionNode node, EvaluationContext? context = null) =>
+    /// <param name="node">The tree to evaluate, typically from
+    /// <see cref="Parse(string, EvaluationContext?)"/>.</param>
+    /// <param name="context">Optional variables and previous result used to resolve
+    /// identifiers.</param>
+    /// <returns>The result of the evaluation and the updated execution context as an 
+    /// <see cref="EvaluationResult"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="node"/> is
+    /// null.</exception>
+    /// <exception cref="NumeraException">Thrown if the tree breaches limits or evaluation
+    /// fails; check <see cref="NumeraException.Diagnostic"/>.</exception>
+    public static EvaluationResult Evaluate(ExpressionNode node, EvaluationContext? context = null) =>
         DefaultEngine.Evaluate(node, context);
 
     /// <summary>
-    /// Attempts to evaluate an expression without throwing for expected failures. Invalid API
-    /// arguments (such as a null expression) still throw.
+    /// Attempts to evaluate an expression without throwing for expected failures. Invalid
+    /// API arguments (such as a null expression) still throw.
     /// </summary>
     /// <param name="expression">The expression to evaluate.</param>
-    /// <param name="result">On success, the result; otherwise <c>default</c> and not meaningful.</param>
-    /// <param name="diagnostic">On failure, the structured error (code, message and, where known, source
-    /// position); otherwise <c>null</c>. Positions refer to the normalized text.</param>
+    /// <param name="result">On success, the result; otherwise <c>default</c> and not
+    /// meaningful.</param>
+    /// <param name="diagnostic">On failure, the structured error (code, message and,
+    /// where known, source position); otherwise <c>null</c>. Positions refer to the
+    /// normalized text.</param>
     /// <param name="context">Optional variables and previous result.</param>
-    /// <returns><c>true</c> if evaluation succeeded; <c>false</c> if normalization, parsing or evaluation failed.</returns>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is null.</exception>
+    /// <returns><c>true</c> if evaluation succeeded; <c>false</c> if normalization,
+    /// parsing or evaluation failed.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
+    /// null.</exception>
     public static bool TryEvaluate(
         string expression,
         out EvaluationResult result,
@@ -184,5 +202,24 @@ public static class Calculator
             HexRepresentation: value.ToHexString(prefix: true),
             BinaryRepresentation: value.ToBinaryString(prefix: true),
             OctalRepresentation: value.ToOctalString(prefix: true));
+    }
+
+    /// <summary>
+    /// Formats an evaluation result for display using the specified culture and preserves
+    /// assigned variables when present.
+    /// </summary>
+    /// <remarks>Assigned variables are included only when the evaluation reports
+    /// assignments; otherwise, the formatted result contains no assigned variables.
+    /// </remarks>
+    /// <param name="result">Evaluation output to format, including the computed value and
+    /// assignment metadata.</param>
+    /// <param name="culture">Culture used for formatting. If null, the current culture is
+    /// used.</param>
+    /// <returns>A formatted calculation that contains the formatted value and any
+    /// assigned variables from the evaluation result.</returns>
+    public static FormattedCalculation FormatResult(EvaluationResult result, CultureInfo? culture = null)
+    {
+        var card = FormatResult(result.Value, culture);
+        return card with { AssignedVariables = result.HasAssignments ? result.AssignedVariables : null };
     }
 }

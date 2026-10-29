@@ -6,25 +6,24 @@ namespace Numera.Tests;
 public sealed class EvaluationContextTests
 {
     /// <summary>
-    /// Builds a deliberately case-sensitive dictionary, so tests can supply keys which
+    /// Builds a deliberately case-sensitive list of variables, so tests can supply keys which
     /// only differ by case and prove that the context provides the case-sensitivity.
     /// </summary>
-    private static Dictionary<string, MathValue> Vars(
+    private static List<Variable> Vars(
         params (string Name, decimal Value)[] pairs)
     {
-        // Case-sensitive default.
-        var dict = new Dictionary<string, MathValue>();
+        var list = new List<Variable>();
         foreach (var (name, value) in pairs)
         {
-            dict[name] = new MathValue(value);
+            list.Add(new Variable(name, new MathValue(value)));
         }
-        return dict;
+        return list;
     }
 
     [TestMethod]
     public void Constructor_PreservesPreviousResult()
     {
-        var vars = new Dictionary<string, MathValue> { ["x"] = new(42m) };
+        var vars = new[] { new Variable("x", new(42m)) };
         var context = new EvaluationContext(vars, new MathValue(100m));
 
         Assert.AreEqual(100m, context.PreviousResult?.DecVal);
@@ -77,28 +76,30 @@ public sealed class EvaluationContextTests
     }
 
     [TestMethod]
-    public void Constructor_CopiesSourceDictionary()
+    public void Constructor_CopiesSourceVariables()
     {
-        var source = new Dictionary<string, MathValue> { ["x"] = new(1m) };
+        var source = new List<Variable> { new("x", new(1m)) };
         var context = new EvaluationContext(source, null);
 
         // A later change by the caller must not leak into an evaluation that may be
         // running elsewhere.
-        source["x"] = new MathValue(2m);
-        source["y"] = new MathValue(3m);
+        source[0] = new Variable("x", new MathValue(2m));
+        source.Add(new Variable("y", new MathValue(3m)));
 
         Assert.AreEqual(1m, Calculator.Evaluate("x", context).DecVal);
         Assert.IsFalse(Calculator.TryEvaluate("y", out _, out _, context));
     }
 
     [TestMethod]
-    public void Variables_CannotBeMutatedThroughDictionaryInterface()
+    public void Variables_CannotBeMutatedThroughCollectionInterface()
     {
         var context = new EvaluationContext(Vars(("x", 1m)), null);
 
         // Immutability is enforced at the type level: VariableCollection is sealed and does
         // not implement mutable collection interfaces. Casting via object proves this dynamically.
         object boxed = context.Variables;
+        Assert.IsFalse(boxed is ICollection<Variable>);
+        Assert.IsFalse(boxed is IList<Variable>);
         Assert.IsFalse(boxed is IDictionary<string, MathValue>);
         Assert.IsFalse(boxed is ICollection<KeyValuePair<string, MathValue>>);
         Assert.IsFalse(boxed is IList<KeyValuePair<string, MathValue>>);
@@ -147,7 +148,7 @@ public sealed class EvaluationContextTests
     }
 
     [TestMethod]
-    public void Constructor_DoesNotChangeSourceDictionary()
+    public void Constructor_DoesNotChangeSourceSequence()
     {
         var source = Vars(("x", 10m), ("X", 20m));
         int originalCount = source.Count;
@@ -155,8 +156,8 @@ public sealed class EvaluationContextTests
         _ = new EvaluationContext(source, null);
 
         Assert.HasCount(originalCount, source);
-        Assert.AreEqual(10m, source["x"].DecVal);
-        Assert.AreEqual(20m, source["X"].DecVal);
+        Assert.AreEqual(10m, source[0].Value.DecVal);
+        Assert.AreEqual(20m, source[1].Value.DecVal);
     }
 
     [TestMethod]
@@ -234,7 +235,7 @@ public sealed class EvaluationContextTests
     {
         var withoutVariables = new EvaluationContext(null, null);
         var withEmptyVariables = new EvaluationContext(
-            new Dictionary<string, MathValue>(),
+            Array.Empty<Variable>(),
             null);
 
         Assert.AreEqual(withoutVariables, withEmptyVariables);
@@ -332,6 +333,32 @@ public sealed class EvaluationContextTests
     }
 
     [TestMethod]
+    public void Assignment_PreservesDefinitionMetadataThroughEvaluationAndContext()
+    {
+        var engine = new CalculatorEngine();
+
+        // Single assignment preserves expression definition in AssignedVariables and Context.Variables
+        var r1 = engine.Evaluate("width = 10 * 4", EvaluationContext.Empty);
+        Assert.IsTrue(r1.AssignedVariables.TryGetVariable("width", out var r1Assigned));
+        Assert.AreEqual("10 * 4", r1Assigned.Definition);
+
+        Assert.IsTrue(r1.Context.Variables.TryGetVariable("width", out var r1ContextVar));
+        Assert.AreEqual("10 * 4", r1ContextVar.Definition);
+
+        // Advance into next round and update an existing variable via Add/SetItems
+        var r2 = engine.Evaluate("width = width + 5", r1.Context);
+        Assert.IsTrue(r2.Context.Variables.TryGetVariable("width", out var r2ContextVar));
+        Assert.AreEqual("width + 5", r2ContextVar.Definition);
+        Assert.AreEqual(45, (int)r2ContextVar.Value.IntVal);
+
+        // Direct Add(Variable) on collection also preserves definition
+        var directAdded = r2.Context.Variables.Add(new Variable("depth", new MathValue(20m), "2 * 10"));
+        Assert.IsTrue(directAdded.TryGetVariable("depth", out var directVar));
+        Assert.AreEqual("2 * 10", directVar.Definition);
+        Assert.AreEqual(20m, directVar.Value.DecVal);
+    }
+
+    [TestMethod]
     public void ChainedAssignments_AtOrExceedingNestingDepth_RejectsCleanly()
     {
         // Tight nesting limit to verify chained assignments cannot bypass depth bounds.
@@ -402,7 +429,7 @@ public sealed class EvaluationContextTests
         var engine = new CalculatorEngine();
         // Provide previous result 100, but explicit user variable "ans" = 5
         var context = new EvaluationContext(
-            new Dictionary<string, MathValue> { ["ans"] = new(5m) },
+            new Variable[] { new("ans", new(5m)) },
             new MathValue(100m));
 
         var result = engine.Evaluate("ans * 2", context);
@@ -415,11 +442,11 @@ public sealed class EvaluationContextTests
         var engine = new CalculatorEngine();
 
         // 1. Context containing an empty key or null character
-        var weirdVars = new Dictionary<string, MathValue>
+        var weirdVars = new Variable[]
         {
-            [""] = new(10m),
-            ["a\0b"] = new(20m),
-            ["valid"] = new(30m)
+            new("", new(10m)),
+            new("a\0b", new(20m)),
+            new("valid", new(30m))
         };
         var context = new EvaluationContext(weirdVars, null);
 
@@ -431,7 +458,7 @@ public sealed class EvaluationContextTests
 
         // 2. Huge collection of 1,000 variables advances safely and maintains lookup
         var manyVars = Enumerable.Range(0, 1000)
-            .Select(i => new KeyValuePair<string, MathValue>($"var_{i}", new MathValue((decimal)i)))
+            .Select(i => new Variable($"var_{i}", new MathValue((decimal)i)))
             .ToList();
         var largeContext = new EvaluationContext(manyVars, null);
         Assert.AreEqual(1000, largeContext.Variables.Count);
@@ -439,7 +466,7 @@ public sealed class EvaluationContextTests
         var evaluateLookup = engine.Evaluate("var_999 + var_0", largeContext);
         Assert.AreEqual(999m, evaluateLookup.Value.DecVal);
 
-        var advanced = largeContext.Advance([new KeyValuePair<string, MathValue>("var_0", new MathValue(42m))], new MathValue(999m));
+        var advanced = largeContext.Advance([new Variable("var_0", new MathValue(42m))], new MathValue(999m));
         Assert.AreEqual(42m, advanced.Variables["var_0"].DecVal);
         Assert.AreEqual(1000, advanced.Variables.Count);
     }

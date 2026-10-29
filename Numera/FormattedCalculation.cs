@@ -24,7 +24,7 @@ public sealed record FormattedCalculation(
     string? HexRepresentation = null,
     string? BinaryRepresentation = null,
     string? OctalRepresentation = null,
-    IReadOnlyDictionary<string, MathValue>? AssignedVariables = null)
+    VariableCollection? AssignedVariables = null)
 {
     /// <summary>
     /// Gets a formatted summary of assigned variables.
@@ -32,6 +32,6 @@ public sealed record FormattedCalculation(
     /// <remarks>Each assignment is formatted as "name = value" and entries are separated
     /// by ", ".</remarks>
     public string? AssignmentSummary => AssignedVariables is { Count: > 0 } ?
-        string.Join(", ", AssignedVariables.Select(kv => $"{kv.Key} = {kv.Value}")) :
+        string.Join(", ", AssignedVariables.Select(v => $"{v.Name} = {v.Value}")) :
         null;
 }

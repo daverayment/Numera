@@ -70,6 +70,12 @@ public sealed record CalculatorOptions
     public bool AllowImplicitMultiplication { get; init; } = true;
 
     /// <summary>
+    /// Custom functions available to expressions evaluated with this options instance.
+    /// Defaults to an empty collection.
+    /// </summary>
+    public CustomFunctionCollection CustomFunctions { get; init; } = CustomFunctionCollection.Empty;
+
+    /// <summary>
     /// Default options: culture-invariant, radians, with standard human-input
     /// normalization enabled. The instance is immutable and shared.
     /// </summary>
@@ -122,6 +128,43 @@ public sealed record CalculatorOptions
         if (MaxNestingDepth is < 1 or > CalculationLimits.MaxNestingDepth)
         {
             throw new ArgumentOutOfRangeException(nameof(MaxNestingDepth));
+        }
+
+        ArgumentNullException.ThrowIfNull(CustomFunctions);
+
+        foreach (var func in CustomFunctions)
+        {
+            if (string.IsNullOrWhiteSpace(func.Name) || !Identifier.IsValidIdentifier(func.Name))
+            {
+                throw new ArgumentException(
+                    $"Custom function name '{func.Name}' is not a valid identifier.", nameof(CustomFunctions));
+            }
+
+            // Protect "ans" from being shadowed by a custom function name.
+            if (func.Name.Equals(EvaluationContext.PreviousResultVariableName, Identifier.Comparison))
+            {
+                throw new ArgumentException(
+                    $"Custom function name '{func.Name}' cannot shadow the '{EvaluationContext.PreviousResultVariableName}' variable.",
+                    nameof(CustomFunctions));
+            }
+
+            if (KeywordCatalog.IsReserved(func.Name))
+            {
+                throw new ArgumentException(
+                    $"Custom function name '{func.Name}' cannot shadow reserved keyword.", nameof(CustomFunctions));
+            }
+
+            if (ConstantCatalog.TryResolve(func.Name, out _, out _))
+            {
+                throw new ArgumentException(
+                    $"Custom function name '{func.Name}' cannot shadow reserved constant.", nameof(CustomFunctions));
+            }
+
+            if (FunctionCatalog.TryGetInfo(func.Name, out _))
+            {
+                throw new ArgumentException(
+                    $"Custom function name '{func.Name}' cannot shadow built-in function.", nameof(CustomFunctions));
+            }
         }
     }
 }

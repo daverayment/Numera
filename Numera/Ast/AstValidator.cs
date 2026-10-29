@@ -57,7 +57,7 @@ internal static class AstValidator
                 }
 
                 // Node-level invariant checks on first visit.
-                ValidateNodeInvariants(node, allowUnknownFunctions);
+                ValidateNodeInvariants(node, options, allowUnknownFunctions);
             }
 
             if (frame.ChildIndex < ChildCount(node))
@@ -105,7 +105,7 @@ internal static class AstValidator
             ? new EvaluationDiagnostic(code, message, node.Span.Start, node.Span.Length)
             : new EvaluationDiagnostic(code, message));
 
-    private static void ValidateNodeInvariants(ExpressionNode node, bool allowUnknownFunctions)
+    private static void ValidateNodeInvariants(ExpressionNode node, CalculatorOptions options, bool allowUnknownFunctions)
     {
         switch (node)
         {
@@ -144,7 +144,7 @@ internal static class AstValidator
                 {
                     throw Invalid(node, EvaluationError.InvalidSyntax, "Function call cannot have null name or arguments.");
                 }
-                if (!FunctionArity.TryGet(call.FunctionName, out var signature))
+                if (!FunctionArity.TryGet(call.FunctionName, options.CustomFunctions, out var signature))
                 {
                     if (allowUnknownFunctions)
                     {
@@ -226,6 +226,10 @@ internal static class AstValidator
                     throw Invalid(node, EvaluationError.InvalidSyntax, $"Cannot assign to constant name '{assignment.VariableName}'.");
                 }
                 if (FunctionCatalog.TryGetInfo(assignment.VariableName, out _))
+                {
+                    throw Invalid(node, EvaluationError.InvalidSyntax, $"Cannot assign to function name '{assignment.VariableName}'.");
+                }
+                if (options.CustomFunctions.TryGet(assignment.VariableName, out _))
                 {
                     throw Invalid(node, EvaluationError.InvalidSyntax, $"Cannot assign to function name '{assignment.VariableName}'.");
                 }

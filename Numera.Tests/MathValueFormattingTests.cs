@@ -140,4 +140,83 @@ public sealed class MathValueFormattingTests
         Assert.IsNull(formattedDec.BinaryRepresentation);
         Assert.IsNull(formattedDec.OctalRepresentation);
     }
+
+    [TestMethod]
+    public void EvaluationResult_ForwardedRadixMethods_WorkCorrectly()
+    {
+        var intResult = Calculator.Evaluate("1092");
+
+        // Forwarded multi-radix methods on EvaluationResult
+        Assert.AreEqual("0x444", intResult.ToHexString(prefix: true));
+        Assert.AreEqual("444", intResult.ToHexString(prefix: false));
+        Assert.AreEqual("0x444", intResult.ToHexString());
+
+        Assert.AreEqual("0b10001000100", intResult.ToBinaryString(prefix: true));
+        Assert.AreEqual("10001000100", intResult.ToBinaryString(prefix: false));
+        Assert.AreEqual("0b10001000100", intResult.ToBinaryString());
+
+        Assert.AreEqual("0o2104", intResult.ToOctalString(prefix: true));
+        Assert.AreEqual("2104", intResult.ToOctalString(prefix: false));
+        Assert.AreEqual("0o2104", intResult.ToOctalString());
+
+        // Negative integer
+        var negResult = Calculator.Evaluate("-1092");
+        Assert.AreEqual("-0x444", negResult.ToHexString());
+        Assert.AreEqual("-444", negResult.ToHexString(prefix: false));
+        Assert.AreEqual("-0b10001000100", negResult.ToBinaryString());
+        Assert.AreEqual("-10001000100", negResult.ToBinaryString(prefix: false));
+        Assert.AreEqual("-0o2104", negResult.ToOctalString());
+        Assert.AreEqual("-2104", negResult.ToOctalString(prefix: false));
+
+        // Non-integer returns null
+        var decResult = Calculator.Evaluate("1.5");
+        Assert.IsNull(decResult.ToHexString());
+        Assert.IsNull(decResult.ToBinaryString());
+        Assert.IsNull(decResult.ToOctalString());
+    }
+
+    [TestMethod]
+    public void EvaluationResult_ForwardedFormattingMethods_WorkCorrectly()
+    {
+        var intResult = Calculator.Evaluate("12345");
+        var decResult = Calculator.Evaluate("123.45");
+        var dblResult = Calculator.Evaluate("1 / 3");
+
+        // ToString() and ToString(IFormatProvider)
+        Assert.AreEqual("12345", intResult.ToString());
+        Assert.AreEqual("12345", intResult.ToString(CultureInfo.InvariantCulture));
+        Assert.AreEqual("123.45", decResult.ToString(CultureInfo.InvariantCulture));
+
+        // ToString(format, formatProvider)
+        Assert.AreEqual("123.45", decResult.ToString("F2", CultureInfo.InvariantCulture));
+        Assert.AreEqual("0.33", dblResult.ToString("F2", CultureInfo.InvariantCulture));
+
+        // TryFormat (Span<char>)
+        Span<char> charBuf = stackalloc char[64];
+        Assert.IsTrue(intResult.TryFormat(charBuf, out int charsWritten));
+        Assert.AreEqual("12345", new string(charBuf[..charsWritten]));
+
+        Assert.IsTrue(decResult.TryFormat(charBuf, out charsWritten, "N2", CultureInfo.InvariantCulture));
+        Assert.AreEqual("123.45", new string(charBuf[..charsWritten]));
+
+        // TryFormat (Span<byte> UTF-8)
+        Span<byte> utf8Buf = stackalloc byte[64];
+        Assert.IsTrue(intResult.TryFormat(utf8Buf, out int bytesWritten));
+        Assert.AreEqual("12345", Encoding.UTF8.GetString(utf8Buf[..bytesWritten]));
+
+        Assert.IsTrue(decResult.TryFormat(utf8Buf, out bytesWritten, "N2", CultureInfo.InvariantCulture));
+        Assert.AreEqual("123.45", Encoding.UTF8.GetString(utf8Buf[..bytesWritten]));
+
+        // Formattable interface cast checks
+        IFormattable formattable = intResult;
+        Assert.AreEqual("12345", formattable.ToString(null, CultureInfo.InvariantCulture));
+
+        ISpanFormattable spanFormattable = decResult;
+        Assert.IsTrue(spanFormattable.TryFormat(charBuf, out charsWritten, "F2", CultureInfo.InvariantCulture));
+        Assert.AreEqual("123.45", new string(charBuf[..charsWritten]));
+
+        IUtf8SpanFormattable utf8Formattable = decResult;
+        Assert.IsTrue(utf8Formattable.TryFormat(utf8Buf, out bytesWritten, "F2", CultureInfo.InvariantCulture));
+        Assert.AreEqual("123.45", Encoding.UTF8.GetString(utf8Buf[..bytesWritten]));
+    }
 }

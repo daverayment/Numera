@@ -115,7 +115,7 @@ context = r3.Context;
 
 Console.WriteLine($"Result: {r3.Value}");                                  // 35
 Console.WriteLine($"Total variables: {context.Variables.Count}");         // 3 (a, b, c)
-Console.WriteLine($"Delta in round 3: {r3.AssignedVariables.Single().Key}"); // c
+Console.WriteLine($"Delta in round 3: {r3.AssignedVariables.Single().Name}"); // c
 ```
 
 ---

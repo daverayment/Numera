@@ -185,21 +185,13 @@ public readonly struct MathValue : IFormattable, ISpanFormattable, IUtf8SpanForm
         ReadOnlySpan<char> format = default,
         IFormatProvider? provider = null)
     {
-        switch (Type)
+        return Type switch
         {
-            case DataType.Integer:
-                return IntVal.TryFormat(destination, out charsWritten, format, provider);
-            case DataType.Decimal:
-                return DecVal.TryFormat(destination, out charsWritten, format, provider);
-            case DataType.Double:
-                return DblVal.TryFormat(
-                    destination,
-                    out charsWritten,
-                    format.IsEmpty ? "G17" : format,
-                    provider);
-            default:
-                throw new InvalidOperationException($"Unexpected data type: {Type}");
-        }
+            DataType.Integer => IntVal.TryFormat(destination, out charsWritten, format, provider),
+            DataType.Decimal => DecVal.TryFormat(destination, out charsWritten, format, provider),
+            DataType.Double => DblVal.TryFormat(destination, out charsWritten, format.IsEmpty ? "G17" : format, provider),
+            _ => throw new InvalidOperationException($"Unexpected data type: {Type}"),
+        };
     }
 
     /// <summary>
@@ -627,47 +619,91 @@ public readonly struct MathValue : IFormattable, ISpanFormattable, IUtf8SpanForm
     /// Compares two values for equality using <see cref="Compare(MathValue, MathValue)"/>.
     /// Returns 1m if equal, or 0m if unequal.
     /// </summary>
-    public static MathValue AreEqual(MathValue a, MathValue b) =>
-        Compare(a, b) == 0 ? new MathValue(1m) : new MathValue(0m);
+    public static MathValue AreEqual(MathValue a, MathValue b)
+    {
+        // IEEE 754: if either value is NaN, the comparison is false.
+        if (a.IsNaN || b.IsNaN)
+        {
+            return new MathValue(0m);
+        }
+
+        return Compare(a, b) == 0 ? new MathValue(1m) : new MathValue(0m);
+    }
 
     /// <summary>
     /// Compares two values for inequality using <see cref="Compare(MathValue, MathValue)"/>.
     /// Returns 1m if unequal, or 0m if equal.
     /// </summary>
-    public static MathValue AreNotEqual(MathValue a, MathValue b) =>
-        Compare(a, b) != 0 ? new MathValue(1m) : new MathValue(0m);
+    public static MathValue AreNotEqual(MathValue a, MathValue b)
+    {
+        // IEEE 754: if either value is NaN, the comparison is true.
+        if (a.IsNaN || b.IsNaN)
+        {
+            return new MathValue(1m);
+        }
+
+        return Compare(a, b) != 0 ? new MathValue(1m) : new MathValue(0m);
+    }
 
     /// <summary>
     /// Compares if the left operand is strictly less than the right operand using
     /// <see cref="Compare(MathValue, MathValue)"/>.
     /// Returns 1m if less, or 0m otherwise.
     /// </summary>
-    public static MathValue LessThan(MathValue a, MathValue b) =>
-        Compare(a, b) < 0 ? new MathValue(1m) : new MathValue(0m);
+    public static MathValue LessThan(MathValue a, MathValue b)
+    {
+        if (a.IsNaN || b.IsNaN)
+        {
+            return new MathValue(0m);
+        }
+
+        return Compare(a, b) < 0 ? new MathValue(1m) : new MathValue(0m);
+    }
 
     /// <summary>
     /// Compares if the left operand is less than or equal to the right operand using
     /// <see cref="Compare(MathValue, MathValue)"/>.
     /// Returns 1m if less than or equal, or 0m otherwise.
     /// </summary>
-    public static MathValue LessThanOrEqual(MathValue a, MathValue b) =>
-        Compare(a, b) <= 0 ? new MathValue(1m) : new MathValue(0m);
+    public static MathValue LessThanOrEqual(MathValue a, MathValue b)
+    {
+        if (a.IsNaN || b.IsNaN)
+        {
+            return new MathValue(0m);
+        }
+
+        return Compare(a, b) <= 0 ? new MathValue(1m) : new MathValue(0m);
+    }
 
     /// <summary>
     /// Compares if the left operand is strictly greater than the right operand using
     /// <see cref="Compare(MathValue, MathValue)"/>.
     /// Returns 1m if greater, or 0m otherwise.
     /// </summary>
-    public static MathValue GreaterThan(MathValue a, MathValue b) =>
-        Compare(a, b) > 0 ? new MathValue(1m) : new MathValue(0m);
+    public static MathValue GreaterThan(MathValue a, MathValue b)
+    {
+        if (a.IsNaN || b.IsNaN)
+        {
+            return new MathValue(0m);
+        }
+
+        return Compare(a, b) > 0 ? new MathValue(1m) : new MathValue(0m);
+    }
 
     /// <summary>
     /// Compares if the left operand is greater than or equal to the right operand using
     /// <see cref="Compare(MathValue, MathValue)"/>.
     /// Returns 1m if greater than or equal, or 0m otherwise.
     /// </summary>
-    public static MathValue GreaterThanOrEqual(MathValue a, MathValue b) =>
-        Compare(a, b) >= 0 ? new MathValue(1m) : new MathValue(0m);
+    public static MathValue GreaterThanOrEqual(MathValue a, MathValue b)
+    {
+        if (a.IsNaN || b.IsNaN)
+        {
+            return new MathValue(0m);
+        }
+
+        return Compare(a, b) >= 0 ? new MathValue(1m) : new MathValue(0m);
+    }
 
     /// <summary>
     /// Adds two values, using exact integer arithmetic when both operands are integers,
@@ -984,6 +1020,7 @@ public readonly struct MathValue : IFormattable, ISpanFormattable, IUtf8SpanForm
 
     private static int CompareDoubleAndExact(MathValue exact, double dbl)
     {
+        // Handle non-finite doubles first.
         if (double.IsNaN(dbl))
         {
             // Consistent with double.CompareTo: non-NaN is greater than NaN.
@@ -1002,35 +1039,107 @@ public readonly struct MathValue : IFormattable, ISpanFormattable, IUtf8SpanForm
             return 1;
         }
 
+        // Handle exact BigInteger vs finite double.
         if (exact.Type is DataType.Integer)
         {
             var integer = exact.IntVal;
-            long bitLength = integer.GetBitLength();
 
-            // Double.MaxValue has an exponent of 1023, so any integer with 1025+ bits
-            // exceeds Double.MaxValue in magnitude and cannot be compared via (double)int.
-            if (bitLength > 1024)
+            // Double.MaxValue has a 1024-bit binary exponent (~1.79e308). Any integer
+            // with 1025+ bits strictly exceeds Double.MaxValue in magnitude and cannot
+            // be equal.
+            if (integer.GetBitLength() > 1024)
             {
                 return integer.Sign > 0 ? 1 : -1;
             }
 
-            double dblExact = (double)integer;
-            if (dblExact == dbl)
+            // Every finite doubule without a fractional part converts to a BigInteger
+            // without precision loss, so we can convert and compare without narrowing.
+            if (double.IsInteger(dbl))
             {
-                return 0;
+                var dblAsBigInt = new BigInteger(dbl);
+                return integer.CompareTo(dblAsBigInt);
             }
 
-            return dblExact.CompareTo(dbl);
+            // An exact integer can never equal a floating-point value with a fractional
+            // part. A non-integer double strictly sits in the open interval
+            // (floor, floor + 1). Because floor(dbl) is an integer, it converts
+            // exactly to a BigInteger.
+            var floor = new BigInteger(Math.Floor(dbl));
+            return (integer <= floor) ? -1 : 1;
         }
 
-        // For Decimal vs finite double.
-        double dblDec = (double)exact.DecVal;
-        if (dblDec == dbl)
+        // Exact decimal vs finite double.
+        // If the double exceeds the decimal range, the comparison is trivial.
+        if (Math.Abs(dbl) > (double)decimal.MaxValue)
         {
-            return 0;
+            return dbl > 0.0 ? -1 : 1;
         }
 
-        return dblDec.CompareTo(dbl);
+        // Whole doubles within decimal range convert to BigInteger and can be compared
+        // via scaled integer arithmetic without division or rounding.
+        if (double.IsInteger(dbl))
+        {
+            var dblAsBigInt = new BigInteger(dbl);
+            return -CompareIntegerAndDecimal(dblAsBigInt, exact.DecVal);
+        }
+
+        // The double has a fractional part. Every finite double is an exact dyadic
+        // rational (m * 2^e), and every decimal is an exact base-10 fraction (c * 10^-s).
+        // Since double.IsInteger was false, the expoenent is guaranteed to be negative
+        // (k = -e > 0):
+        //     exact  = c * 10^-s (or c / 10^s)
+        //     double = m / 2^k
+        // Cross-multiplying by positive denominators yields an exact integer comparison:
+        //     exact <=> dbl === (c * 2^k) <=> (m * 10^s)
+        Span<int> decBits = stackalloc int[4];
+        decimal.GetBits(exact.DecVal, decBits);
+
+        var c = (BigInteger)(uint)decBits[0]
+            | ((BigInteger)(uint)decBits[1] << 32)
+            | ((BigInteger)(uint)decBits[2] << 64);
+
+        if (decBits[3] < 0)
+        {
+            c = -c;
+        }
+
+        int s = (decBits[3] >> 16) & 0x7F;
+
+        // Deconstruct double bits into signed mantissa and negative power-of-two divisor
+        // (2^k).
+        long dblBits = BitConverter.DoubleToInt64Bits(dbl);
+        bool isNegative = dblBits < 0;
+        int exp = (int)((dblBits >> 52) & 0x7FFL);
+        long mantissa = dblBits & 0x000F_FFFF_FFFF_FFFFL;
+
+        BigInteger m;
+        int k;
+
+        if (exp == 0)
+        {
+            // Subnormal double: magnitude is mantissa * 2^-1074. The mantissa is nonzero,
+            // and the exponent is -1022 - 52 = -1074.
+            m = mantissa;
+            k = 1074;
+        }
+        else
+        {
+            // Normal double: magnitude is (2^52 + mantissa) * 2^(exp - 1023 - 52) = (2^52 + mantissa) * 2^(exp - 1075).
+            m = mantissa | (1L << 52);
+            k = 1075 - exp;
+        }
+
+        if (isNegative)
+        {
+            m = -m;
+        }
+
+        // c * 2^k is a fast binary bit-shift; m * 10^s is a small BigInteger
+        // multiplication (s <= 28). The result is exact.
+        BigInteger decScaled = c << k;
+        BigInteger dblScaled = m * BigInteger.Pow(10, s);
+
+        return decScaled.CompareTo(dblScaled);
     }
 
     private static double DivideAsDouble(MathValue a, MathValue b)

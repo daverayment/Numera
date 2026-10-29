@@ -740,11 +740,11 @@ public class LanguageTests
         var ansUpperResult = Calculator.Evaluate("ANS / 2", optionsAns);
         Assert.AreEqual(21m, ansUpperResult.DecVal);
 
-        // 2. Custom dictionary of caller-supplied variables
-        var variables = new Dictionary<string, MathValue>(StringComparer.OrdinalIgnoreCase)
+        // 2. Custom collection of caller-supplied variables
+        var variables = new Variable[]
         {
-            ["x"] = new MathValue(new BigInteger(10)),
-            ["y"] = new MathValue(2.5m),
+            new("x", new MathValue(new BigInteger(10))),
+            new("y", new MathValue(2.5m)),
         };
         var optionsVars = new EvaluationContext(variables, null);
         var varsResult = Calculator.Evaluate("3 * x + 4 * y", optionsVars);
