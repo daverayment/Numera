@@ -12,8 +12,8 @@ public sealed class CustomFunctionTests
         {
             CustomFunctions =
             [
-                CustomFunction.Create("double", (MathValue x) => x * new MathValue(2m)),
-                CustomFunction.Create("triple", (MathValue x) => x * new MathValue(3m), "Triples the input")
+                CustomFunction.Create("double", x => x * new MathValue(2m)),
+                CustomFunction.Create("triple", x => x * new MathValue(3m), "Triples the input")
             ]
         };
 
@@ -33,9 +33,9 @@ public sealed class CustomFunctionTests
         {
             CustomFunctions =
             [
-                CustomFunction.Create("myHypot", (MathValue a, MathValue b) =>
+                CustomFunction.Create("myHypot", (a, b) =>
                     new MathValue(Math.Sqrt((a * a + b * b).AsDouble()))),
-                CustomFunction.Create("weightedAvg", (MathValue a, MathValue b, MathValue weightA) =>
+                CustomFunction.Create("weightedAvg", (a, b, weightA) =>
                 {
                     var weightB = new MathValue(1m) - weightA;
                     return (a * weightA) + (b * weightB);
@@ -100,7 +100,7 @@ public sealed class CustomFunctionTests
         {
             CustomFunctions =
             [
-                CustomFunction.Create("myFunc", (MathValue x) => x + new MathValue(1m))
+                CustomFunction.Create("myFunc", x => x + new MathValue(1m))
             ]
         };
 
@@ -118,7 +118,7 @@ public sealed class CustomFunctionTests
         {
             CustomFunctions =
             [
-                CustomFunction.Create("addTwo", (MathValue a, MathValue b) => a + b),
+                CustomFunction.Create("addTwo", (a, b) => a + b),
                 CustomFunction.CreateVariadic("atLeastTwo", minArgs: 2, args => args[0] + args[1])
             ]
         };
@@ -145,7 +145,7 @@ public sealed class CustomFunctionTests
         {
             CustomFunctions =
             [
-                CustomFunction.Create("myFunc", (MathValue x) => x * new MathValue(2m))
+                CustomFunction.Create("myFunc", x => x * new MathValue(2m))
             ]
         };
 
@@ -162,7 +162,7 @@ public sealed class CustomFunctionTests
         {
             CustomFunctions =
             [
-                CustomFunction.Create("myFunc", (MathValue x) => x * new MathValue(2m))
+                CustomFunction.Create("myFunc", x => x * new MathValue(2m))
             ]
         };
 
@@ -175,24 +175,24 @@ public sealed class CustomFunctionTests
     [TestMethod]
     public void CustomFunction_OptionsValidation_RejectsShadowingBuiltins()
     {
-        // Shadow built-in function
+        // Shadow built-in function.
         var optionsShadowFunc = new CalculatorOptions
         {
-            CustomFunctions = [CustomFunction.Create("sin", (MathValue x) => x)]
+            CustomFunctions = [CustomFunction.Create("sin", x => x)]
         };
         Assert.Throws<ArgumentException>(() => new CalculatorEngine(optionsShadowFunc));
 
-        // Shadow built-in constant
+        // Shadow built-in constant.
         var optionsShadowConst = new CalculatorOptions
         {
-            CustomFunctions = [CustomFunction.Create("pi", (MathValue x) => x)]
+            CustomFunctions = [CustomFunction.Create("pi", x => x)]
         };
         Assert.Throws<ArgumentException>(() => new CalculatorEngine(optionsShadowConst));
 
-        // Shadow reserved keyword
+        // Shadow reserved keyword.
         var optionsShadowKeyword = new CalculatorOptions
         {
-            CustomFunctions = [CustomFunction.Create("and", (MathValue x) => x)]
+            CustomFunctions = [CustomFunction.Create("and", x => x)]
         };
         Assert.Throws<ArgumentException>(() => new CalculatorEngine(optionsShadowKeyword));
     }
@@ -204,7 +204,7 @@ public sealed class CustomFunctionTests
         {
             CustomFunctions =
             [
-                CustomFunction.Create("blowUp", (MathValue _) => throw new InvalidOperationException("Custom failure message"))
+                CustomFunction.Create("blowUp", _ => throw new InvalidOperationException("Custom failure message"))
             ]
         };
 
@@ -223,7 +223,7 @@ public sealed class CustomFunctionTests
         {
             CustomFunctions =
             [
-                CustomFunction.Create("divByZero", (MathValue _) => throw new DivideByZeroException())
+                CustomFunction.Create("divByZero", _ => throw new DivideByZeroException())
             ]
         };
 
@@ -240,7 +240,8 @@ public sealed class CustomFunctionTests
         {
             CustomFunctions =
             [
-                CustomFunction.Create("hugeInt", () => new MathValue(BigInteger.One << (CalculationLimits.MaxIntegerBits + 10)))
+                CustomFunction.Create("hugeInt", () =>
+                    new MathValue(BigInteger.One << (CalculationLimits.MaxIntegerBits + 10)))
             ]
         };
 
@@ -252,8 +253,8 @@ public sealed class CustomFunctionTests
     [TestMethod]
     public void CustomFunctionCollection_BasicPropertiesAndOrdering()
     {
-        var f1 = CustomFunction.Create("a", (MathValue x) => x);
-        var f2 = CustomFunction.Create("b", (MathValue x) => x, "description b");
+        var f1 = CustomFunction.Create("a", x => x);
+        var f2 = CustomFunction.Create("b", x => x, "description b");
 
         var col = new CustomFunctionCollection([f1, f2]);
 
@@ -266,15 +267,15 @@ public sealed class CustomFunctionTests
         Assert.IsTrue(col.Contains("a"));
         Assert.IsFalse(col.Contains("c"));
 
-        var added = col.Add(CustomFunction.Create("c", (MathValue x) => x));
+        var added = col.Add(CustomFunction.Create("c", x => x));
         Assert.AreEqual(3, added.Count);
         Assert.AreEqual(2, col.Count); // Immutability
 
         // Fluent Add overloads
         var fluent = CustomFunctionCollection.Empty
-            .Add("f1", (MathValue x) => x)
-            .Add("f2", (MathValue a, MathValue b) => a + b)
-            .Add("f3", (MathValue a, MathValue b, MathValue c) => a + b + c)
+            .Add("f1", x => x)
+            .Add("f2", (a, b) => a + b)
+            .Add("f3", (a, b, c) => a + b + c)
             .Add("fVar", minArgs: 1, args => args[0]);
 
         Assert.AreEqual(4, fluent.Count);
@@ -291,8 +292,8 @@ public sealed class CustomFunctionTests
         {
             CustomFunctions =
             [
-                CustomFunction.Create("myFunc", (MathValue x) => x * new MathValue(2m)),
-                CustomFunction.Create("addTwo", (MathValue a, MathValue b) => a + b)
+                CustomFunction.Create("myFunc", x => x * new MathValue(2m)),
+                CustomFunction.Create("addTwo", (a, b) => a + b)
             ]
         };
 
@@ -312,8 +313,8 @@ public sealed class CustomFunctionTests
         {
             CustomFunctions =
             [
-                CustomFunction.Create("custom_fn", (MathValue x) => x),
-                CustomFunction.Create("f", (MathValue x) => x)
+                CustomFunction.Create("custom_fn", x => x),
+                CustomFunction.Create("f", x => x)
             ]
         };
 
@@ -330,7 +331,7 @@ public sealed class CustomFunctionTests
         {
             CustomFunctions =
             [
-                CustomFunction.Create("positiveOnly", (MathValue x) =>
+                CustomFunction.Create("positiveOnly", x =>
                 {
                     if (x.DecVal <= 0)
                     {
@@ -382,7 +383,7 @@ public sealed class CustomFunctionTests
         {
             CustomFunctions =
             [
-                CustomFunction.Create(invalidName, (MathValue x) => x)
+                CustomFunction.Create(invalidName, x => x)
             ]
         };
 
@@ -396,7 +397,7 @@ public sealed class CustomFunctionTests
         {
             CustomFunctions =
             [
-                CustomFunction.Create("simpleAdd", (MathValue a, MathValue b) => a + b)
+                CustomFunction.Create("simpleAdd", (a, b) => a + b)
             ]
         };
 

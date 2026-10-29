@@ -10,13 +10,12 @@ namespace Numera;
 /// Stores full <see cref="Variable"/> instances to preserve metadata such as
 /// <see cref="Variable.Definition"/> across assignment updates and evaluations.
 /// </remarks>
-public sealed class VariableCollection :
-    IReadOnlyList<Variable>
+public sealed class VariableCollection : IReadOnlyList<Variable>
 {
     /// <summary>
     /// The single comparer used for every variable name lookup, forwarding to
-    /// <see cref="Identifier.Comparer"/>. Ordinal rather than culture-sensitive, to prevent
-    /// issues with e.g. Turkish i's or other culture-specific case mappings.
+    /// <see cref="Identifier.Comparer"/>. Ordinal rather than culture-sensitive, to
+    /// prevent issues with e.g. Turkish i's or other culture-specific case mappings.
     /// </summary>
     public static StringComparer NameComparer => Identifier.Comparer;
 
@@ -113,7 +112,8 @@ public sealed class VariableCollection :
     /// Adds or updates a variable in the collection, returning a new collection.
     /// </summary>
     /// <param name="variable">The variable to add or update.</param>
-    /// <returns>A new <see cref="VariableCollection"/> with the updated variable.</returns>
+    /// <returns>A new <see cref="VariableCollection"/> with the updated variable.
+    /// </returns>
     public VariableCollection Add(Variable variable)
     {
         ArgumentNullException.ThrowIfNull(variable.Name, nameof(variable.Name));

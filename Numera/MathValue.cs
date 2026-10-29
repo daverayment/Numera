@@ -889,6 +889,21 @@ public readonly struct MathValue : IFormattable, ISpanFormattable, IUtf8SpanForm
         }
     }
 
+    /// <inheritdoc cref="MathValue(decimal)"/>
+    public static implicit operator MathValue(decimal value) => new(value);
+
+    /// <inheritdoc cref="MathValue(BigInteger)"/>
+    public static implicit operator MathValue(BigInteger value) => new(value);
+
+    /// <inheritdoc cref="MathValue(double)"/>
+    public static implicit operator MathValue(double value) => new(value);
+    
+    /// <inheritdoc cref="MathValue(BigInteger)"/>
+    public static implicit operator MathValue(int value) => new(new BigInteger(value));
+
+    /// <inheritdoc cref="MathValue(BigInteger)"/>
+    public static implicit operator MathValue(long value) => new(new BigInteger(value));
+
     /// <summary>
     /// Uses bounded integer exponentiation for an integer base and a nonnegative whole
     /// exponent. For decimal bases with nonnegative whole exponents, uses binary

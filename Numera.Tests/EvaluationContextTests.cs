@@ -260,56 +260,56 @@ public sealed class EvaluationContextTests
         var engine = new CalculatorEngine();
         var context = EvaluationContext.Empty;
 
-        // Round 1: define a = 10
+        // Round 1: define a = 10.
         var res1 = engine.Evaluate("a = 10", context);
-        Assert.AreEqual(10, (int)res1.Value.IntVal);
+        Assert.AreEqual(10, res1.Value.IntVal);
         Assert.IsTrue(res1.HasAssignments);
         Assert.AreEqual("a", res1.SingleAssignedVariable);
         context = res1.Context;
 
         Assert.AreEqual(1, context.Variables.Count);
-        Assert.AreEqual(10, (int)context.Variables["a"].IntVal);
-        Assert.AreEqual(10, (int)context.PreviousResult?.IntVal!);
+        Assert.AreEqual(10, context.Variables["a"].IntVal);
+        Assert.AreEqual(10, context.PreviousResult?.IntVal);
 
-        // Round 2: define b = a * 2 + 5 (using variable from round 1)
+        // Round 2: define b = a * 2 + 5 (using variable from round 1).
         var res2 = engine.Evaluate("b = a * 2 + 5", context);
-        Assert.AreEqual(25, (int)res2.Value.IntVal);
+        Assert.AreEqual(25, res2.Value.IntVal);
         context = res2.Context;
 
         Assert.AreEqual(2, context.Variables.Count);
-        CollectionAssert.AreEqual(new[] { "a", "b" }, context.Variables.Keys.ToArray());
-        Assert.AreEqual(25, (int)context.Variables["b"].IntVal);
-        Assert.AreEqual(25, (int)context.PreviousResult?.IntVal!);
+        Assert.AreSequenceEqual(["a", "b"], context.Variables.Keys.ToArray());
+        Assert.AreEqual(25, context.Variables["b"].IntVal);
+        Assert.AreEqual(25, context.PreviousResult?.IntVal);
 
-        // Round 3: use ans and variables together: c = ans + a
+        // Round 3: use ans and variables together: c = ans + a.
         var res3 = engine.Evaluate("c = ans + a", context); // 25 + 10 = 35
-        Assert.AreEqual(35, (int)res3.Value.IntVal);
+        Assert.AreEqual(35, res3.Value.IntVal);
         context = res3.Context;
 
         Assert.AreEqual(3, context.Variables.Count);
-        CollectionAssert.AreEqual(new[] { "a", "b", "c" }, context.Variables.Keys.ToArray());
+        Assert.AreSequenceEqual(["a", "b", "c"], context.Variables.Keys.ToArray());
 
         // Round 4: reassign 'a' to a new value: a = b + c (25 + 35 = 60).
         // Preserves chronological / MRU order: 'a' should move to the end!
         var res4 = engine.Evaluate("a = b + c", context);
-        Assert.AreEqual(60, (int)res4.Value.IntVal);
+        Assert.AreEqual(60, res4.Value.IntVal);
         context = res4.Context;
 
         Assert.AreEqual(3, context.Variables.Count);
-        CollectionAssert.AreEqual(new[] { "b", "c", "a" }, context.Variables.Keys.ToArray());
-        Assert.AreEqual(60, (int)context.Variables["a"].IntVal);
+        Assert.AreSequenceEqual(["b", "c", "a"], context.Variables.Keys.ToArray());
+        Assert.AreEqual(60, context.Variables["a"].IntVal);
 
-        // Round 5: complex expression using updated variables and ans
-        // a (60) + b (25) + c (35) + ans (60) = 180
+        // Round 5: complex expression using updated variables and ans.
+        // a (60) + b (25) + c (35) + ans (60) = 180.
         var res5 = engine.Evaluate("a + b + c + ans", context);
-        Assert.AreEqual(180, (int)res5.Value.IntVal);
+        Assert.AreEqual(180, res5.Value.IntVal);
         context = res5.Context;
 
-        // No new variable assignments in Round 5
+        // No new variable assignments in Round 5.
         Assert.IsFalse(res5.HasAssignments);
         Assert.AreEqual(0, res5.AssignedVariables.Count);
         Assert.AreEqual(3, context.Variables.Count);
-        Assert.AreEqual(180, (int)context.PreviousResult?.IntVal!);
+        Assert.AreEqual(180, context.PreviousResult?.IntVal);
     }
 
     [TestMethod]
@@ -317,19 +317,19 @@ public sealed class EvaluationContextTests
     {
         var engine = new CalculatorEngine();
 
-        // Right-associative assignment: x = y = 42
+        // Right-associative assignment: x = y = 42.
         var res = engine.Evaluate("x = y = 42", EvaluationContext.Empty);
-        Assert.AreEqual(42, (int)res.Value.IntVal);
+        Assert.AreEqual(42, res.Value.IntVal);
         Assert.AreEqual(2, res.AssignedVariables.Count);
 
         var context = res.Context;
         Assert.AreEqual(2, context.Variables.Count);
-        Assert.AreEqual(42, (int)context.Variables["x"].IntVal);
-        Assert.AreEqual(42, (int)context.Variables["y"].IntVal);
+        Assert.AreEqual(42, context.Variables["x"].IntVal);
+        Assert.AreEqual(42, context.Variables["y"].IntVal);
 
-        // Next evaluation can read both x and y
+        // Next evaluation can read both x and y.
         var next = engine.Evaluate("x + y", context);
-        Assert.AreEqual(84, (int)next.Value.IntVal);
+        Assert.AreEqual(84, next.Value.IntVal);
     }
 
     [TestMethod]
@@ -349,7 +349,7 @@ public sealed class EvaluationContextTests
         var r2 = engine.Evaluate("width = width + 5", r1.Context);
         Assert.IsTrue(r2.Context.Variables.TryGetVariable("width", out var r2ContextVar));
         Assert.AreEqual("width + 5", r2ContextVar.Definition);
-        Assert.AreEqual(45, (int)r2ContextVar.Value.IntVal);
+        Assert.AreEqual(45, r2ContextVar.Value.IntVal);
 
         // Direct Add(Variable) on collection also preserves definition
         var directAdded = r2.Context.Variables.Add(new Variable("depth", new MathValue(20m), "2 * 10"));
@@ -366,7 +366,7 @@ public sealed class EvaluationContextTests
 
         // Depth 3 chained assignment fits: a = b = 1
         var allowed = engine.Evaluate("a = b = 1", EvaluationContext.Empty);
-        Assert.AreEqual(1, (int)allowed.Value.IntVal);
+        Assert.AreEqual(1, allowed.Value.IntVal);
 
         // Deep chained assignment exceeding MaxNestingDepth throws CalculationLimitException / LimitExceeded
         Assert.IsFalse(engine.TryEvaluate("v = w = x = y = z = 1", out _, out var diag));
@@ -377,13 +377,13 @@ public sealed class EvaluationContextTests
     [TestMethod]
     public void ChainedAssignments_VeryLongChain_IsRejectedDuringParsing()
     {
-        // ~1000 chained assignments fit within MaxInputLength; the parser must stop at the
-        // nesting limit rather than recursing for the whole chain.
+        // ~1000 chained assignments fit within MaxInputLength; the parser must stop at
+        // the nesting limit rather than recursing for the whole chain.
         var engine = new CalculatorEngine();
         string chain = string.Concat(Enumerable.Range(0, 1000).Select(i => $"v{i} = ")) + "1";
 
         Assert.IsFalse(engine.TryEvaluate(chain, out _, out var diag));
-        Assert.AreEqual(EvaluationError.LimitExceeded, diag!.Code);
+        Assert.AreEqual(EvaluationError.LimitExceeded, diag.Code);
     }
 
     [TestMethod]
@@ -391,11 +391,12 @@ public sealed class EvaluationContextTests
     [DataRow("sin = 3", EvaluationError.InvalidSyntax)]
     [DataRow("pi = 4", EvaluationError.InvalidSyntax)]
     [DataRow("true = 1", EvaluationError.InvalidSyntax)]
-    public void Assignment_InvalidOrReservedIdentifiers_ProduceDiagnostics(string expression, EvaluationError expectedError)
+    public void Assignment_InvalidOrReservedIdentifiers_ProduceDiagnostics(
+        string expression, EvaluationError expectedError)
     {
         var engine = new CalculatorEngine();
         Assert.IsFalse(engine.TryEvaluate(expression, out _, out var diagnostic));
-        Assert.AreEqual(expectedError, diagnostic!.Code);
+        Assert.AreEqual(expectedError, diagnostic.Code);
         Assert.Throws<ExpressionException>(() => engine.Evaluate(expression));
     }
 
@@ -419,7 +420,7 @@ public sealed class EvaluationContextTests
     {
         var engine = new CalculatorEngine();
         Assert.IsFalse(engine.TryEvaluate("ans + 1", out _, out var diagnostic, EvaluationContext.Empty));
-        Assert.AreEqual(EvaluationError.UnknownConstant, diagnostic!.Code);
+        Assert.AreEqual(EvaluationError.UnknownConstant, diagnostic.Code);
         Assert.Throws<ExpressionException>(() => engine.Evaluate("ans + 1", EvaluationContext.Empty));
     }
 
@@ -427,7 +428,7 @@ public sealed class EvaluationContextTests
     public void Ans_ExplicitUserVariable_OverridesPreviousResult()
     {
         var engine = new CalculatorEngine();
-        // Provide previous result 100, but explicit user variable "ans" = 5
+        // Provide previous result 100, but explicit user variable "ans" = 5.
         var context = new EvaluationContext(
             new Variable[] { new("ans", new(5m)) },
             new MathValue(100m));
@@ -441,7 +442,7 @@ public sealed class EvaluationContextTests
     {
         var engine = new CalculatorEngine();
 
-        // 1. Context containing an empty key or null character
+        // 1. Context containing an empty key or null character.
         var weirdVars = new Variable[]
         {
             new("", new(10m)),
@@ -450,13 +451,14 @@ public sealed class EvaluationContextTests
         };
         var context = new EvaluationContext(weirdVars, null);
 
-        // Valid variable is still readable
+        // Valid variable is still readable.
         Assert.AreEqual(30m, engine.Evaluate("valid", context).DecVal);
 
-        // Parser will not produce an empty or null-containing identifier token for variables
+        // Parser will not produce an empty or null-containing identifier token for
+        // variables.
         Assert.IsFalse(engine.TryEvaluate("", out _, out _, context));
 
-        // 2. Huge collection of 1,000 variables advances safely and maintains lookup
+        // 2. Huge collection of 1,000 variables advances safely and maintains lookup.
         var manyVars = Enumerable.Range(0, 1000)
             .Select(i => new Variable($"var_{i}", new MathValue((decimal)i)))
             .ToList();
@@ -466,7 +468,8 @@ public sealed class EvaluationContextTests
         var evaluateLookup = engine.Evaluate("var_999 + var_0", largeContext);
         Assert.AreEqual(999m, evaluateLookup.Value.DecVal);
 
-        var advanced = largeContext.Advance([new Variable("var_0", new MathValue(42m))], new MathValue(999m));
+        var advanced = largeContext.Advance(
+            [new Variable("var_0", new MathValue(42m))],new MathValue(999m));
         Assert.AreEqual(42m, advanced.Variables["var_0"].DecVal);
         Assert.AreEqual(1000, advanced.Variables.Count);
     }
