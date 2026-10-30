@@ -112,8 +112,8 @@ public sealed class ImplicitMultiplicationTests
     {
         // "2and 3" is not "2 * and * 3" (=6), but rather a logical AND of two non-zero
         // values, which is true (1).
-        Assert.AreEqual(1m, Calculator.Evaluate("2and 3").DecVal);
-        Assert.AreEqual(1m, Calculator.Evaluate("2or 3").DecVal);
+        Assert.AreEqual(1m, Calculator.Evaluate("2and 3").DecimalValue);
+        Assert.AreEqual(1m, Calculator.Evaluate("2or 3").DecimalValue);
     }
 
     [TestMethod]
@@ -132,7 +132,7 @@ public sealed class ImplicitMultiplicationTests
             ]), null);
 
         var result = Calculator.Evaluate(expression, context);
-        Assert.AreEqual(expected, (int)result.DecVal);
+        Assert.AreEqual(expected, (int)result.DecimalValue);
     }
 
 

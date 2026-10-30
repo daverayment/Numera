@@ -110,13 +110,13 @@ internal static class AstValidator
         switch (node)
         {
             case NumberNode numberNode:
-                switch (numberNode.Value.Type)
+                switch (numberNode.Value.Kind)
                 {
                     case MathValue.DataType.Integer
-                        when BigInteger.Abs(numberNode.Value.IntVal).GetBitLength() > CalculationLimits.MaxIntegerBits:
+                        when BigInteger.Abs(numberNode.Value.IntegerValue).GetBitLength() > CalculationLimits.MaxIntegerBits:
                         throw new CalculationLimitException();
 
-                    case MathValue.DataType.Double when !double.IsFinite(numberNode.Value.DblVal):
+                    case MathValue.DataType.Double when !double.IsFinite(numberNode.Value.DoubleValue):
                         throw Invalid(node, EvaluationError.InvalidSyntax, "Number literal must be finite.");
                 }
                 break;

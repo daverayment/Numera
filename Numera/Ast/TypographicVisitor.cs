@@ -305,14 +305,14 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
     private static bool TryGetSuperscript(ExpressionNode node, out string? result)
     {
         result = null;
-        if (node is NumberNode { Value.Type: MathValue.DataType.Integer } numNode)
+        if (node is NumberNode { Value.Kind: MathValue.DataType.Integer } numNode)
         {
-            return TryFormatSuperscript(numNode.Value.IntVal.ToString(CultureInfo.InvariantCulture), out result);
+            return TryFormatSuperscript(numNode.Value.IntegerValue.ToString(CultureInfo.InvariantCulture), out result);
         }
 
-        if (node is UnaryNode { Op: UnaryOperator.Negate, Operand: NumberNode { Value.Type: MathValue.DataType.Integer } negNum })
+        if (node is UnaryNode { Op: UnaryOperator.Negate, Operand: NumberNode { Value.Kind: MathValue.DataType.Integer } negNum })
         {
-            return TryFormatSuperscript("-" + negNum.Value.IntVal.ToString(CultureInfo.InvariantCulture), out result);
+            return TryFormatSuperscript("-" + negNum.Value.IntegerValue.ToString(CultureInfo.InvariantCulture), out result);
         }
 
         return false;

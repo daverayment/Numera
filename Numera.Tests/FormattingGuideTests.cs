@@ -81,7 +81,7 @@ public sealed class FormattingGuideTests
         var engine = GermanEngine();
         var shown = engine.FormatResult(engine.Evaluate("1000 + 2,5"));
 
-        Assert.AreEqual(1002.5m, engine.Evaluate(shown.PrimaryDisplay).DecVal);
+        Assert.AreEqual(1002.5m, engine.Evaluate(shown.PrimaryDisplay).DecimalValue);
     }
 
     [TestMethod]
@@ -113,7 +113,7 @@ public sealed class FormattingGuideTests
         {
             CultureInfo.CurrentCulture = German;
 
-            Assert.AreEqual(1002.5m, Calculator.Evaluate("1000 + 2.5").DecVal);
+            Assert.AreEqual(1002.5m, Calculator.Evaluate("1000 + 2.5").DecimalValue);
         }
         finally
         {
@@ -149,7 +149,7 @@ public sealed class FormattingGuideTests
     {
         var value = new MathValue(0.1 + 0.2);
 
-        Assert.AreEqual(MathValue.DataType.Double, value.Type);
+        Assert.AreEqual(MathValue.DataType.Double, value.Kind);
         Assert.AreEqual("0.30000000000000004", value.ToString(CultureInfo.InvariantCulture));
     }
 }

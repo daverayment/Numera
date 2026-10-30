@@ -18,9 +18,9 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
 
     public string Visit(NumberNode node)
     {
-        if (node.Value.Type == MathValue.DataType.Double)
+        if (node.Value.Kind == MathValue.DataType.Double)
         {
-            double d = node.Value.DblVal;
+            double d = node.Value.DoubleValue;
             if (double.IsNaN(d))
             {
                 return @"\operatorname{NaN}";
@@ -412,9 +412,9 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
     };
 
     private static bool RendersScientific(NumberNode n) =>
-        n.Value.Type == MathValue.DataType.Double &&
-        double.IsFinite(n.Value.DblVal) &&
-        n.Value.DblVal.ToString("G", CultureInfo.InvariantCulture).AsSpan().IndexOfAny('E', 'e') >= 0;
+        n.Value.Kind == MathValue.DataType.Double &&
+        double.IsFinite(n.Value.DoubleValue) &&
+        n.Value.DoubleValue.ToString("G", CultureInfo.InvariantCulture).AsSpan().IndexOfAny('E', 'e') >= 0;
 
     private static int GetPrecedence(ExpressionNode node) => node switch
     {

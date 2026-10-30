@@ -8,13 +8,13 @@ public class CalculatorEngineTests
     [TestMethod]
     public void NullOptions_BehavesLikeDefault()
     {
-        Assert.AreEqual(Calculator.Evaluate("2+3").IntVal, new CalculatorEngine().Evaluate("2+3").IntVal);
+        Assert.AreEqual(Calculator.Evaluate("2+3").IntegerValue, new CalculatorEngine().Evaluate("2+3").IntegerValue);
     }
 
     [TestMethod]
     public void NormalizationEnabledByDefault_AcceptsTypographicOperators()
     {
-        Assert.AreEqual(6, (int)Calculator.Evaluate("2×3").IntVal);
+        Assert.AreEqual(6, (int)Calculator.Evaluate("2×3").IntegerValue);
     }
 
     [TestMethod]
@@ -27,14 +27,14 @@ public class CalculatorEngineTests
     [TestMethod]
     public void RawMode_StillEvaluatesPlainExpressions()
     {
-        Assert.AreEqual(5, (int)TestEngines.RawEngine.Evaluate("2+3").IntVal);
+        Assert.AreEqual(5, (int)TestEngines.RawEngine.Evaluate("2+3").IntegerValue);
     }
 
     [TestMethod]
     public void Culture_DecimalCommaIsAcceptedWhenConfigured()
     {
         var engine = new CalculatorEngine(CalculatorOptions.ForCulture(new CultureInfo("de-DE")));
-        Assert.AreEqual(2.5m, engine.Evaluate("1,5+1").DecVal);
+        Assert.AreEqual(2.5m, engine.Evaluate("1,5+1").DecimalValue);
     }
 
     [TestMethod]
@@ -58,8 +58,8 @@ public class CalculatorEngineTests
                     new("x", new MathValue((System.Numerics.BigInteger)i)),
                 },
                 previousResult: null);
-            if (engine.Evaluate("x + 0", context).IntVal != i ||
-                engine.Evaluate("sin(90)").DblVal != 1.0)
+            if (engine.Evaluate("x + 0", context).IntegerValue != i ||
+                engine.Evaluate("sin(90)").DoubleValue != 1.0)
             {
                 Interlocked.Increment(ref failures);
             }

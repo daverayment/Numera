@@ -53,22 +53,41 @@ switch (result.Type)
 {
 	case MathValue.DataType.Integer:
 		// Provably exact arbitrary-precision integer
-		BigInteger intVal = result.IntVal;
+		BigInteger intVal = result.IntegerValue;
 		break;
 
 	case MathValue.DataType.Decimal:
 		// Exact high-precision decimal representation
-		decimal decVal = result.DecVal;
+		decimal decVal = result.DecimalValue;
 		break;
 
 	case MathValue.DataType.Double:
 		// Floating-point approximation
-		double dblVal = result.DblVal;
+		double dblVal = result.DoubleValue;
 		break;
 }
 ```
 
 If your application only needs a standard 64-bit float, calling `result.AsDouble()` provides a convenient - if potentially lossy - conversion.
+
+---
+
+## Equality, Comparison, & Hashing Semantics
+
+`MathValue` implements `IEquatable<MathValue>`, `IComparable<MathValue>`, `IComparable`, `==`, and `!=`. Comparison and equality semantics are carefully distinguished between .NET object/collection identity and expression evaluation:
+
+- **Cross-Representation Equality**: Numerically equal values across representations compare equal (`1 == 1.0m == 1.0`, `0.5m == 0.5`).
+- **Consistent Hashing**: `GetHashCode()` guarantees that any two values that compare equal produce identical hash codes across representations (including exact dyadic rationals in `Decimal` and `Double`, and signed zeros `+0.0` and `-0.0`).
+- **Object Equality vs Relational NaN**:
+  - `MathValue.Equals` and `operator ==` treat `NaN == NaN` as `true` to ensure reflexive semantics required by dictionary keys and hash sets.
+  - In contrast, expression evaluation (`Calculator.Evaluate("NaN == NaN")` or `MathValue.AreEqual`) follows IEEE 754 relational semantics where comparisons involving `NaN` evaluate to `false`.
+- **Negative Integer Powers (`Pow`) and Exact Integer Division**:
+  - `a^-n` is defined as `1 / a^n` using the existing division operator `/`.
+  - For decimal bases with $|base| < 1$ and exact decimal inverses (such as `0.5m -> 2m`, `0.25m -> 4m`, `0.1m -> 10m`), the engine inverts the base first and computes `(1/base)^n`, turning a shrinking fractional power into an expanding whole-number power that preserves exactness in `decimal` or promotes to `BigInteger` (e.g. `0.5m^-100 == 2^100`). Exactness is checked in integer arithmetic (`ca * cb == 10^(sa + sb)`) to avoid false positives from rounded decimal products (such as `1/0.3`).
+  - Integer powers of two beyond decimal's 28-digit capacity (`2^-30`, `2^-100`, `4^-15`, or whole-number decimals like `2.0m^-30`) are computed via `Math.ScaleB` directly into `double`, yielding bit-exact results down to subnormal $2^{-1074}$.
+  - When exact integer division falls back to `double` (e.g. huge denominators in `1 / d` or `a / b` overflowing decimal), `DivideIntegersAsDouble` performs exact integer `DivRem` with guard bits and a sticky bit, achieving provably correct round-half-even rounding ($\le 0.5$ ULP) rather than approximate mantissa truncation.
+  - For small quotients where decimal's fixed 28-digit scale would truncate significant digits, `Pow` falls back to `double` unless the decimal quotient is exact.
+  - Denominators exceeding the 16,384-bit integer ceiling (e.g. `10^-5000`) fall back to `double` rather than throwing `CalculationLimitException`.
 
 ---
 
@@ -136,7 +155,7 @@ The culture rules to be aware of:
 - **An engine reads and writes in one culture.** `engine.FormatResult` uses the same culture the engine uses to read input, so `PrimaryDisplay` can be typed or pasted back into that engine.
 - **Display text has no digit grouping.** Output is not grouped (`1002,5`, not `1.002,5`), so it stays re-parseable. Add grouping in your UI if you want it, from the original `Value`.
 - **The static facade is invariant for input, but not for display.** `Calculator.Evaluate` always reads invariant text, whereas `Calculator.FormatResult(value, culture)` formats with `CultureInfo.CurrentCulture` when no culture is passed. The result may then not be re-parseable by the facade. Use an engine, or pass `CultureInfo.InvariantCulture`, when round-tripping matters.
-- **Doubles print at full precision.** Approximate values use round-trip (`G17`) formatting, so you may see digits such as `0.30000000000000004`. Check `Value.Type` if you need to flag a result as approximate.
+- **Doubles use .NET's default round-trip formatting.** Unformatted `double` values use .NET's standard formatting, which produces the shortest round-trippable decimal representation. Check `Value.Type` if you need to flag a result as approximate.
 - **Radix strings and `MachineReadable` never depend on culture.**
 
 ---

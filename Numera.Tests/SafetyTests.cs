@@ -25,7 +25,7 @@ public class SafetyTests
     public void InputLengthCeilingAcceptsBoundaryAndRejectsExcess()
     {
         var accepted = "1" + new string(' ', CalculationLimits.MaxInputLength - 1);
-        Assert.AreEqual(BigInteger.One, Calculator.Evaluate(accepted).IntVal);
+        Assert.AreEqual(BigInteger.One, Calculator.Evaluate(accepted).IntegerValue);
         Assert.IsFalse(Calculator.TryEvaluate(accepted + " ", out _, out var diagnostic));
         Assert.AreEqual(EvaluationError.LimitExceeded, diagnostic!.Code);
     }
@@ -38,7 +38,7 @@ public class SafetyTests
         // for enclosing groups at the accepted boundary.
         var accepted = new string('(', depth - 1) + "1" + new string(')', depth - 1);
         var rejected = new string('(', depth) + "1" + new string(')', depth);
-        Assert.AreEqual(BigInteger.One, Calculator.Evaluate(accepted).IntVal);
+        Assert.AreEqual(BigInteger.One, Calculator.Evaluate(accepted).IntegerValue);
         Assert.IsFalse(Calculator.TryEvaluate(rejected, out _, out var diagnostic));
         Assert.AreEqual(EvaluationError.LimitExceeded, diagnostic!.Code);
     }
@@ -47,10 +47,10 @@ public class SafetyTests
     public void OptionsTightenLimitsWithoutChangingOtherEvaluations()
     {
         var tight = new CalculatorEngine(new CalculatorOptions { MaxInputLength = 3, MaxNestingDepth = 2 });
-        Assert.AreEqual(new BigInteger(3), tight.Evaluate("1+2").IntVal);
+        Assert.AreEqual(new BigInteger(3), tight.Evaluate("1+2").IntegerValue);
         Assert.IsFalse(tight.TryEvaluate("12+3", out _, out var diagnostic));
         Assert.AreEqual(EvaluationError.LimitExceeded, diagnostic!.Code);
-        Assert.AreEqual(new BigInteger(15), Calculator.Evaluate("12+3").IntVal);
+        Assert.AreEqual(new BigInteger(15), Calculator.Evaluate("12+3").IntegerValue);
         Assert.IsFalse(tight.TryEvaluate("--1", out _, out _));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new CalculatorEngine(new CalculatorOptions { MaxInputLength = CalculationLimits.MaxInputLength + 1 }));
@@ -61,7 +61,7 @@ public class SafetyTests
     {
         Parallel.For(1, 100, i =>
         {
-            Assert.AreEqual(new BigInteger(i * i), Calculator.Evaluate($"{i}^2").IntVal);
+            Assert.AreEqual(new BigInteger(i * i), Calculator.Evaluate($"{i}^2").IntegerValue);
         });
     }
 }

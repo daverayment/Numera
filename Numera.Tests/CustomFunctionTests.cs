@@ -20,10 +20,10 @@ public sealed class CustomFunctionTests
         var engine = new CalculatorEngine(options);
 
         var result = engine.Evaluate("double(21)");
-        Assert.AreEqual(42m, result.DecVal);
+        Assert.AreEqual(42m, result.DecimalValue);
 
         var compound = engine.Evaluate("triple(double(5))");
-        Assert.AreEqual(30m, compound.DecVal);
+        Assert.AreEqual(30m, compound.DecimalValue);
     }
 
     [TestMethod]
@@ -46,10 +46,10 @@ public sealed class CustomFunctionTests
         var engine = new CalculatorEngine(options);
 
         var resHypot = engine.Evaluate("myHypot(3, 4)");
-        Assert.AreEqual(5.0, resHypot.DblVal);
+        Assert.AreEqual(5.0, resHypot.DoubleValue);
 
         var resWeighted = engine.Evaluate("weightedAvg(10, 20, 0.25)");
-        Assert.AreEqual(17.5m, resWeighted.DecVal);
+        Assert.AreEqual(17.5m, resWeighted.DecimalValue);
     }
 
     [TestMethod]
@@ -65,7 +65,7 @@ public sealed class CustomFunctionTests
 
         var engine = new CalculatorEngine(options);
         var result = engine.Evaluate("magicNumber()");
-        Assert.AreEqual(42m, result.DecVal);
+        Assert.AreEqual(42m, result.DecimalValue);
     }
 
     [TestMethod]
@@ -106,9 +106,9 @@ public sealed class CustomFunctionTests
 
         var engine = new CalculatorEngine(options);
 
-        Assert.AreEqual(6m, engine.Evaluate("MYFUNC(5)").DecVal);
-        Assert.AreEqual(7m, engine.Evaluate("myfunc(6)").DecVal);
-        Assert.AreEqual(8m, engine.Evaluate("MyFunc(7)").DecVal);
+        Assert.AreEqual(6m, engine.Evaluate("MYFUNC(5)").DecimalValue);
+        Assert.AreEqual(7m, engine.Evaluate("myfunc(6)").DecimalValue);
+        Assert.AreEqual(8m, engine.Evaluate("MyFunc(7)").DecimalValue);
     }
 
     [TestMethod]
@@ -333,7 +333,7 @@ public sealed class CustomFunctionTests
             [
                 CustomFunction.Create("positiveOnly", x =>
                 {
-                    if (x.DecVal <= 0)
+                    if (x.DecimalValue <= 0)
                     {
                         throw new ExpressionException(new EvaluationDiagnostic(
                             EvaluationError.ArgumentOutOfRange, "Value must be positive."));
@@ -366,9 +366,9 @@ public sealed class CustomFunctionTests
 
         var engine = new CalculatorEngine(options);
 
-        Assert.AreEqual(13m, engine.Evaluate("triple(3) + 4").DecVal);
-        Assert.AreEqual(36m, engine.Evaluate("triple(3)4").DecVal);
-        Assert.AreEqual(36m, engine.Evaluate("4triple(3)").DecVal);
+        Assert.AreEqual(13m, engine.Evaluate("triple(3) + 4").DecimalValue);
+        Assert.AreEqual(36m, engine.Evaluate("triple(3)4").DecimalValue);
+        Assert.AreEqual(36m, engine.Evaluate("4triple(3)").DecimalValue);
     }
 
     [TestMethod]

@@ -273,7 +273,7 @@ public class AstValidationTests
         {
             try
             {
-                Assert.AreEqual(terms, (int)Calculator.Evaluate(expression).IntVal);
+                Assert.AreEqual(terms, (int)Calculator.Evaluate(expression).IntegerValue);
                 foreach (var style in new[] { ExpressionFormatOptions.Ascii, ExpressionFormatOptions.Typographic, ExpressionFormatOptions.LaTeX })
                 {
                     // The formatters walk left spines iteratively, so this must succeed rather than hit the stack guard.

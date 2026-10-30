@@ -69,24 +69,24 @@ public readonly record struct EvaluationResult :
     /// <summary>
     /// Gets the data type of the current math value.
     /// </summary>
-    public MathValue.DataType Type => Value.Type;
+    public MathValue.DataType Type => Value.Kind;
 
     /// <summary>
     /// Gets the stored <see cref="System.Numerics.BigInteger"/> value when
     /// <see cref="Type"/> is <see cref="MathValue.DataType.Integer"/>; otherwise default.
     /// </summary>
-    public System.Numerics.BigInteger IntVal => Value.IntVal;
+    public System.Numerics.BigInteger IntegerValue => Value.IntegerValue;
 
     /// <summary>
     /// Gets the stored <see cref="decimal"/> value when <see cref="Type"/> is
     /// <see cref="MathValue.DataType.Decimal"/>; otherwise default.
     /// </summary>
-    public decimal DecVal => Value.DecVal;
+    public decimal DecimalValue => Value.DecimalValue;
 
     /// <summary>
     /// Gets the value as a double-precision floating-point number.
     /// </summary>
-    public double DblVal => Value.DblVal;
+    public double DoubleValue => Value.DoubleValue;
 
     /// <summary>
     /// Returns true if the value is a finite number. Returns false for NaN or Infinity.
@@ -98,6 +98,11 @@ public readonly record struct EvaluationResult :
     /// false.
     /// </summary>
     public bool IsNaN => Value.IsNaN;
+
+    /// <summary>
+    /// Returns true if the value is zero.
+    /// </summary>
+    public bool IsZero => Value.IsZero;
 
     /// <summary>
     /// Forces the value into a standard 64-bit floating-point representation. This may
@@ -181,11 +186,6 @@ public readonly record struct EvaluationResult :
     /// information.</param>
     /// <returns>The string representation of the value of the current instance as
     /// specified by format and formatProvider.</returns>
-    /// <remarks>
-    /// If the active representation is <see cref="MathValue.DataType.Double"/>
-    /// and no format is specified, defaults to "G17" to preserve floating-point
-    /// round-trip precision.
-    /// </remarks>
     public string ToString(string? format, IFormatProvider? formatProvider) =>
         Value.ToString(format, formatProvider);
 

@@ -81,7 +81,7 @@ public sealed class CalculatorOptionsTests
         Assert.AreEqual(engine1.Options.Culture, engine2.Options.Culture);
         Assert.AreEqual(engine1.Options.AngleUnit, engine2.Options.AngleUnit);
         Assert.AreEqual(engine1.Options.Normalization, engine2.Options.Normalization);
-        Assert.AreEqual(engine1.Evaluate("2×3! + 10%").DecVal,
-            engine2.Evaluate("2×3! + 10%").DecVal);
+        Assert.AreEqual(engine1.Evaluate("2×3! + 10%").DecimalValue,
+            engine2.Evaluate("2×3! + 10%").DecimalValue);
     }
 }

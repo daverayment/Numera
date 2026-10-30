@@ -187,8 +187,8 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 			try
 			{
 				var result = customFunction.Implementation(args);
-				if (result.Type is MathValue.DataType.Integer &&
-					BigInteger.Abs(result.IntVal).GetBitLength() > CalculationLimits.MaxIntegerBits)
+				if (result.Kind is MathValue.DataType.Integer &&
+					BigInteger.Abs(result.IntegerValue).GetBitLength() > CalculationLimits.MaxIntegerBits)
 				{
 					throw new CalculationLimitException();
 				}
@@ -373,39 +373,39 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
             switch (lower)
             {
                 case "ceil":
-                    return args[0].Type switch
+                    return args[0].Kind switch
                     {
                         MathValue.DataType.Integer => args[0],
-                        MathValue.DataType.Decimal => new MathValue((BigInteger)Math.Ceiling(args[0].DecVal)),
+                        MathValue.DataType.Decimal => new MathValue((BigInteger)Math.Ceiling(args[0].DecimalValue)),
                         _ => ToIntegralMathValue(Math.Ceiling(v)),
                     };
 
                 case "floor":
-                    return args[0].Type switch
+                    return args[0].Kind switch
                     {
                         MathValue.DataType.Integer => args[0],
-                        MathValue.DataType.Decimal => new MathValue((BigInteger)Math.Floor(args[0].DecVal)),
+                        MathValue.DataType.Decimal => new MathValue((BigInteger)Math.Floor(args[0].DecimalValue)),
                         _ => ToIntegralMathValue(Math.Floor(v)),
                     };
 
                 case "trunc":
-                    return args[0].Type switch
+                    return args[0].Kind switch
                     {
                         MathValue.DataType.Integer => args[0],
-                        MathValue.DataType.Decimal => new MathValue((BigInteger)decimal.Truncate(args[0].DecVal)),
+                        MathValue.DataType.Decimal => new MathValue((BigInteger)decimal.Truncate(args[0].DecimalValue)),
                         _ => ToIntegralMathValue(Math.Truncate(v)),
                     };
 
                 case "frac":
-                    return args[0].Type switch
+                    return args[0].Kind switch
                     {
                         MathValue.DataType.Integer => new MathValue(0m),
-                        MathValue.DataType.Decimal => new MathValue(args[0].DecVal - decimal.Truncate(args[0].DecVal)),
+                        MathValue.DataType.Decimal => new MathValue(args[0].DecimalValue - decimal.Truncate(args[0].DecimalValue)),
                         _ => new MathValue(v - Math.Truncate(v)),
                     };
 
                 case "cbrt":
-                    if (args[0].Type is MathValue.DataType.Integer && args[0].IntVal.TryGetExactRoot(3, out var exactCbrt))
+                    if (args[0].Kind is MathValue.DataType.Integer && args[0].IntegerValue.TryGetExactRoot(3, out var exactCbrt))
                     {
                         return new MathValue(exactCbrt);
                     }
@@ -430,14 +430,14 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                     return new MathValue(double.ExpM1(v));
 
                 case "abs":
-                    if (args[0].Type is MathValue.DataType.Integer)
+                    if (args[0].Kind is MathValue.DataType.Integer)
                     {
-                        return new MathValue(BigInteger.Abs(args[0].IntVal));
+                        return new MathValue(BigInteger.Abs(args[0].IntegerValue));
                     }
 
-                    if (args[0].Type is MathValue.DataType.Decimal)
+                    if (args[0].Kind is MathValue.DataType.Decimal)
                     {
-                        return new MathValue(Math.Abs(args[0].DecVal));
+                        return new MathValue(Math.Abs(args[0].DecimalValue));
                     }
 
                     return new MathValue(Math.Abs(v));
@@ -476,15 +476,15 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                     return new MathValue(double.LogP1(v));
 
                 case "sqrt":
-                    if (args[0].Type is MathValue.DataType.Integer)
+                    if (args[0].Kind is MathValue.DataType.Integer)
                     {
-                        if (args[0].IntVal < BigInteger.Zero)
+                        if (args[0].IntegerValue < BigInteger.Zero)
                         {
                             throw new ExpressionException(new EvaluationDiagnostic(
                                 EvaluationError.UndefinedMathResult, "Square root of a negative number has no real solution."));
                         }
 
-                        if (args[0].IntVal.TryGetExactSquareRoot(out var exactIntRoot))
+                        if (args[0].IntegerValue.TryGetExactSquareRoot(out var exactIntRoot))
                         {
                             return new MathValue(exactIntRoot);
                         }
@@ -502,14 +502,14 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
                 case "sign":
                 case "sgn":
-                    if (args[0].Type is MathValue.DataType.Integer)
+                    if (args[0].Kind is MathValue.DataType.Integer)
                     {
-                        return new MathValue((BigInteger)args[0].IntVal.Sign);
+                        return new MathValue((BigInteger)args[0].IntegerValue.Sign);
                     }
 
-                    if (args[0].Type is MathValue.DataType.Decimal)
+                    if (args[0].Kind is MathValue.DataType.Decimal)
                     {
-                        return new MathValue((decimal)Math.Sign(args[0].DecVal));
+                        return new MathValue((decimal)Math.Sign(args[0].DecimalValue));
                     }
 
                     if (double.IsNaN(v))
@@ -524,14 +524,14 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                 case "round":
                     // Calculator midpoint rounding is away from zero, not Math.Round's
                     // default ties-to-even behavior.
-                    if (args[0].Type is MathValue.DataType.Integer)
+                    if (args[0].Kind is MathValue.DataType.Integer)
                     {
                         return args[0];
                     }
 
-                    if (args[0].Type is MathValue.DataType.Decimal)
+                    if (args[0].Kind is MathValue.DataType.Decimal)
                     {
-                        return new MathValue((BigInteger)Math.Round(args[0].DecVal, MidpointRounding.AwayFromZero));
+                        return new MathValue((BigInteger)Math.Round(args[0].DecimalValue, MidpointRounding.AwayFromZero));
                     }
 
                     return ToIntegralMathValue(Math.Round(v, MidpointRounding.AwayFromZero));
@@ -788,11 +788,11 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                 case "root" or "nthroot":
                     // If base and degree are both integers and degree is a positive int,
                     // check for an exact integer root before falling back to double approximation.
-                    if (args[0].Type is MathValue.DataType.Integer &&
+                    if (args[0].Kind is MathValue.DataType.Integer &&
                         args[1].TryGetInteger(out var rootDegInt) &&
                         rootDegInt > BigInteger.Zero &&
                         rootDegInt <= int.MaxValue &&
-                        args[0].IntVal.TryGetExactRoot((int)rootDegInt, out var exactNthRoot))
+                        args[0].IntegerValue.TryGetExactRoot((int)rootDegInt, out var exactNthRoot))
                     {
                         return new MathValue(exactNthRoot);
                     }
@@ -1067,24 +1067,24 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
         int places = (int)placesInt;
 
-        if (value.Type is MathValue.DataType.Integer)
+        if (value.Kind is MathValue.DataType.Integer)
         {
             return value;
         }
 
         if (places == 0)
         {
-            if (value.Type is MathValue.DataType.Decimal)
+            if (value.Kind is MathValue.DataType.Decimal)
             {
-                return new MathValue((BigInteger)Math.Round(value.DecVal, MidpointRounding.AwayFromZero));
+                return new MathValue((BigInteger)Math.Round(value.DecimalValue, MidpointRounding.AwayFromZero));
             }
 
             return ToIntegralMathValue(Math.Round(value.AsDouble(), MidpointRounding.AwayFromZero));
         }
 
-        if (value.Type is MathValue.DataType.Decimal)
+        if (value.Kind is MathValue.DataType.Decimal)
         {
-            return new MathValue(Math.Round(value.DecVal, places, MidpointRounding.AwayFromZero));
+            return new MathValue(Math.Round(value.DecimalValue, places, MidpointRounding.AwayFromZero));
         }
 
         if (places <= 15)

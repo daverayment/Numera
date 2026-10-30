@@ -12,7 +12,7 @@ public sealed class AstAndFormattingTests
     {
         var node = Calculator.Parse("42");
         Assert.IsInstanceOfType<NumberNode>(node);
-        Assert.AreEqual(42, ((NumberNode)node).Value.IntVal);
+        Assert.AreEqual(42, ((NumberNode)node).Value.IntegerValue);
     }
 
     [TestMethod]
@@ -34,13 +34,13 @@ public sealed class AstAndFormattingTests
         Assert.IsInstanceOfType<BinaryNode>(node);
         var addNode = (BinaryNode)node;
         Assert.AreEqual(BinaryOperator.Add, addNode.Op);
-        Assert.AreEqual(2, ((NumberNode)addNode.Left).Value.IntVal);
+        Assert.AreEqual(2, ((NumberNode)addNode.Left).Value.IntegerValue);
 
         Assert.IsInstanceOfType<BinaryNode>(addNode.Right);
         var mulNode = (BinaryNode)addNode.Right;
         Assert.AreEqual(BinaryOperator.Multiply, mulNode.Op);
-        Assert.AreEqual(3, ((NumberNode)mulNode.Left).Value.IntVal);
-        Assert.AreEqual(4, ((NumberNode)mulNode.Right).Value.IntVal);
+        Assert.AreEqual(3, ((NumberNode)mulNode.Left).Value.IntegerValue);
+        Assert.AreEqual(4, ((NumberNode)mulNode.Right).Value.IntegerValue);
     }
 
     [TestMethod]
@@ -192,15 +192,15 @@ public sealed class AstAndFormattingTests
     {
         var hex = Calculator.Parse("0x2A");
         Assert.IsInstanceOfType<NumberNode>(hex);
-        Assert.AreEqual(42, ((NumberNode)hex).Value.IntVal);
+        Assert.AreEqual(42, ((NumberNode)hex).Value.IntegerValue);
 
         var bin = Calculator.Parse("0b101010");
         Assert.IsInstanceOfType<NumberNode>(bin);
-        Assert.AreEqual(42, ((NumberNode)bin).Value.IntVal);
+        Assert.AreEqual(42, ((NumberNode)bin).Value.IntegerValue);
 
         var oct = Calculator.Parse("0o52");
         Assert.IsInstanceOfType<NumberNode>(oct);
-        Assert.AreEqual(42, ((NumberNode)oct).Value.IntVal);
+        Assert.AreEqual(42, ((NumberNode)oct).Value.IntegerValue);
     }
 
     [TestMethod]
@@ -683,27 +683,27 @@ public sealed class AstAndFormattingTests
     public void Factorial_EvaluationAndPrecedence_WorksCorrectly()
     {
         // Basic evaluation
-        Assert.AreEqual(new BigInteger(120), Calculator.Evaluate("5!").IntVal);
-        Assert.AreEqual(new BigInteger(120), Calculator.Evaluate("5 !").IntVal);
-        Assert.AreEqual(new BigInteger(1), Calculator.Evaluate("0!").IntVal);
-        Assert.AreEqual(new BigInteger(1), Calculator.Evaluate("1!").IntVal);
+        Assert.AreEqual(new BigInteger(120), Calculator.Evaluate("5!").IntegerValue);
+        Assert.AreEqual(new BigInteger(120), Calculator.Evaluate("5 !").IntegerValue);
+        Assert.AreEqual(new BigInteger(1), Calculator.Evaluate("0!").IntegerValue);
+        Assert.AreEqual(new BigInteger(1), Calculator.Evaluate("1!").IntegerValue);
 
         // Ambiguity and comparisons
-        Assert.AreEqual(1m, Calculator.Evaluate("5! != 3").DecVal);
-        Assert.AreEqual(1m, Calculator.Evaluate("5! == 120").DecVal);
-        Assert.AreEqual(1m, Calculator.Evaluate("5!==120").DecVal);
+        Assert.AreEqual(1m, Calculator.Evaluate("5! != 3").DecimalValue);
+        Assert.AreEqual(1m, Calculator.Evaluate("5! == 120").DecimalValue);
+        Assert.AreEqual(1m, Calculator.Evaluate("5!==120").DecimalValue);
 
         // Precedence: postfix factorial binds tighter than prefix negate
-        Assert.AreEqual(new BigInteger(-6), Calculator.Evaluate("-3!").IntVal);
+        Assert.AreEqual(new BigInteger(-6), Calculator.Evaluate("-3!").IntegerValue);
 
         // Precedence with power
         // 2^3! parses as 2^(3!) = 2^6 = 64
-        Assert.AreEqual(new BigInteger(64), Calculator.Evaluate("2^3!").IntVal);
+        Assert.AreEqual(new BigInteger(64), Calculator.Evaluate("2^3!").IntegerValue);
         // (3!)^2 = 6^2 = 36; 3!^2 parsed as (3!)^2
-        Assert.AreEqual(new BigInteger(36), Calculator.Evaluate("3!^2").IntVal);
+        Assert.AreEqual(new BigInteger(36), Calculator.Evaluate("3!^2").IntegerValue);
 
         // Nested factorial (n!)!
-        Assert.AreEqual(new BigInteger(720), Calculator.Evaluate("(3!)!").IntVal);
+        Assert.AreEqual(new BigInteger(720), Calculator.Evaluate("(3!)!").IntegerValue);
 
         // (n+1)!
         var variablesContext = new EvaluationContext(
@@ -711,7 +711,7 @@ public sealed class AstAndFormattingTests
             previousResult: null);
         Assert.AreEqual(
             new BigInteger(6),
-            Calculator.Evaluate("(n+1)!", variablesContext).IntVal);
+            Calculator.Evaluate("(n+1)!", variablesContext).IntegerValue);
     }
 
     [TestMethod]
@@ -756,10 +756,10 @@ public sealed class AstAndFormattingTests
             previousResult: null);
 
         // Juxtaposition with variable and grouping.
-        Assert.AreEqual(6m, Calculator.Evaluate("2x", options).DecVal);
-        Assert.AreEqual(12m, Calculator.Evaluate("x y", options).DecVal);
-        Assert.AreEqual(new BigInteger(14), Calculator.Evaluate("2(3 + 4)").IntVal);
-        Assert.AreEqual(new BigInteger(21), Calculator.Evaluate("(1 + 2)(3 + 4)").IntVal);
+        Assert.AreEqual(6m, Calculator.Evaluate("2x", options).DecimalValue);
+        Assert.AreEqual(12m, Calculator.Evaluate("x y", options).DecimalValue);
+        Assert.AreEqual(new BigInteger(14), Calculator.Evaluate("2(3 + 4)").IntegerValue);
+        Assert.AreEqual(new BigInteger(21), Calculator.Evaluate("(1 + 2)(3 + 4)").IntegerValue);
 
         // AST structure verification: IsImplicit is true.
         var ast = Calculator.Parse("2x", options);
@@ -769,10 +769,10 @@ public sealed class AstAndFormattingTests
         Assert.IsTrue(bin.IsImplicit);
 
         // Precedence: 2x^2 parses as 2*(x^2) = 2*9 = 18.
-        Assert.AreEqual(18m, Calculator.Evaluate("2x^2", options).DecVal);
+        Assert.AreEqual(18m, Calculator.Evaluate("2x^2", options).DecimalValue);
 
         // Greek tokens as standalone symbols.
-        Assert.AreEqual(Calculator.Evaluate("2 * pi").DecVal, Calculator.Evaluate("2π").DecVal);
+        Assert.AreEqual(Calculator.Evaluate("2 * pi").DecimalValue, Calculator.Evaluate("2π").DecimalValue);
     }
 
     [TestMethod]
@@ -815,10 +815,10 @@ public sealed class AstAndFormattingTests
             previousResult: null);
 
         // Unicode variables like θ work cleanly.
-        Assert.AreEqual(10m, Calculator.Evaluate("2θ", variablesContext).DecVal);
+        Assert.AreEqual(10m, Calculator.Evaluate("2θ", variablesContext).DecimalValue);
 
         // Keyword boundary: android is a variable, not the keyword 'and'.
-        Assert.AreEqual(20m, Calculator.Evaluate("2 android", variablesContext).DecVal);
+        Assert.AreEqual(20m, Calculator.Evaluate("2 android", variablesContext).DecimalValue);
 
         // Function without parentheses reports requires parentheses error.
         var exSin = Assert.Throws<ExpressionException>(() => Calculator.Parse("sin"));
