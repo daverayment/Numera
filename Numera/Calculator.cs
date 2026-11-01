@@ -29,8 +29,6 @@ namespace Numera;
 /// </remarks>
 public static class Calculator
 {
-    private static readonly CalculatorEngine DefaultEngine = new(CalculatorOptions.Default);
-
     /// <summary>
     /// Evaluates a mathematical expression and returns a result containing a polymorphic
     /// <see cref="MathValue"/>.
@@ -46,7 +44,7 @@ public static class Calculator
     /// parsed, or evaluation fails. Check <see cref="NumeraException.Diagnostic"/> for
     /// structured details.</exception>
     public static EvaluationResult Evaluate(string expression, EvaluationContext? context = null) =>
-        DefaultEngine.Evaluate(expression, context);
+        CalculatorEngine.Default.Evaluate(expression, context);
 
     /// <summary>
     /// Evaluates an already parsed expression tree, so a caller that both formats and
@@ -54,7 +52,7 @@ public static class Calculator
     /// default limits first.
     /// </summary>
     /// <param name="node">The tree to evaluate, typically from
-    /// <see cref="Parse(string, EvaluationContext?)"/>.</param>
+    /// <see cref="Parse(string, EvaluationContext?, bool)"/>.</param>
     /// <param name="context">Optional variables and previous result used to resolve
     /// identifiers.</param>
     /// <returns>The result of the evaluation and the updated execution context as an 
@@ -64,7 +62,7 @@ public static class Calculator
     /// <exception cref="NumeraException">Thrown if the tree breaches limits or evaluation
     /// fails; check <see cref="NumeraException.Diagnostic"/>.</exception>
     public static EvaluationResult Evaluate(ExpressionNode node, EvaluationContext? context = null) =>
-        DefaultEngine.Evaluate(node, context);
+        CalculatorEngine.Default.Evaluate(node, context);
 
     /// <summary>
     /// Attempts to evaluate an expression without throwing for expected failures. Invalid
@@ -86,7 +84,7 @@ public static class Calculator
         out EvaluationResult result,
         [NotNullWhen(false)] out EvaluationDiagnostic? diagnostic,
         EvaluationContext? context = null) =>
-        DefaultEngine.TryEvaluate(expression, out result, out diagnostic, context);
+        CalculatorEngine.Default.TryEvaluate(expression, out result, out diagnostic, context);
 
     /// <summary>
     /// Attempts to evaluate an already parsed expression tree without throwing for
@@ -106,7 +104,7 @@ public static class Calculator
         out EvaluationResult result,
         [NotNullWhen(false)] out EvaluationDiagnostic? diagnostic,
         EvaluationContext? context = null) =>
-        DefaultEngine.TryEvaluate(node, out result, out diagnostic, context);
+        CalculatorEngine.Default.TryEvaluate(node, out result, out diagnostic, context);
 
     /// <summary>
     /// Parses an expression into an abstract syntax tree without evaluating it.
@@ -117,13 +115,19 @@ public static class Calculator
     /// <param name="context">Optional variables; supplying them lets their names parse as
     /// identifiers (for example, enabling implicit multiplication such as <c>2x</c>).
     /// </param>
+    /// <param name="allowUnboundVariables">If true, variable references in the expression
+    /// which do not have corresponding entries in <paramref name="context"/> do not cause
+    /// an error. Use for formatting or REPL use.</param>
     /// <returns>The root node of the syntax tree.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
     /// null.</exception>
     /// <exception cref="NumeraException">Thrown if normalization or parsing fails, or
     /// limits are exceeded.</exception>
-    public static ExpressionNode Parse(string expression, EvaluationContext? context = null) =>
-        DefaultEngine.Parse(expression, context);
+    public static ExpressionNode Parse(
+        string expression,
+        EvaluationContext? context = null,
+        bool allowUnboundVariables = false) =>
+        CalculatorEngine.Default.Parse(expression, context, allowUnboundVariables);
 
     /// <summary>
     /// Attempts to parse an expression without throwing for syntax or normalization
@@ -136,6 +140,7 @@ public static class Calculator
     /// </param>
     /// <param name="context">Optional variables so their names parse as identifiers.
     /// </param>
+    /// <param name="allowUnboundVariables">If true, identifiers not present in context are accepted as variable nodes.</param>
     /// <returns><c>true</c> if parsing succeeded; otherwise <c>false</c>.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
     /// null.</exception>
@@ -143,8 +148,9 @@ public static class Calculator
         string expression,
         [NotNullWhen(true)] out ExpressionNode? node,
         [NotNullWhen(false)] out EvaluationDiagnostic? diagnostic,
-        EvaluationContext? context = null) =>
-        DefaultEngine.TryParse(expression, out node, out diagnostic, context);
+        EvaluationContext? context = null,
+        bool allowUnboundVariables = false) =>
+        CalculatorEngine.Default.TryParse(expression, out node, out diagnostic, context, allowUnboundVariables);
 
     /// <summary>
     /// Parses and re-renders an expression, for example to show a tidied or typeset
@@ -159,7 +165,7 @@ public static class Calculator
     /// <exception cref="NumeraException">Thrown if the expression cannot be normalized or
     /// parsed.</exception>
     public static string FormatExpression(string expression, ExpressionFormatOptions? options = null) =>
-        DefaultEngine.FormatExpression(expression, options);
+        CalculatorEngine.Default.FormatExpression(expression, options);
 
     /// <summary>
     /// Renders an existing expression tree. Unknown function names are tolerated so
@@ -174,7 +180,7 @@ public static class Calculator
     /// <exception cref="NumeraException">Thrown if the tree breaches nesting or length
     /// limits.</exception>
     public static string FormatExpression(ExpressionNode node, ExpressionFormatOptions? options = null) =>
-        DefaultEngine.FormatExpression(node, options);
+        CalculatorEngine.Default.FormatExpression(node, options);
 
     /// <summary>
     /// Formats a calculated <see cref="MathValue"/> into a structured

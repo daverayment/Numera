@@ -15,6 +15,7 @@ internal sealed class AstParser
     private readonly CalculatorOptions _options;
     private readonly EvaluationContext _context;
     private readonly SourceMap? _sourceMap;
+    private readonly bool _allowUnboundVariables;
     private int _pos;
     private int _depth;
 
@@ -53,12 +54,14 @@ internal sealed class AstParser
         string input,
         CalculatorOptions options,
         EvaluationContext? context = null,
-        SourceMap? sourceMap = null)
+        SourceMap? sourceMap = null,
+        bool allowUnboundVariables = false)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(options);
         _context = context ?? EvaluationContext.Empty;
         _sourceMap = sourceMap;
+        _allowUnboundVariables = allowUnboundVariables;
         if (input.Length > options.MaxInputLength)
         {
             throw new CalculationLimitException();
@@ -186,16 +189,19 @@ internal sealed class AstParser
     // 2.  Logical XOR (xor)
     // 3.  Logical AND (&&, and)
     // 4.  Logical NOT (!, not)
-    //     Note on 'not' and '!': in Numera (matching Python convention), logical negation has lower
-    //     precedence than comparison chains, so "not x == y" parses as "not (x == y)".
+    //     Note on 'not' and '!': in Numera (matching Python convention), logical negation
+    //     has lower precedence than comparison chains, so "not x == y" parses as
+    //     "not (x == y)".
     // 5.  Comparison (==, !=, ~=, <, <=, >, >=)
     // 6.  Bitwise Shift (<<, >>)
     // 7.  Additive (+, -)
     // 8.  Multiplicative (*, /, %)
-    // 9.  Implicit Multiplication (juxtaposition, e.g. 2x, 2(3+4); binds tighter than explicit *, /)
+    // 9.  Implicit Multiplication (juxtaposition, e.g. 2x, 2(3+4); binds tighter than
+    //     explicit *, /)
     // 10. Unary (+, -, ~; binds tighter than juxtaposition, so -2x is (-2)*x)
     // 11. Exponentiation (^)
-    // 12. Postfix Factorial (!; binds tighter than power, so 2^3! is 2^(3!) and -3! is -(3!))
+    // 12. Postfix Factorial (!; binds tighter than power, so 2^3! is 2^(3!) and -3! is
+    //     -(3!))
     // 13. Primary (literals, identifiers, function calls, grouped expressions)
 
     private ExpressionNode ParseLogical()
@@ -783,6 +789,11 @@ internal sealed class AstParser
         }
 
         if (_context.TryResolveVariable(identifier, out _))
+        {
+            return new IdentifierNode(identifier, null, Span(identifierStart, identifier.Length));
+        }
+
+        if (_allowUnboundVariables)
         {
             return new IdentifierNode(identifier, null, Span(identifierStart, identifier.Length));
         }

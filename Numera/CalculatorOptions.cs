@@ -3,9 +3,10 @@ using System.Globalization;
 namespace Numera;
 
 /// <summary>
-/// Long-lived, immutable configuration for a <see cref="CalculatorEngine"/>. It deliberately holds no
-/// per-evaluation state (variables, previous result): that lives in <see cref="EvaluationContext"/>, so
-/// one engine can be shared across threads and sessions.
+/// Long-lived, immutable configuration for a <see cref="CalculatorEngine"/>. It
+/// deliberately holds no per-evaluation state (variables, previous result): that lives in
+/// <see cref="EvaluationContext"/>, so one engine can be shared across threads and
+/// sessions.
 /// </summary>
 public sealed record CalculatorOptions
 {
