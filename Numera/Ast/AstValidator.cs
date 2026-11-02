@@ -156,7 +156,10 @@ internal static class AstValidator
                 if (call.Arguments.Count < signature.MinimumArguments ||
                     (signature.MaximumArguments is int maxArgs && call.Arguments.Count > maxArgs))
                 {
-                    throw Invalid(node, EvaluationError.InvalidArgumentCount, $"Invalid argument count for '{call.FunctionName}'.");
+                    throw Invalid(
+                        node,
+                        EvaluationError.InvalidArgumentCount,
+                        FormatArityErrorMessage(call.FunctionName, signature, call.Arguments.Count));
                 }
                 break;
 
@@ -260,4 +263,22 @@ internal static class AstValidator
         AssignmentNode assign => index == 0 ? assign.Value : throw new ArgumentOutOfRangeException(nameof(index)),
         _ => throw new ArgumentOutOfRangeException(nameof(index)),
     };
+
+    internal static string FormatArityErrorMessage(string functionName, FunctionSignature signature, int actualCount)
+    {
+        string expected = (signature.MinimumArguments, signature.MaximumArguments) switch
+        {
+            (0, 0) => "takes 0 arguments (no arguments allowed)",
+            (var min, var max) when min == max => $"takes exactly {min} argument{(min == 1 ? "" : "s")}",
+            (var min, null) => $"requires at least {min} argument{(min == 1 ? "" : "s")}",
+            (var min, var max) => $"requires between {min} and {max} arguments",
+        };
+
+        // If parameter names are available, format a signature hint: e.g. "round(x[, places])".
+        string paramHint = signature.Parameters.Count > 0 ?
+            $" Syntax: {functionName}({string.Join(", ", signature.Parameters.Select(p => p.IsOptional ? $"[{p.Name}]" : p.Name))})." :
+            "";
+
+        return $"Function '{functionName}' {expected}, but received {actualCount}.{paramHint}";
+    }
 }

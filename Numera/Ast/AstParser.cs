@@ -151,25 +151,36 @@ internal sealed class AstParser
         {
             throw new ExpressionException(Diagnostic(
                 EvaluationError.InvalidSyntax,
-                $"Cannot assign to reserved keyword '{name}'.",
+                $"Cannot assign to '{name}' because it is a reserved language keyword.",
                 pos,
                 name.Length));
         }
 
-        if (ConstantCatalog.TryResolve(name, out _, out _))
+        if (ConstantCatalog.TryResolve(name, out var constantKind, out _))
         {
+            string detail = constantKind switch
+            {
+                ConstantKind.E => "Euler's number (~ 2.71828)",
+                ConstantKind.Pi => "Archimedes' constant π (~ 3.14159)",
+                ConstantKind.Tau => "the circle constant τ (~ 6.28318)",
+                ConstantKind.Phi => "the golden ratio φ (~ 1.61803)",
+                ConstantKind.True or ConstantKind.False => "a boolean literal",
+                _ => "a built-in mathematical constant"
+            };
+
             throw new ExpressionException(Diagnostic(
                 EvaluationError.InvalidSyntax,
-                $"Cannot assign to reserved constant '{name}'.",
+                $"Cannot assign to '{name}' because it is reserved for {detail}. Choose a different variable name.",
                 pos,
                 name.Length));
         }
 
-        if (FunctionCatalog.TryGetInfo(name, out _))
+        if (FunctionCatalog.TryGetInfo(name, out var fnInfo))
         {
+            string aliasNote = fnInfo.IsAlias ? $" (alias for '{fnInfo.CanonicalName}')" : "";
             throw new ExpressionException(Diagnostic(
                 EvaluationError.InvalidSyntax,
-                $"Cannot assign to function name '{name}'.",
+                $"Cannot assign to name '{name}' because it is a built-in function{aliasNote}.",
                 pos,
                 name.Length));
         }
@@ -178,7 +189,7 @@ internal sealed class AstParser
         {
             throw new ExpressionException(Diagnostic(
                 EvaluationError.InvalidSyntax,
-                $"Cannot assign to function name '{name}'.",
+                $"Cannot assign to name '{name}' because it is registered as a custom function.",
                 pos,
                 name.Length));
         }
@@ -759,7 +770,10 @@ internal sealed class AstParser
             if (args.Count < signature.MinimumArguments || (signature.MaximumArguments is int maximum && args.Count > maximum))
             {
                 throw new ExpressionException(Diagnostic(
-                    EvaluationError.InvalidArgumentCount, $"Invalid argument count for '{identifier}'.", identifierStart, identifier.Length));
+                    EvaluationError.InvalidArgumentCount,
+                    AstValidator.FormatArityErrorMessage(identifier, signature, args.Count),
+                    identifierStart,
+                    identifier.Length));
             }
 
             return new FunctionCallNode(identifier, args, Span(identifierStart, _pos - identifierStart));
@@ -771,10 +785,14 @@ internal sealed class AstParser
                 EvaluationError.UnknownFunction, $"Unknown function '{identifier}'.", identifierStart, identifier.Length));
         }
 
-        if (Peek() is '[' or ']' or ';')
+        if (Peek() is '[' or ']')
         {
-            char reservedChar = Peek();
-            throw SyntaxError($"'{reservedChar}' is reserved for future matrix and array syntax.");
+            throw SyntaxError("Square brackets '[]' are reserved for future vector and matrix syntax. Use round parentheses '()' for grouping.");
+        }
+            
+        if (Peek() == ';')
+        {
+            throw SyntaxError("Semicolons ';' are reserved for future matrix row separation. Use commas ',' to separate function arguments.");
         }
 
         if (ConstantCatalog.TryResolve(identifier, out var constantKind, out _))
