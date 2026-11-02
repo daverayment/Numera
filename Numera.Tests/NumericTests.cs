@@ -2918,7 +2918,7 @@ public class NumericTests
         Assert.AreEqual(MathValue.DataType.Decimal, MathValue.Pow(2, -28).Kind);
         Assert.AreEqual(1m / 268435456m, MathValue.Pow(2, -28).DecimalValue);
 
-        // Powers of 2 exceeding 28 digits use ScaleB directly in double (bit-exact)
+        // Powers of 2 exceeding 28 digits use ScaleB directly in double (bit-exact).
         foreach (int k in new[] { 29, 30, 36, 37, 100, 1074 })
         {
             var r = MathValue.Pow(2, -k);
@@ -2926,7 +2926,7 @@ public class NumericTests
             Assert.AreEqual(Math.ScaleB(1.0, -k), r.DoubleValue);
         }
 
-        // Non-2 power-of-two base, signs, and subnormal underflow
+        // Non-2 power-of-two base, signs, and subnormal underflow.
         Assert.AreEqual(Math.ScaleB(1.0, -30), MathValue.Pow(4, -15).DoubleValue);
         Assert.AreEqual(-Math.ScaleB(1.0, -31), MathValue.Pow(-2, -31).DoubleValue);
         Assert.AreEqual(Math.ScaleB(1.0, -30), MathValue.Pow(-2, -30).DoubleValue);
@@ -2936,7 +2936,7 @@ public class NumericTests
         // It must NOT be treated as having an exact reciprocal.
         var rThird = MathValue.Pow(0.3m, -2);
         Assert.AreEqual(MathValue.DataType.Decimal, rThird.Kind);
-        Assert.IsTrue(Math.Abs(rThird.DecimalValue - (1m / 0.09m)) < 1e-20m);
+        Assert.IsLessThan(1e-20m, Math.Abs(rThird.DecimalValue - (1m / 0.09m)));
 
         // Whole-number decimal base power-of-two beyond 28 digits routes to ScaleB
         Assert.AreEqual(MathValue.DataType.Double, MathValue.Pow(2.0m, -30).Kind);
@@ -2947,6 +2947,32 @@ public class NumericTests
         Assert.AreEqual(MathValue.DataType.Decimal, halfPowNeg30.Kind);
         Assert.AreEqual(1073741824m, halfPowNeg30.DecimalValue);
         Assert.AreEqual(0, MathValue.Compare(halfPowNeg30, new MathValue(new BigInteger(1) << 30)));
+
+        // Decimal underflow guards:
+        // 1. 0.5m^100 falls back to Double equal to Math.Pow(0.5, 100) instead of underflowing to decimal zero.
+        var halfPow100 = MathValue.Pow(0.5m, 100);
+        Assert.AreEqual(MathValue.DataType.Double, halfPow100.Kind);
+        Assert.AreEqual(Math.Pow(0.5, 100), halfPow100.DoubleValue);
+
+        // 2. 0.1m^20 is exact decimal (scale 1 * 20 = 20 <= 28).
+        var tenthPow20 = MathValue.Pow(0.1m, 20);
+        Assert.AreEqual(MathValue.DataType.Decimal, tenthPow20.Kind);
+        Assert.AreEqual(1e-20m, tenthPow20.DecimalValue);
+
+        // 3. Multiplication underflow fallback: 1e-20m * 1e-20m does not silently become zero.
+        var prodUnderflow = new MathValue(1e-20m) * new MathValue(1e-20m);
+        Assert.AreEqual(MathValue.DataType.Double, prodUnderflow.Kind);
+        Assert.IsFalse(prodUnderflow.IsZero);
+        Assert.AreEqual(1e-40, prodUnderflow.DoubleValue, 1e-45);
+
+        // 4. Division underflow fallback: 1 / (3 * 10^28) does not silently become zero.
+        var divUnderflow = new MathValue(BigInteger.One) / new MathValue(BigInteger.Parse("30000000000000000000000000000"));
+        Assert.IsFalse(divUnderflow.IsZero);
+
+        // 5. 0m^10 remains Decimal zero.
+        var zeroPow10 = MathValue.Pow(0m, 10);
+        Assert.AreEqual(MathValue.DataType.Decimal, zeroPow10.Kind);
+        Assert.IsTrue(zeroPow10.IsZero);
     }
 
     private static (BigInteger Num, BigInteger Den) RelativeError(MathValue v, BigInteger num, BigInteger den)
@@ -2990,12 +3016,14 @@ public class NumericTests
                 var (errNum, errDen) = RelativeError(r, BigInteger.One, d);
                 bool exact = errNum.IsZero;
 
-                // 1. Decimal results: exact, or at least 16 correct digits. Double: correctly rounded (<= 0.5 ULP, 2^-53).
+                // 1. Decimal results: exact, or at least 16 correct digits. Double:
+                //    correctly rounded (<= 0.5 ULP, 2^-53).
                 bool accurate = r.Kind == MathValue.DataType.Decimal
                     ? exact || errNum * BigInteger.Pow(10, 16) <= errDen
                     : (errNum << 53) <= errDen;
 
-                // 2. Closed form: 1/d terminates iff d = 2^i * 5^j, needing max(i, j) places.
+                // 2. Closed form: 1/d terminates iff d = 2^i * 5^j, needing
+                //    max(i, j) places.
                 BigInteger rest = BigInteger.Abs(d);
                 int i = 0, j = 0;
                 while (rest % 2 == 0) { rest /= 2; i++; }
@@ -3016,29 +3044,27 @@ public class NumericTests
             }
         }
 
-        Assert.AreEqual(0, failures.Count, string.Join(Environment.NewLine, failures.Take(20)));
+        Assert.IsEmpty(failures, string.Join(Environment.NewLine, failures.Take(20)));
     }
 
     [TestMethod]
     public void DivideIntegersAsDouble_NearestNeighbourAndFixedCases()
     {
-        // 1. Fixed case that previously failed due to mantissa truncation: -300^-57
+        // 1. Fixed case that previously failed due to mantissa truncation: -300^-57.
         var r57 = MathValue.Pow(-300, -57);
         Assert.AreEqual(MathValue.DataType.Double, r57.Kind);
         BigInteger d57 = BigInteger.Pow(-300, 57);
         var (errNum57, errDen57) = RelativeError(r57, BigInteger.One, d57);
-        Assert.IsTrue((errNum57 << 53) <= errDen57, "Error must be <= 0.5 ULP");
+        Assert.IsLessThanOrEqualTo(errDen57, errNum57 << 53, "Error must be <= 0.5 ULP");
 
-        // 2. Exact tie-breaking: 1 / (2^53 + 1)
-        // Remainder is nonzero, so it breaks tie upward (not even)
+        // 2. Exact tie-breaking: 1 / (2^53 + 1).
+        // Remainder is nonzero, so it breaks tie upward (not even).
         BigInteger bigDen = (BigInteger.One << 53) + 1;
         double tieBreaker = MathValue.DivideIntegersAsDouble(BigInteger.One, bigDen);
-        Assert.IsTrue(AbsError(tieBreaker, BigInteger.One, bigDen)
-            <= AbsError(Math.BitIncrement(tieBreaker), BigInteger.One, bigDen));
-        Assert.IsTrue(AbsError(tieBreaker, BigInteger.One, bigDen)
-            <= AbsError(Math.BitDecrement(tieBreaker), BigInteger.One, bigDen));
+        Assert.IsLessThanOrEqualTo(AbsError(Math.BitIncrement(tieBreaker), BigInteger.One, bigDen), AbsError(tieBreaker, BigInteger.One, bigDen));
+        Assert.IsLessThanOrEqualTo(AbsError(Math.BitDecrement(tieBreaker), BigInteger.One, bigDen), AbsError(tieBreaker, BigInteger.One, bigDen));
 
-        // 3. Signs: confirm negative numerator and negative denominator
+        // 3. Signs: confirm negative numerator and negative denominator.
         var pos = new MathValue(new BigInteger(7)) / new MathValue(new BigInteger(3));
         var negN = new MathValue(new BigInteger(-7)) / new MathValue(new BigInteger(3));
         var negD = new MathValue(new BigInteger(7)) / new MathValue(new BigInteger(-3));
@@ -3046,6 +3072,225 @@ public class NumericTests
         Assert.AreEqual(-pos.AsDouble(), negN.AsDouble());
         Assert.AreEqual(-pos.AsDouble(), negD.AsDouble());
         Assert.AreEqual(pos.AsDouble(), negBoth.AsDouble());
+
+        // 4. BigInteger to double conversion test.
+        var v = (BigInteger.One << 53) + 3;
+        Assert.AreEqual(Math.Pow(2, 53) + 4, new MathValue(v).AsDouble());
+    }
+
+    [TestMethod]
+    public void NegativePowersFallingBackToDouble_ComputeExactNearestDoubleReciprocal()
+    {
+        // When negative powers underflow decimal or have fewer than 17 significant digits,
+        // MathValue falls back to double. By calculating the reciprocal double directly from
+        // the exact integer/decimal denominator via DivideIntegersAsDouble (rather than Math.Pow
+        // on doubles), the result is guaranteed to be the closest IEEE 754 double to 1 / d.
+
+        // 1. Integer base: 3^-30.
+        // Math.Pow(3.0, -30) accumulates transcendental approximation error in double arithmetic.
+        // DivideIntegersAsDouble(1, 3^30) computes the provably nearest double representation.
+        MathValue powInteger = MathValue.Pow(3, -30);
+        Assert.AreEqual(MathValue.DataType.Double, powInteger.Kind);
+        BigInteger intDenominator = BigInteger.Pow(3, 30);
+        double expectedIntegerReciprocal = MathValue.DivideIntegersAsDouble(BigInteger.One, intDenominator);
+        Assert.AreEqual(expectedIntegerReciprocal, powInteger.DoubleValue);
+        Assert.IsLessThanOrEqualTo(
+            AbsError(Math.BitIncrement(powInteger.DoubleValue), BigInteger.One, intDenominator),
+            AbsError(powInteger.DoubleValue, BigInteger.One, intDenominator),
+            "3^-30 double result must be closer or equal to 1/3^30 than its upper neighbor");
+        Assert.IsLessThanOrEqualTo(
+            AbsError(Math.BitDecrement(powInteger.DoubleValue), BigInteger.One, intDenominator),
+            AbsError(powInteger.DoubleValue, BigInteger.One, intDenominator),
+            "3^-30 double result must be closer or equal to 1/3^30 than its lower neighbor");
+
+        // 2. Decimal base whose positive power is exact in decimal:
+        // Consider 300.0m^-12.
+        // 300^12 = 531441000000000000000000000000 fits in decimal.
+        // 1 / 300^12 has 29 fractional zeros (~1.88e-30), which is < 1e-11m and not significant in decimal.
+        // It falls back to double. The exact denominator in decimal is 300^12.
+        MathValue powDecimal = MathValue.Pow(300.0m, -12);
+        Assert.AreEqual(MathValue.DataType.Double, powDecimal.Kind);
+        BigInteger expectedCoeff = BigInteger.Pow(300, 12);
+        double expectedDecReciprocal = MathValue.DivideIntegersAsDouble(BigInteger.One, expectedCoeff);
+        Assert.AreEqual(expectedDecReciprocal, powDecimal.DoubleValue);
+    }
+
+    [TestMethod]
+    public void DivideAsDouble_MixedIntegerAndDecimal_GuaranteesCorrectlyRoundedDouble()
+    {
+        // When mixed Integer/Decimal division cannot fit in decimal (e.g. overflow, or
+        // underflow to 0m), DivideAsDouble converts both to exact rational fractions
+        // (numA * denB) / (denA * numB) and calls DivideIntegersAsDouble.
+        // This exercises the fix where AsDoubleMantissa previously truncated bits > 53,
+        // causing double-rounding or off-by-1-ULP errors.
+
+        // 1. Large integer (> 53 bits) divided by whole-number decimal that overflows decimal:
+        // Numerator has 60 bits: 2^59 + 2^30 + 1.
+        BigInteger bigIntNumerator = (BigInteger.One << 59) + (BigInteger.One << 30) + 1;
+        // Divisor exceeds decimal.MaxValue (~7.9e28) so decimal division overflows.
+        BigInteger bigIntDivisor = BigInteger.Pow(10, 32) + 7;
+        decimal decimalDivisorUnderflow = 0.0000000000000000000000000001m; // 1e-28m
+
+        // Integer / Decimal overflow case:
+        var valBigInt = new MathValue(bigIntNumerator);
+        var valDec = new MathValue(decimalDivisorUnderflow);
+        // (bigIntNumerator) / (10^-28) == bigIntNumerator * 10^28 (fits in BigInteger, but quotient of 1 / dec overflows)
+        // Let's test a case that overflows decimal and invokes DivideAsDouble:
+        var valHugeDen = new MathValue(bigIntDivisor); // integer > decimal.MaxValue
+        var quotient1 = valBigInt / valHugeDen; // Int / Int -> calls DivideAsDouble
+        Assert.AreEqual(MathValue.DataType.Double, quotient1.Kind);
+
+        // 2. Exact rational division test: BigInteger (> 60 bits) divided by a Decimal with scale
+        // A 60-bit integer divided by 0.3m.
+        // In decimal, 0.3m is 3 / 10. The true exact fraction is (bigIntNumerator * 10) / 3.
+        // Because bigIntNumerator is not divisible by 3, (decimal)bigIntNumerator / 0.3m overflows
+        // if bigIntNumerator is large, or if we test an integer exceeding decimal.MaxValue:
+        BigInteger largeInteger = (BigInteger.Pow(10, 30) * 2) + 19; // > decimal.MaxValue
+        var valLarge = new MathValue(largeInteger);
+        var valDecimalThird = new MathValue(0.3m);
+
+        // largeInteger / 0.3m overflows decimal and falls back to DivideAsDouble:
+        var quotientLargeByDec = valLarge / valDecimalThird;
+        Assert.AreEqual(MathValue.DataType.Double, quotientLargeByDec.Kind);
+
+        // Verify the exact rational result matches DivideIntegersAsDouble:
+        BigInteger exactNum = largeInteger * 10;
+        BigInteger exactDen = 3;
+        double expectedQuotient = MathValue.DivideIntegersAsDouble(exactNum, exactDen);
+        Assert.AreEqual(expectedQuotient, quotientLargeByDec.DoubleValue);
+
+        // 3. Decimal divided by large integer:
+        // 0.7m / largeInteger underflows decimal division (quotient == 0m) and falls back to DivideAsDouble:
+        var valDecSeven = new MathValue(0.7m);
+        var quotientDecByLarge = valDecSeven / valLarge;
+        Assert.AreEqual(MathValue.DataType.Double, quotientDecByLarge.Kind);
+
+        // (7 / 10) / (largeInteger / 1) == 7 / (largeInteger * 10)
+        BigInteger exactNum2 = 7;
+        BigInteger exactDen2 = largeInteger * 10;
+        double expectedQuotient2 = MathValue.DivideIntegersAsDouble(exactNum2, exactDen2);
+        Assert.AreEqual(expectedQuotient2, quotientDecByLarge.DoubleValue);
+    }
+
+    [TestMethod]
+    public void MultiplyExactOrToDouble_PreservesExactIntegerOrSingleRoundingDouble()
+    {
+        // 1. Integer * Decimal fraction that divides evenly into an exact integer beyond decimal.MaxValue:
+        // 10^35 * 0.5m == 5 * 10^34 (exact integer)
+        BigInteger intLarge = BigInteger.Pow(10, 35);
+        var valInt = new MathValue(intLarge);
+        var valDecHalf = new MathValue(0.5m);
+
+        var prod1 = valInt * valDecHalf;
+        Assert.AreEqual(MathValue.DataType.Integer, prod1.Kind);
+        Assert.AreEqual(BigInteger.Pow(10, 34) * 5, prod1.IntegerValue);
+
+        // Commutativity: 0.5m * 10^35
+        var prod1Rev = valDecHalf * valInt;
+        Assert.AreEqual(MathValue.DataType.Integer, prod1Rev.Kind);
+        Assert.AreEqual(BigInteger.Pow(10, 34) * 5, prod1Rev.IntegerValue);
+
+        // 2. Integer * Decimal fraction that is NOT an exact integer:
+        // (10^35 + 1) * 0.5m == 5 * 10^34 + 0.5
+        // Overflows decimal, cannot be exact integer, so computes single-rounding double directly:
+        var valIntOdd = new MathValue(intLarge + 1);
+        var prod2 = valIntOdd * valDecHalf;
+        Assert.AreEqual(MathValue.DataType.Double, prod2.Kind);
+        BigInteger expectedNum = (intLarge + 1) * 1; // 0.5m reduced fraction is 1/2
+        BigInteger expectedDen = 2;
+        double expectedDouble = MathValue.DivideIntegersAsDouble(expectedNum, expectedDen);
+        Assert.AreEqual(expectedDouble, prod2.DoubleValue);
+
+        // 3. Underflow to zero in decimal multiplication (e.g. 1e-20m * 1e-20m == 1e-40):
+        // Does not silently become zero, but computes exact double via MultiplyExactOrToDouble:
+        var valTiny1 = new MathValue(1e-20m);
+        var valTiny2 = new MathValue(1e-20m);
+        var prodUnderflow = valTiny1 * valTiny2;
+        Assert.AreEqual(MathValue.DataType.Double, prodUnderflow.Kind);
+        double expectedUnderflow = MathValue.DivideIntegersAsDouble(BigInteger.One, BigInteger.Pow(10, 40));
+        Assert.AreEqual(expectedUnderflow, prodUnderflow.DoubleValue);
+    }
+
+    [TestMethod]
+    public void DivideIntegersAsDouble_ExtremeExponentDifferences_GuardAgainstExcessiveAllocation()
+    {
+        // 1. Extreme underflow: diff <= -1076.
+        // Numerator = 1, Denominator = 2^10000 (diff = 1 - 10001 = -10000).
+        // Without the guard, this would shift n by ~10055 bits into a giant BigInteger.
+        BigInteger tinyNum = BigInteger.One;
+        BigInteger hugeDen = BigInteger.One << 10000;
+        Assert.AreEqual(0.0, MathValue.DivideIntegersAsDouble(tinyNum, hugeDen));
+        Assert.AreEqual(-0.0, MathValue.DivideIntegersAsDouble(-tinyNum, hugeDen));
+        Assert.AreEqual(-0.0, MathValue.DivideIntegersAsDouble(tinyNum, -hugeDen));
+        Assert.AreEqual(0.0, MathValue.DivideIntegersAsDouble(-tinyNum, -hugeDen));
+
+        // Underflow boundary case: diff = -1076.
+        // n has 1 bit (1), d has 1077 bits (2^1076). diff = 1 - 1077 = -1076.
+        // 1 / 2^1076 is strictly less than 2^-1075 (0.5 * min_subnormal), so it must be 0.0.
+        BigInteger den1076 = BigInteger.One << 1076;
+        Assert.AreEqual(0.0, MathValue.DivideIntegersAsDouble(BigInteger.One, den1076));
+
+        // 2. Extreme overflow: diff >= 1025.
+        // Numerator = 2^10000, Denominator = 1 (diff = 10001 - 1 = 10000).
+        // Without the guard, this would shift d by ~9945 bits into a giant BigInteger.
+        BigInteger hugeNum = BigInteger.One << 10000;
+        BigInteger tinyDen = BigInteger.One;
+        Assert.AreEqual(double.PositiveInfinity, MathValue.DivideIntegersAsDouble(hugeNum, tinyDen));
+        Assert.AreEqual(double.NegativeInfinity, MathValue.DivideIntegersAsDouble(-hugeNum, tinyDen));
+        Assert.AreEqual(double.NegativeInfinity, MathValue.DivideIntegersAsDouble(hugeNum, -tinyDen));
+        Assert.AreEqual(double.PositiveInfinity, MathValue.DivideIntegersAsDouble(-hugeNum, -tinyDen));
+
+        // Overflow boundary case: diff = 1025.
+        // n has 1026 bits (2^1025), d has 1 bit (1). diff = 1026 - 1 = 1025.
+        // 2^1025 strictly exceeds double.MaxValue (~1.79e308 < 2^1024), so it must be Infinity.
+        BigInteger num1025 = BigInteger.One << 1025;
+        Assert.AreEqual(double.PositiveInfinity, MathValue.DivideIntegersAsDouble(num1025, BigInteger.One));
+    }
+
+    [TestMethod]
+    public void DivideIntegersAsDouble_SubnormalRange_BitExactRoundingAndNoDoubleRounding()
+    {
+        // 1. Exact smallest subnormal: 2^-1074 == double.Epsilon.
+        // 1 / 2^1074 must be exactly double.Epsilon.
+        BigInteger den1074 = BigInteger.One << 1074;
+        double minSubnormal = MathValue.DivideIntegersAsDouble(BigInteger.One, den1074);
+        Assert.AreEqual(double.Epsilon, minSubnormal);
+
+        // 2. Exact tie at the subnormal boundary: 2^-1075 (0.5 * double.Epsilon).
+        // 1 / 2^1075 has remainder 0 (exact halfway between 0 and double.Epsilon).
+        // Under round-half-even, 0 is even, so it must round to 0.0.
+        BigInteger den1075 = BigInteger.One << 1075;
+        double halfEpsilon = MathValue.DivideIntegersAsDouble(BigInteger.One, den1075);
+        Assert.AreEqual(0.0, halfEpsilon);
+
+        // 3. Strictly above the tie: (1 * 2 + 1) / 2^1076 == 3 / 2^1076 = 1.5 * 2^-1075 > 0.5 * double.Epsilon.
+        // Must round up to double.Epsilon.
+        BigInteger denAboveTie = BigInteger.One << 1076;
+        double aboveTie = MathValue.DivideIntegersAsDouble(new BigInteger(3), denAboveTie);
+        Assert.AreEqual(double.Epsilon, aboveTie);
+
+        // 4. Subnormal tie-breaking to even:
+        // Consider 1.5 * double.Epsilon = 3 / 2^1075.
+        // Halfway between 1 * double.Epsilon (odd) and 2 * double.Epsilon (even).
+        // Round-half-even must round to 2 * double.Epsilon.
+        double tieOddToEven = MathValue.DivideIntegersAsDouble(new BigInteger(3), den1075);
+        Assert.AreEqual(2 * double.Epsilon, tieOddToEven);
+
+        // Consider 2.5 * double.Epsilon = 5 / 2^1075.
+        // Halfway between 2 * double.Epsilon (even) and 3 * double.Epsilon (odd).
+        // Round-half-even must round to 2 * double.Epsilon.
+        double tieEvenToOdd = MathValue.DivideIntegersAsDouble(new BigInteger(5), den1075);
+        Assert.AreEqual(2 * double.Epsilon, tieEvenToOdd);
+
+        // 5. Transition boundary into normal numbers: 2^-1022 == double.MinNormal.
+        BigInteger den1022 = BigInteger.One << 1022;
+        double minNormal = MathValue.DivideIntegersAsDouble(BigInteger.One, den1022);
+        Assert.AreEqual(BitConverter.Int64BitsToDouble(0x0010_0000_0000_0000L), minNormal);
+
+        // 6. Largest subnormal: 2^-1022 - 2^-1074.
+        BigInteger numLargestSubnormal = (BigInteger.One << 52) - 1;
+        double largestSubnormal = MathValue.DivideIntegersAsDouble(numLargestSubnormal, den1074);
+        Assert.AreEqual(BitConverter.Int64BitsToDouble(0x000F_FFFF_FFFF_FFFFL), largestSubnormal);
     }
 
     private static BigInteger AbsError(double v, BigInteger num, BigInteger den)

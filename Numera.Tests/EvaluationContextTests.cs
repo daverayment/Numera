@@ -310,6 +310,80 @@ public sealed class EvaluationContextTests
         Assert.AreEqual(0, res5.AssignedVariables.Count);
         Assert.AreEqual(3, context.Variables.Count);
         Assert.AreEqual(180, context.PreviousResult?.IntegerValue);
+        Assert.IsNotNull(context.PreviousExpression);
+    }
+
+    [TestMethod]
+    public void PreviousExpression_IsPreservedAcrossEvaluations()
+    {
+        var engine = new CalculatorEngine();
+        var res1 = engine.Evaluate("10 * 2");
+        Assert.AreEqual(20, res1.Value.IntegerValue);
+        Assert.IsNotNull(res1.Context.PreviousExpression);
+
+        // Verify ans resolves in the next evaluation and PreviousExpression updates.
+        var res2 = engine.Evaluate("ans + 5", res1.Context);
+        Assert.AreEqual(25, res2.Value.IntegerValue);
+        Assert.IsNotNull(res2.Context.PreviousExpression);
+
+        // Verify ans variable metadata carries the previous expression AST.
+        Assert.IsTrue(res2.Context.TryResolveFullVariable("ans", out var ansVar));
+        Assert.AreEqual(25, ansVar.Value.IntegerValue);
+        Assert.IsNotNull(ansVar.Expression);
+    }
+
+    [TestMethod]
+    public void RationalReduction_PreservesExactIdentity_InMultiplicativeChain()
+    {
+        // Contiguous multiplication/division chains reduce rationally to avoid rounding errors.
+        var result1 = Calculator.Evaluate("(1 / 3) * 3");
+        Assert.AreEqual(1, result1.IntegerValue);
+
+        var result2 = Calculator.Evaluate("1 / 3 * 3");
+        Assert.AreEqual(1, result2.IntegerValue);
+    }
+
+    [TestMethod]
+    public void ReferencedVariables_And_VariableReferences_ExposeDependencyInformation()
+    {
+        var engine = new CalculatorEngine();
+        var context = new EvaluationContext(
+            new VariableCollection(
+            [
+                new Variable("subtotal", new MathValue(100m)),
+                new Variable("bill", new MathValue(60m)),
+                new Variable("tip", new MathValue(12m)),
+                new Variable("r", new MathValue(5m)),
+            ]),
+            previousResult: new MathValue(20m));
+
+        // 1. Unassigned expression with references
+        var res1 = engine.Evaluate("15% of subtotal + ans", context);
+        Assert.Contains("subtotal", res1.ReferencedVariables);
+        Assert.Contains("ans", res1.ReferencedVariables);
+        Assert.DoesNotContain("pi", res1.ReferencedVariables);
+
+        var refs = res1.VariableReferences;
+        Assert.HasCount(2, refs);
+        Assert.Contains(r => r.Name.Equals("subtotal", StringComparison.OrdinalIgnoreCase) && r.Span.HasValue, refs);
+        Assert.Contains(r => r.IsAns && r.Span.HasValue, refs);
+
+        // 2. Assignment expression: ReferencedVariables only contains RHS inputs, not LHS assigned name
+        var res2 = engine.Evaluate("total = bill + tip", context);
+        Assert.Contains("bill", res2.ReferencedVariables);
+        Assert.Contains("tip", res2.ReferencedVariables);
+        Assert.DoesNotContain("total", res2.ReferencedVariables);
+
+        // 3. Check on the assigned Variable instance directly
+        Assert.IsTrue(res2.AssignedVariables.TryGetVariable("total", out var totalVar));
+        Assert.Contains("bill", totalVar.ReferencedVariables);
+        Assert.Contains("tip", totalVar.ReferencedVariables);
+        Assert.DoesNotContain("total", totalVar.ReferencedVariables);
+
+        // Constants like pi are not reported as variables
+        var res3 = engine.Evaluate("2 * pi * r", context);
+        Assert.Contains("r", res3.ReferencedVariables);
+        Assert.DoesNotContain("pi", res3.ReferencedVariables);
     }
 
     [TestMethod]

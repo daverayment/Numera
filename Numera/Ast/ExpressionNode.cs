@@ -71,6 +71,87 @@ public abstract record ExpressionNode(TextSpan Span = default)
     public virtual int Height => 1;
 
     /// <summary>
+    /// Traverses this syntax subtree iteratively and collects all syntactic variable references,
+    /// including their identifier names and source text spans.
+    /// </summary>
+    /// <returns>A list of variable references occurring within this expression tree.</returns>
+    public IReadOnlyList<VariableReference> GetVariableReferences()
+    {
+        var references = new List<VariableReference>();
+        var stack = new Stack<ExpressionNode>();
+        stack.Push(this);
+
+        while (stack.Count > 0)
+        {
+            var node = stack.Pop();
+            switch (node)
+            {
+                case NumberNode:
+                    // Literals contain no variable references.
+                    break;
+
+                case IdentifierNode identifier:
+                    // Constants (like pi, e, tau) are resolved constants, not variable references.
+                    if (identifier.Constant is null && !ConstantCatalog.TryResolve(identifier.Name, out _, out _))
+                    {
+                        references.Add(new VariableReference(identifier.Name, identifier.Span));
+                    }
+                    break;
+
+                case AssignmentNode assignment:
+                    // Only traverse the assigned expression value; the target VariableName on LHS is being defined, not read.
+                    if (assignment.Value is not null)
+                    {
+                        stack.Push(assignment.Value);
+                    }
+                    break;
+
+                case BinaryNode binary:
+                    if (binary.Right is not null) stack.Push(binary.Right);
+                    if (binary.Left is not null) stack.Push(binary.Left);
+                    break;
+
+                case UnaryNode unary:
+                    if (unary.Operand is not null) stack.Push(unary.Operand);
+                    break;
+
+                case FunctionCallNode function:
+                    for (int i = function.Arguments.Count - 1; i >= 0; i--)
+                    {
+                        stack.Push(function.Arguments[i]);
+                    }
+                    break;
+
+                case ComparisonChainNode comparison:
+                    for (int i = comparison.Operands.Count - 1; i >= 0; i--)
+                    {
+                        stack.Push(comparison.Operands[i]);
+                    }
+                    break;
+
+                default:
+                    throw new NotSupportedException($"Unexpected ExpressionNode type '{node.GetType().Name}'.");
+            }
+        }
+
+        return references;
+    }
+
+    /// <summary>
+    /// Gets the unique set of variable names referenced by this expression, compared case-insensitively.
+    /// </summary>
+    /// <returns>A set of distinct variable names referenced within this expression tree.</returns>
+    public IReadOnlySet<string> GetReferencedVariables()
+    {
+        var set = new HashSet<string>(Identifier.Comparer);
+        foreach (var reference in GetVariableReferences())
+        {
+            set.Add(reference.Name);
+        }
+        return set;
+    }
+
+    /// <summary>
     /// Accepts a visitor to process this syntax tree node.
     /// </summary>
     /// <typeparam name="T">The return type produced by the visitor.</typeparam>

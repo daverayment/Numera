@@ -1,3 +1,5 @@
+using Numera.Ast;
+
 namespace Numera;
 
 /// <summary>
@@ -60,21 +62,33 @@ public sealed record EvaluationContext
     public MathValue? PreviousResult { get; init; }
 
     /// <summary>
+    /// The canonical AST expression corresponding to <see cref="PreviousResult"/>, if
+    /// available. Preserved so <c>ans</c> retains exact symbolic and rational definitions
+    /// across evaluations.
+    /// </summary>
+    public ExpressionNode? PreviousExpression { get; init; }
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="EvaluationContext"/> class.
     /// </summary>
     public EvaluationContext() { }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="EvaluationContext"/> class with the
-    /// given variables and previous result.
+    /// given variables, previous result, and optional previous expression.
     /// </summary>
     /// <param name="variables">The variables to include in the context.</param>
     /// <param name="previousResult">The previous result to include in the context.
     /// </param>
-    public EvaluationContext(VariableCollection? variables, MathValue? previousResult = null)
+    /// <param name="previousExpression">The previous canonical expression AST.</param>
+    public EvaluationContext(
+        VariableCollection? variables,
+        MathValue? previousResult = null,
+        ExpressionNode? previousExpression = null)
     {
         Variables = variables ?? VariableCollection.Empty;
         PreviousResult = previousResult;
+        PreviousExpression = previousExpression;
     }
 
     /// <summary>
@@ -87,9 +101,11 @@ public sealed record EvaluationContext
     /// <see langword="null"/>, no variables are provided.</param>
     /// <param name="previousResult">Result from a previous evaluation that can be reused
     /// by subsequent expressions.</param>
+    /// <param name="previousExpression">The previous canonical expression AST.</param>
     public EvaluationContext(IEnumerable<Variable>? variables,
-        MathValue? previousResult = null)
-        : this(variables is null ? null : new VariableCollection(variables), previousResult)
+        MathValue? previousResult = null,
+        ExpressionNode? previousExpression = null)
+        : this(variables is null ? null : new(variables), previousResult, previousExpression)
     {
     }
 
@@ -118,19 +134,49 @@ public sealed record EvaluationContext
         return false;
     }
 
+    /// <summary>
+    /// Resolves an identifier to its full <see cref="Variable"/> metadata.
+    /// </summary>
+    /// <param name="name">The identifier to resolve (case-insensitive).</param>
+    /// <param name="variable">The resolved variable, or <c>default</c> if not found.
+    /// </param>
+    /// <returns><c>true</c> if the name resolved to a custom variable or <c>ans</c>.
+    /// </returns>
+    internal bool TryResolveFullVariable(string name, out Variable variable)
+    {
+        if (Variables.TryGetVariable(name, out variable))
+        {
+            return true;
+        }
+
+        if (PreviousResult.HasValue &&
+            NameComparer.Equals(name, PreviousResultVariableName))
+        {
+            variable = new Variable(
+                PreviousResultVariableName,
+                PreviousResult.Value,
+                PreviousExpression);
+            return true;
+        }
+
+        variable = default;
+        return false;
+    }
+
     internal EvaluationContext Advance(
         IReadOnlyList<Variable>? assignments,
-        MathValue result)
+        MathValue result,
+        ExpressionNode? expression = null)
     {
         // If there are no assignments, we can reuse the existing variables dictionary.
         if (assignments is null || assignments.Count == 0)
         {
-            return this with { PreviousResult = result };
+            return this with { PreviousResult = result, PreviousExpression = expression };
         }
 
         // Add/update the assigned variables, and return a new context with the updated
         // variables and previous result.
-        return new EvaluationContext(Variables.SetItems(assignments), result);
+        return new EvaluationContext(Variables.SetItems(assignments), result, expression);
     }
 
     /// <summary>

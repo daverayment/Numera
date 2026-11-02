@@ -85,6 +85,8 @@ public readonly struct MathValue :
     /// </summary>
     public double DoubleValue { get; }
 
+    private static readonly BigInteger MaxDecimalMantissa = (BigInteger.One << 96) - BigInteger.One;
+
     /// <summary>
     /// Initializes a new instance of <see cref="MathValue"/> holding an exact
     /// arbitrary-precision integer.
@@ -186,7 +188,7 @@ public readonly struct MathValue :
     /// <returns>The value as a <see cref="double"/>.</returns>
     public double AsDouble() => Kind switch
     {
-        DataType.Integer => (double)IntegerValue,
+        DataType.Integer => DivideIntegersAsDouble(IntegerValue, BigInteger.One),
         DataType.Decimal => (double)DecimalValue,
         _ => DoubleValue,
     };
@@ -603,21 +605,7 @@ public readonly struct MathValue :
     /// <param name="other">The value to compare with this instance.</param>
     /// <returns><see langword="true"/> if the current value is numerically equal to
     /// <paramref name="other"/>; otherwise <see langword="false"/>.</returns>
-    public bool Equals(MathValue other)
-    {
-        // NaN == NaN for object/IEquatable identity.
-        if (IsNaN && other.IsNaN)
-        {
-            return true;
-        }
-
-        if (IsNaN || other.IsNaN)
-        {
-            return false;
-        }
-
-        return Compare(this, other) == 0;
-    }
+    public bool Equals(MathValue other) => Compare(this, other) == 0;
 
     /// <inheritdoc />
     public override bool Equals(object? obj) => obj is MathValue other && Equals(other);
@@ -656,25 +644,17 @@ public readonly struct MathValue :
 
     private static (BigInteger numerator, BigInteger denominator) ToReducedFraction(decimal d)
     {
-        Span<int> decBits = stackalloc int[4];
-        decimal.GetBits(d, decBits);
-
-        var c = (BigInteger)(uint)decBits[0]
-            | ((BigInteger)(uint)decBits[1] << 32)
-            | ((BigInteger)(uint)decBits[2] << 64);
-
-        if (decBits[3] < 0)
-        {
-            c = -c;
-        }
-
-        int s = (decBits[3] >> 16) & 0x7F;
+        var (c, s) = DecomposeDecimal(d);
         BigInteger den = BigInteger.Pow(10, s);
         BigInteger gcd = BigInteger.GreatestCommonDivisor(BigInteger.Abs(c), den);
         return (c / gcd, den / gcd);
     }
 
-    private static (BigInteger numerator, BigInteger denominator) ToReducedFraction(double d)
+    /// <summary>
+    /// Decomposes a finite <see cref="double"/> into its signed integer mantissa and
+    /// power-of-two exponent. The exact value is <c>mantissa * 2^powerOfTwo</c>.
+    /// </summary>
+    private static (BigInteger Mantissa, int PowerOfTwo) DecomposeDouble(double d)
     {
         long dblBits = BitConverter.DoubleToInt64Bits(d);
         bool isNegative = dblBits < 0;
@@ -700,6 +680,13 @@ public readonly struct MathValue :
             m = -m;
         }
 
+        return (m, shift);
+    }
+
+    private static (BigInteger numerator, BigInteger denominator) ToReducedFraction(double d)
+    {
+        var (m, shift) = DecomposeDouble(d);
+
         BigInteger num;
         BigInteger den;
 
@@ -723,12 +710,50 @@ public readonly struct MathValue :
     /// <summary>
     /// Determines whether two <see cref="MathValue"/> instances are equal.
     /// </summary>
+    /// <param name="left">The first value to compare.</param>
+    /// <param name="right">The second value to compare.</param>
+    /// <returns><see langword="true"/> if the values are equal; otherwise <see langword="false"/>.</returns>
     public static bool operator ==(MathValue left, MathValue right) => left.Equals(right);
 
     /// <summary>
     /// Determines whether two <see cref="MathValue"/> instances are not equal.
     /// </summary>
+    /// <param name="left">The first value to compare.</param>
+    /// <param name="right">The second value to compare.</param>
+    /// <returns><see langword="true"/> if the values are not equal; otherwise <see langword="false"/>.</returns>
     public static bool operator !=(MathValue left, MathValue right) => !left.Equals(right);
+
+    /// <summary>
+    /// Compares two <see cref="MathValue"/> instances to determine whether the first is less than the second.
+    /// </summary>
+    /// <param name="left">The first value to compare.</param>
+    /// <param name="right">The second value to compare.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> is less than <paramref name="right"/>; otherwise <see langword="false"/>.</returns>
+    public static bool operator <(MathValue left, MathValue right) => Compare(left, right) < 0;
+
+    /// <summary>
+    /// Compares two <see cref="MathValue"/> instances to determine whether the first is less than or equal to the second.
+    /// </summary>
+    /// <param name="left">The first value to compare.</param>
+    /// <param name="right">The second value to compare.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> is less than or equal to <paramref name="right"/>; otherwise <see langword="false"/>.</returns>
+    public static bool operator <=(MathValue left, MathValue right) => Compare(left, right) <= 0;
+
+    /// <summary>
+    /// Compares two <see cref="MathValue"/> instances to determine whether the first is greater than the second.
+    /// </summary>
+    /// <param name="left">The first value to compare.</param>
+    /// <param name="right">The second value to compare.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> is greater than <paramref name="right"/>; otherwise <see langword="false"/>.</returns>
+    public static bool operator >(MathValue left, MathValue right) => Compare(left, right) > 0;
+
+    /// <summary>
+    /// Compares two <see cref="MathValue"/> instances to determine whether the first is greater than or equal to the second.
+    /// </summary>
+    /// <param name="left">The first value to compare.</param>
+    /// <param name="right">The second value to compare.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> is greater than or equal to <paramref name="right"/>; otherwise <see langword="false"/>.</returns>
+    public static bool operator >=(MathValue left, MathValue right) => Compare(left, right) >= 0;
 
     // Logical results use decimal zero/one. Only zero is false, so NaN is truthy here.
     // These helpers receive both values; short-circuiting belongs to the parser.
@@ -817,7 +842,7 @@ public readonly struct MathValue :
     }
 
     /// <summary>
-    /// Performs an arithmetic bitwise shift-right on integer operands.
+    /// Performs an arithmetic bitwise shift-right on integer operands, sign-extending negative values.
     /// </summary>
     /// <param name="a">The value to shift.</param>
     /// <param name="b">The shift count.</param>
@@ -848,6 +873,9 @@ public readonly struct MathValue :
     /// <summary>
     /// Performs a bitwise AND on integer operands.
     /// </summary>
+    /// <param name="a">The left integer operand.</param>
+    /// <param name="b">The right integer operand.</param>
+    /// <returns>The result of the bitwise AND operation.</returns>
     /// <exception cref="ExpressionException">Thrown if either operand is not an integer.
     /// </exception>
     public static MathValue BitwiseAnd(MathValue a, MathValue b)
@@ -864,6 +892,9 @@ public readonly struct MathValue :
     /// <summary>
     /// Performs a bitwise OR on integer operands.
     /// </summary>
+    /// <param name="a">The left integer operand.</param>
+    /// <param name="b">The right integer operand.</param>
+    /// <returns>The result of the bitwise OR operation.</returns>
     /// <exception cref="ExpressionException">Thrown if either operand is not an integer.
     /// </exception>
     public static MathValue BitwiseOr(MathValue a, MathValue b)
@@ -880,6 +911,9 @@ public readonly struct MathValue :
     /// <summary>
     /// Performs a bitwise XOR on integer operands.
     /// </summary>
+    /// <param name="a">The left integer operand.</param>
+    /// <param name="b">The right integer operand.</param>
+    /// <returns>The result of the bitwise XOR operation.</returns>
     /// <exception cref="ExpressionException">Thrown if either operand is not an integer.
     /// </exception>
     public static MathValue BitwiseXor(MathValue a, MathValue b)
@@ -896,6 +930,8 @@ public readonly struct MathValue :
     /// <summary>
     /// Performs a bitwise one's complement (NOT) on an integer operand.
     /// </summary>
+    /// <param name="a">The integer operand to invert.</param>
+    /// <returns>The result of the bitwise NOT operation.</returns>
     /// <exception cref="ExpressionException">Thrown if the operand is not an integer.
     /// </exception>
     public static MathValue BitwiseNot(MathValue a)
@@ -1128,16 +1164,17 @@ public readonly struct MathValue :
         {
             decimal decA = a.Kind is DataType.Integer ? (decimal)a.IntegerValue : a.DecimalValue;
             decimal decB = b.Kind is DataType.Integer ? (decimal)b.IntegerValue : b.DecimalValue;
-            return new MathValue(decA * decB);
+            decimal product = decA * decB;
+            if (product == 0m && !a.IsZero && !b.IsZero)
+            {
+                return MultiplyExactOrToDouble(a, b);
+            }
+
+            return new MathValue(product);
         }
         catch (OverflowException)
         {
-            if (TryEvaluateMixedIntegerAndWholeDecimal(a, b, static (x, y) => x * y, out var intResult))
-            {
-                return intResult;
-            }
-
-            return new MathValue(a.AsDouble() * b.AsDouble());
+            return MultiplyExactOrToDouble(a, b);
         }
     }
 
@@ -1179,7 +1216,13 @@ public readonly struct MathValue :
         {
             decimal decA = a.Kind is DataType.Integer ? (decimal)a.IntegerValue : a.DecimalValue;
             decimal decB = b.Kind is DataType.Integer ? (decimal)b.IntegerValue : b.DecimalValue;
-            return new MathValue(decA / decB);
+            decimal quotient = decA / decB;
+            if (quotient == 0m && !a.IsZero)
+            {
+                return new MathValue(DivideAsDouble(a, b));
+            }
+
+            return new MathValue(quotient);
         }
         catch (OverflowException)
         {
@@ -1244,6 +1287,59 @@ public readonly struct MathValue :
             return new MathValue(a.AsDouble() % b.AsDouble());
         }
     }
+
+    // Bitwise operators.
+
+    /// <summary>
+    /// Performs a bitwise one's complement (NOT) on an integer operand.
+    /// </summary>
+    /// <param name="value">The value to negate.</param>
+    /// <returns>The bitwise negation of <paramref name="value"/>.</returns>
+    public static MathValue operator ~(MathValue value) => BitwiseNot(value);
+
+    /// <summary>
+    /// Performs a bitwise AND on integer operands.
+    /// </summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns>The result of the bitwise AND operation.</returns>
+    public static MathValue operator &(MathValue left, MathValue right) => BitwiseAnd(left, right);
+
+    /// <summary>
+    /// Performs a bitwise OR on integer operands.
+    /// </summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns>The result of the bitwise OR operation.</returns>
+    public static MathValue operator |(MathValue left, MathValue right) => BitwiseOr(left, right);
+
+    /// <summary>
+    /// Performs a bitwise XOR on integer operands.
+    /// </summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns>The result of the bitwise XOR operation.</returns>
+    public static MathValue operator ^(MathValue left, MathValue right) => BitwiseXor(left, right);
+
+    /// <summary>
+    /// Performs a bitwise shift-left on an integer operand, enforcing the maximum bit
+    /// ceiling.
+    /// </summary>
+    /// <param name="left">The value to shift.</param>
+    /// <param name="right">The shift count.</param>
+    /// <returns>The result of the bitshift operation.</returns>
+    public static MathValue operator <<(MathValue left, int right) => ShiftLeft(left, new MathValue(right));
+
+    /// <summary>
+    /// Performs an arithmetic shift-right on an integer operand, sign-extending a
+    /// negative value.
+    /// </summary>
+    /// <param name="left">The value to shift.</param>
+    /// <param name="right">The shift count.</param>
+    /// <returns>The result of the bitshift operation.</returns>
+    public static MathValue operator >>(MathValue left, int right) => ShiftRight(left, new MathValue(right));
+
+    // Implicit type conversion.
 
     /// <summary>
     /// Implicitly converts a <see cref="decimal"/> to a <see cref="DataType.Decimal"/>
@@ -1428,6 +1524,22 @@ public readonly struct MathValue :
                     return quotient;
                 }
 
+                // If the denominator is exact, compute the correctly rounded reciprocal double
+                // directly using exact integer arithmetic, avoiding intermediate truncation.
+                if (denominator.Kind is DataType.Integer && !denominator.IntegerValue.IsZero)
+                {
+                    return new MathValue(DivideIntegersAsDouble(BigInteger.One, denominator.IntegerValue));
+                }
+
+                if (denominator.Kind is DataType.Decimal && denominator.DecimalValue != 0m)
+                {
+                    var (coeff, scale) = DecomposeDecimal(denominator.DecimalValue);
+                    if (!coeff.IsZero)
+                    {
+                        return new MathValue(DivideIntegersAsDouble(BigInteger.Pow(10, scale), coeff));
+                    }
+                }
+
                 return new MathValue(Math.Pow(baseVal.AsDouble(), expVal.AsDouble()));
             }
 
@@ -1448,9 +1560,21 @@ public readonly struct MathValue :
 
             if (baseVal.Kind is DataType.Decimal && exponent >= BigInteger.Zero)
             {
+                decimal dec = baseVal.DecimalValue;
                 try
                 {
-                    return new MathValue(DecimalPow(baseVal.DecimalValue, (int)exponent));
+                    decimal r = DecimalPow(dec, (int)exponent);
+                    if (dec != 0m && Math.Abs(dec) < 1m)
+                    {
+                        var (_, scale) = DecomposeDecimal(dec);
+                        bool exact = (long)scale * (int)exponent <= 28;
+                        if (!exact && Math.Abs(r) < 1e-11m)
+                        {
+                            return new MathValue(Math.Pow(baseVal.AsDouble(), expVal.AsDouble()));
+                        }
+                    }
+
+                    return new MathValue(r);
                 }
                 catch (OverflowException)
                 {
@@ -1582,16 +1706,7 @@ public readonly struct MathValue :
     {
         // Scale the integer rather than narrowing it, so comparison remains exact even
         // when the integer cannot be represented by a decimal.
-        var bits = decimal.GetBits(value);
-        var coefficient = (BigInteger)(uint)bits[0]
-            + ((BigInteger)(uint)bits[1] << 32)
-            + ((BigInteger)(uint)bits[2] << 64);
-        if (bits[3] < 0)
-        {
-            coefficient = -coefficient;
-        }
-
-        int scale = (bits[3] >> 16) & 0xff;
+        var (coefficient, scale) = DecomposeDecimal(value);
 
         // A decimal is coefficient / 10^scale. Multiplying the integer by 10^scale
         // puts both sides on the same exact integer scale without division or rounding.
@@ -1671,48 +1786,9 @@ public readonly struct MathValue :
         //     double = m / 2^k
         // Cross-multiplying by positive denominators yields an exact integer comparison:
         //     exact <=> dbl === (c * 2^k) <=> (m * 10^s)
-        Span<int> decBits = stackalloc int[4];
-        decimal.GetBits(exact.DecimalValue, decBits);
-
-        var c = (BigInteger)(uint)decBits[0]
-            | ((BigInteger)(uint)decBits[1] << 32)
-            | ((BigInteger)(uint)decBits[2] << 64);
-
-        if (decBits[3] < 0)
-        {
-            c = -c;
-        }
-
-        int s = (decBits[3] >> 16) & 0x7F;
-
-        // Deconstruct double bits into signed mantissa and negative power-of-two divisor
-        // (2^k).
-        long dblBits = BitConverter.DoubleToInt64Bits(dbl);
-        bool isNegative = dblBits < 0;
-        int exp = (int)((dblBits >> 52) & 0x7FFL);
-        long mantissa = dblBits & 0x000F_FFFF_FFFF_FFFFL;
-
-        BigInteger m;
-        int k;
-
-        if (exp == 0)
-        {
-            // Subnormal double: magnitude is mantissa * 2^-1074. The mantissa is nonzero,
-            // and the exponent is -1022 - 52 = -1074.
-            m = mantissa;
-            k = 1074;
-        }
-        else
-        {
-            // Normal double: magnitude is (2^52 + mantissa) * 2^(exp - 1023 - 52) = (2^52 + mantissa) * 2^(exp - 1075).
-            m = mantissa | (1L << 52);
-            k = 1075 - exp;
-        }
-
-        if (isNegative)
-        {
-            m = -m;
-        }
+        var (c, s) = DecomposeDecimal(exact.DecimalValue);
+        var (m, powerOfTwo) = DecomposeDouble(dbl);
+        int k = -powerOfTwo;
 
         // c * 2^k is a fast binary bit-shift; m * 10^s is a small BigInteger
         // multiplication (s <= 28). The result is exact.
@@ -1724,25 +1800,220 @@ public readonly struct MathValue :
 
     private static double DivideAsDouble(MathValue a, MathValue b)
     {
-        // When both operands are exact integers, compute correctly rounded (round-half-even)
-        // quotient via exact integer arithmetic rather than truncating mantissas.
-        if (a.Kind is DataType.Integer && b.Kind is DataType.Integer)
+        // When neither operand is a double, both operands represent exact rational
+        // numbers: integers have denominator 1, and decimals have denominator 10^scale.
+        // Converting to exact rationals (numA / denA) / (numB / denB) ==
+        // (numA * denB) / (denA * numB) allows computing the quotient with provable
+        // round-half-even accuracy (<= 0.5 ULP) in a single rounding step via exact
+        // integer arithmetic, avoiding premature 53-bit mantissa truncation or double-
+        // rounding artifacts.
+        if (a.Kind is not DataType.Double && b.Kind is not DataType.Double)
         {
-            return DivideIntegersAsDouble(a.IntegerValue, b.IntegerValue);
+            var (numA, denA) = ToRational(a);
+            var (numB, denB) = ToRational(b);
+            return DivideIntegersAsDouble(numA * denB, denA * numB);
         }
 
         // Convert bounded mantissas instead of entire integers to avoid infinity/infinity
         // when a very large numerator and denominator have a finite quotient.
         double numerator = a.AsDoubleMantissa(out int numeratorExponent);
         double denominator = b.AsDoubleMantissa(out int denominatorExponent);
-        return Math.ScaleB(numerator / denominator, numeratorExponent - denominatorExponent);
+
+        return Math.ScaleB(
+            numerator / denominator, numeratorExponent - denominatorExponent);
+    }
+
+    private static MathValue MultiplyExactOrToDouble(MathValue a, MathValue b)
+    {
+        var (numA, denA) = ToRational(a);
+        var (numB, denB) = ToRational(b);
+
+        BigInteger num = numA * numB;
+        BigInteger den = denA * denB;
+
+        // Check if the product divides evenly into an exact arbitrary-precision integer.
+        BigInteger q = BigInteger.DivRem(num, den, out BigInteger rem);
+        if (rem.IsZero)
+        {
+            return new MathValue(q);
+        }
+
+        // If it cannot be an exact integer, compute the correctly rounded (<= 0.5 ULP)
+        // double.
+        return new MathValue(DivideIntegersAsDouble(num, den));
+    }
+
+    internal static bool TryToRational(MathValue v, out BigInteger num, out BigInteger den)
+    {
+        switch (v.Kind)
+        {
+            case DataType.Integer:
+                num = v.IntegerValue;
+                den = BigInteger.One;
+                return true;
+            case DataType.Decimal:
+                (num, den) = ToReducedFraction(v.DecimalValue);
+                return true;
+            default:
+                num = default;
+                den = default;
+                return false;
+        }
     }
 
     /// <summary>
-    /// Correctly rounded (round-half-even) <paramref name="numerator"/> / <paramref name="denominator"/>
-    /// for nonzero denominator, using exact integer arithmetic with a single rounding step.
+    /// Attempts to convert a rational number to a decimal fraction without rounding.
     /// </summary>
-    internal static double DivideIntegersAsDouble(BigInteger numerator, BigInteger denominator)
+    /// <param name="num">The numerator of the rational number.</param>
+    /// <param name="den">The denominator of the rational number.</param>
+    /// <param name="result">Set to the exact decimal representation if it exists;
+    /// otherwise, set to 0.</param>
+    /// <returns><see langword="true"/> if the rational number can be exactly represented
+    /// as a decimal; otherwise, <see langword="false"/>.</returns>
+    internal static bool TryExactDecimal(BigInteger num, BigInteger den, out decimal result)
+    {
+        result = 0m;
+
+        int twos = 0;
+        int fives = 0;
+        BigInteger d = den;
+
+        while ((d & 1) == 0)
+        {
+            twos++;
+            d >>= 1;
+        }
+
+        while (BigInteger.Remainder(d, 5).IsZero)
+        {
+            fives++;
+            d /= 5;
+        }
+
+        // If any prime factors other than 2 or 5 remain, it is not representable as a
+        // terminating decimal.
+        if (!d.IsOne)
+        {
+            return false;
+        }
+
+        // Scale the numerator by 10^max(twos, fives) to convert to a decimal fraction.
+        int scale = Math.Max(twos, fives);
+        if (scale > 28)
+        {
+            return false; // Scale overflow. Decimal has a maximum of 28 fractional digits.
+        }
+
+        // Exactly one of (scale - twos) or (scale - fives) is nonzero (or both are zero if twos == fives).
+        // 10^scale / den = 2^(scale - twos) * 5^(scale - fives).
+        int p2 = scale - twos;
+        int p5 = scale - fives;
+
+        BigInteger factor = BigInteger.One;
+        if (p2 > 0)
+        {
+            factor <<= p2;
+        }
+        else if (p5 > 0)
+        {
+            factor *= BigInteger.Pow(5, p5);
+        }
+
+        BigInteger mantissa = num * factor;
+        BigInteger abs = BigInteger.Abs(mantissa);
+
+        if (abs > MaxDecimalMantissa)
+        {
+            return false; // Mantissa overflow (> 96 bits).
+        }
+
+        uint lo = (uint)(abs & uint.MaxValue);
+        uint mid = (uint)((abs >> 32) & uint.MaxValue);
+        uint hi = (uint)((abs >> 64) & uint.MaxValue);
+
+        result = new decimal((int)lo, (int)mid, (int)hi, mantissa.Sign < 0, (byte)scale);
+        return true;
+    }
+
+    /// <summary>
+    /// Reduces a rational numerator and denominator by their GCD and constructs the most
+    /// precise representable <see cref="MathValue"/> (Integer, Decimal, or Double).
+    /// </summary>
+    internal static MathValue FromRational(BigInteger num, BigInteger den)
+    {
+        if (den.IsZero)
+        {
+            throw new DivideByZeroException();
+        }
+
+        if (den.Sign < 0)
+        {
+            num = -num;
+            den = -den;
+        }
+
+        if (num.IsZero)
+        {
+            return new MathValue(BigInteger.Zero);
+        }
+
+        BigInteger gcd = BigInteger.GreatestCommonDivisor(BigInteger.Abs(num), den);
+        if (gcd > BigInteger.One)
+        {
+            num /= gcd;
+            den /= gcd;
+        }
+
+        // Exact integer?
+        if (den.IsOne)
+        {
+            return new MathValue(num);
+        }
+
+        // Exact decimal (provably zero roundoff error).
+        if (TryExactDecimal(num, den, out decimal exactDecimal))
+        {
+            return new MathValue(exactDecimal);
+        }
+
+        // Inexact. Fall back to double (single-step round half-even).
+        return new MathValue(DivideIntegersAsDouble(num, den));
+    }
+
+    private static (BigInteger Num, BigInteger Den) ToRational(MathValue v) =>
+        v.Kind switch
+        {
+            DataType.Integer => (v.IntegerValue, BigInteger.One),
+            // ToReducedFraction pre-reduces decimal coefficients via GCD to keep
+            // BigInteger multiplication terms compact.
+            DataType.Decimal => ToReducedFraction(v.DecimalValue),
+            _ => throw new InvalidOperationException(
+                    "Value must be an exact numeric representation.")
+        };
+
+    /// <summary>
+    /// Correctly rounded (round-half-even) <paramref name="numerator"/> /
+    /// <paramref name="denominator"/> for nonzero denominator, using exact integer
+    /// arithmetic with a single rounding step.
+    /// </summary>
+    /// <remarks>
+    /// Distinguishes normal floating-point numbers from the subnormal range using a
+    /// fixed-grid model:
+    /// <para>
+    /// Normal IEEE 754 numbers sit in octaves [2^e, 2^e+1) where each binade has 53
+    /// bits of floating significand and relative spacing Delta = 2^e-52.
+    /// </para>
+    /// <para>
+    /// In contrast, subnormal IEEE 754 numbers (|x| &lt; 2^-1022) do not have a
+    /// normalized 53-bit mantissa; they sit on a uniform, linear fixed-point lattice with
+    /// constant absolute spacing Delta = 2^-1074 = double.Epsilon. Rounding
+    /// to 53 floating bits first and then scaling introduces double-rounding artifacts.
+    /// The subnormal branch avoids this by projecting directly onto this fixed
+    /// 2^-1074 grid in a single round-half-even operation.
+    /// </para>
+    /// </remarks>
+    internal static double DivideIntegersAsDouble(
+        BigInteger numerator, BigInteger denominator)
     {
         bool negative = (numerator.Sign < 0) != (denominator.Sign < 0);
         BigInteger n = BigInteger.Abs(numerator);
@@ -1753,8 +2024,62 @@ public readonly struct MathValue :
             return negative ? -0.0 : 0.0;
         }
 
+        long diff = (long)n.GetBitLength() - (long)d.GetBitLength();
+
+        // 1. Guaranteed overflow:
+        // double.MaxValue = 2^1024 - 2^971; the halfway threshold to infinity is
+        // 2^1024 - 2^970. For any pair with diff >= 1025, n/d >= 2^(diff - 1) >= 2^1024 >
+        // threshold, so round-half-even provably overflows to infinity for all possible
+        // values.
+        if (diff >= 1025)
+        {
+            return negative ? double.NegativeInfinity : double.PositiveInfinity;
+        }
+
+        // 2. Guaranteed underflow:
+        // The smallest positive subnormal is 2^-1074; the halfway threshold to zero is
+        // 2^-1075. For any pair with diff <= -1076, n/d < 2^(diff + 1) <= 2^-1075 <=
+        // threshold, so round-half-even provably underflows to zero for all possible
+        // values.
+        if (diff <= -1076)
+        {
+            return negative ? -0.0 : 0.0;
+        }
+
+        // 3. Subnormal range (diff <= -1022):
+        // double.MinNormal is 2^-1022. Below this boundary, numbers lose significant bits
+        // down to 1 bit at 2^-1074. If rounded to 53 bits first, subsequent scaling in
+        // Math.ScaleB causes double-rounding errors.
+        // In the subnormal range (and the [2^-1022, 2^-1021) octave), representable IEEE
+        // 754 numbers sit on a uniform grid with fixed spacing of 2^-1074.
+        // Shifting n by 1077 bits (+1074 to reach 2^-1074 scale, +3 for guard/round/
+        // sticky bits) allows rounding directly to the subnormal grid in a single step
+        // with zero double-rounding.
+        if (diff <= -1022)
+        {
+            n <<= 1077;
+            BigInteger q = BigInteger.DivRem(n, d, out BigInteger remainder);
+
+            int dropped = (int)(q & 7); // lowest 3 bits without BigInteger allocation
+            q >>= 3;
+
+            // Round-half-even against the 3 dropped bits (half = 4).
+            bool roundUp = dropped > 4
+                || (dropped == 4 && (!remainder.IsZero || !q.IsEven));
+            if (roundUp)
+            {
+                q += 1; // may become 2^52 (MinNormal), seamlessly transitioning to normal
+            }
+
+            double result = Math.ScaleB((double)q, -1074);
+            return negative ? -result : result;
+        }
+
+        // 4. Normal range (diff >= -1021):
+        // Since diff >= -1021, n/d >= 2^(diff - 1) >= 2^-1022 = double.MinNormal.
+        // The result is guaranteed to have a full 53-bit floating significand.
         // Aim for a quotient of 55-56 bits: 53 to keep, plus round and guard bits.
-        long shift = 55 - ((long)n.GetBitLength() - (long)d.GetBitLength());
+        long shift = 55 - diff;
         if (shift >= 0)
         {
             n <<= (int)shift;
@@ -1764,22 +2089,22 @@ public readonly struct MathValue :
             d <<= (int)-shift;
         }
 
-        BigInteger q = BigInteger.DivRem(n, d, out BigInteger remainder);
+        BigInteger qNormal = BigInteger.DivRem(n, d, out BigInteger remNormal);
 
-        int extra = (int)q.GetBitLength() - 53; // 2 or 3 bits to drop
-        BigInteger dropped = q & ((BigInteger.One << extra) - 1);
-        q >>= extra;
+        int extra = (int)qNormal.GetBitLength() - 53; // exactly 2 or 3 bits
+        int droppedNormal = (int)(qNormal & ((BigInteger.One << extra) - 1));
+        qNormal >>= extra;
 
-        BigInteger half = BigInteger.One << (extra - 1);
-        bool roundUp = dropped > half
-            || (dropped == half && (!remainder.IsZero || !q.IsEven));
-        if (roundUp)
+        int halfNormal = 1 << (extra - 1);
+        bool roundUpNormal = droppedNormal > halfNormal
+            || (droppedNormal == halfNormal && (!remNormal.IsZero || !qNormal.IsEven));
+        if (roundUpNormal)
         {
-            q += 1; // may become 2^53, still exact in double
+            qNormal += 1; // may become 2^53, still exact in double
         }
 
-        double result = Math.ScaleB((double)q, (int)(extra - shift));
-        return negative ? -result : result;
+        double normalResult = Math.ScaleB((double)qNormal, (int)(extra - shift));
+        return negative ? -normalResult : normalResult;
     }
 
     private double AsDoubleMantissa(out int exponent)
@@ -1797,6 +2122,7 @@ public readonly struct MathValue :
         // approximate.
         exponent = (int)Math.Max(0, magnitude.GetBitLength() - 53);
         double mantissa = (double)(magnitude >> exponent);
+
         return IntegerValue.Sign < 0 ? -mantissa : mantissa;
     }
 
@@ -1810,7 +2136,8 @@ public readonly struct MathValue :
         {
             if (decimal.Truncate(b.DecimalValue) == b.DecimalValue)
             {
-                result = new MathValue(intOperation(a.IntegerValue, new BigInteger(b.DecimalValue)));
+                result = new MathValue(
+                    intOperation(a.IntegerValue, new BigInteger(b.DecimalValue)));
                 return true;
             }
         }
@@ -1818,15 +2145,18 @@ public readonly struct MathValue :
         {
             if (decimal.Truncate(a.DecimalValue) == a.DecimalValue)
             {
-                result = new MathValue(intOperation(new BigInteger(a.DecimalValue), b.IntegerValue));
+                result = new MathValue(
+                    intOperation(new BigInteger(a.DecimalValue), b.IntegerValue));
                 return true;
             }
         }
         else if (a.Kind is DataType.Decimal && b.Kind is DataType.Decimal)
         {
-            if (decimal.Truncate(a.DecimalValue) == a.DecimalValue && decimal.Truncate(b.DecimalValue) == b.DecimalValue)
+            if (decimal.Truncate(a.DecimalValue) == a.DecimalValue &&
+                decimal.Truncate(b.DecimalValue) == b.DecimalValue)
             {
-                result = new MathValue(intOperation(new BigInteger(a.DecimalValue), new BigInteger(b.DecimalValue)));
+                result = new MathValue(
+                    intOperation(new BigInteger(a.DecimalValue), new BigInteger(b.DecimalValue)));
                 return true;
             }
         }

@@ -251,7 +251,7 @@ public sealed class CalculatorEngine
                 new VariableCollection(evaluator.Assignments) :
                 VariableCollection.Empty;
 
-            return new EvaluationResult(mathValue, nextContext, delta);
+            return new EvaluationResult(mathValue, nextContext, delta, this);
         }
         catch (DivideByZeroException exception)
         {
@@ -470,6 +470,87 @@ public sealed class CalculatorEngine
         };
 
         return node.Accept(visitor);
+    }
+
+    /// <summary>
+    /// Formats an evaluation result into a structured, presentation-ready card using the
+    /// engine's culture, or the caller-specified culture.
+    /// </summary>
+    /// <param name="result">The evaluation result to format.</param>
+    /// <param name="culture">The culture to use for formatting.</param>
+    /// <param name="prefixRadixOutput">Whether to prefix hexadecimal, binary, and octal
+    /// outputs with their respective radix indicators.</param>
+    /// <returns>A <see cref="FormattedCalculation"/> holding the original value, the
+    /// display text in the specified culture, an invariant-culture string for machine
+    /// use, and hex, binary and octal forms.</returns>
+    public FormattedCalculation FormatResult(
+        EvaluationResult result, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
+        FormatCore(
+            result.Value,
+            culture ?? Options.Culture,
+            result.HasAssignments ? result.AssignedVariables : null,
+            prefixRadixOutput);
+
+    /// <summary>
+    /// Formats a calculation value into a structured presentation-ready card using the
+    /// engine's culture, or the caller-specified culture.
+    /// </summary>
+    /// <param name="value">The calculation value to format.</param>
+    /// <param name="culture">The culture to use for formatting.</param>
+    /// <param name="prefixRadixOutput">Whether to prefix hexadecimal, binary, and octal
+    /// outputs with their respective radix indicators.</param>
+    /// <returns>A <see cref="FormattedCalculation"/> holding the original value, the
+    /// display text in the specified culture, an invariant-culture string for machine
+    /// use, and prefixed hex, binary and octal forms.</returns>
+    public FormattedCalculation FormatResult(
+        MathValue value, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
+        FormatCore(
+            value,
+            culture ?? Options.Culture,
+            null,
+            prefixRadixOutput);
+
+    private static FormattedCalculation FormatCore(
+        MathValue value,
+        CultureInfo culture,
+        VariableCollection? assignedVariables,
+        bool prefixRadixOutput)
+    {
+        string primaryDisplay = value.Kind == MathValue.DataType.Decimal ?
+            FormatDisplayDecimal(value.DecimalValue, culture) :
+            value.ToString(culture);
+
+        string machineReadable = value.ToString(CultureInfo.InvariantCulture);
+
+        return new FormattedCalculation(
+            Value: value,
+            PrimaryDisplay: primaryDisplay,
+            MachineReadable: machineReadable,
+            HexRepresentation: value.ToHexString(prefixRadixOutput),
+            BinaryRepresentation: value.ToBinaryString(prefixRadixOutput),
+            OctalRepresentation: value.ToOctalString(prefixRadixOutput),
+            AssignedVariables: assignedVariables);
+    }
+
+    private static string FormatDisplayDecimal(decimal decVal, CultureInfo culture)
+    {
+        // If it's a whole number with excessive trailing zeros (scale > 2 and
+        // Truncate(d) == d), format as a clean integer, while leaving values such as
+        // 100.0 or 194.40 alone if scale <= 2.
+        int scale = (decimal.GetBits(decVal)[3] >> 16) & 0x7F;
+        if (scale > 2 && decimal.Truncate(decVal) == decVal)
+        {
+            return decimal.Truncate(decVal).ToString("F0", culture);
+        }
+
+        // Trim long runs of trailing zeros for human display.
+        if (scale > 4)
+        {
+            decimal normalized = decVal / 1.000000000000000000000000000000000m;
+            return normalized.ToString(culture);
+        }
+
+        return decVal.ToString(culture);
     }
 
     /// <summary>

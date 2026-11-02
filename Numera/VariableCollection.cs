@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using System.Diagnostics;
 
 namespace Numera;
 
@@ -10,6 +11,7 @@ namespace Numera;
 /// Stores full <see cref="Variable"/> instances to preserve metadata such as
 /// <see cref="Variable.Definition"/> across assignment updates and evaluations.
 /// </remarks>
+[DebuggerDisplay("{DebuggerDisplay,nq}")]
 public sealed class VariableCollection : IReadOnlyList<Variable>
 {
     /// <summary>
@@ -227,4 +229,11 @@ public sealed class VariableCollection : IReadOnlyList<Variable>
     }
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    private string DebuggerDisplay =>
+        Count == 0 ? "{Empty}" : $"Count = {Count}: {ToString()}";
+
+    /// <inheritdoc/>
+    public override string ToString() =>
+        Count == 0 ? "(empty)" : string.Join(", ", this.Select(v => $"{v.Name} = {v.Value}"));
 }

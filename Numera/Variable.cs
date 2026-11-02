@@ -1,12 +1,19 @@
-﻿namespace Numera;
+﻿using System.Collections.Frozen;
+using Numera.Ast;
+
+namespace Numera;
 
 /// <summary>
-/// Represents an immutable named variable with its evaluated <see cref="MathValue"/> and
-/// optional defining expression
-/// text.
+/// Represents an immutable named variable with its evaluated <see cref="MathValue"/>,
+/// optional canonical defining abstract syntax tree <see cref="ExpressionNode"/>, and
+/// optional defining expression text.
 /// </summary>
-/// <remarks>Use <see cref="Definition"/> to preserve the original expression when the
-/// variable is created or updated from parsed input.</remarks>
+/// <remarks>
+/// Use <see cref="Expression"/> to preserve the parsed syntax tree across calculations,
+/// allowing exact algebraic and rational simplification through variable substitutions.
+/// Use <see cref="Definition"/> to preserve the original expression text when the
+/// variable is created or updated from parsed input.
+/// </remarks>
 public readonly record struct Variable
 {
     /// <summary>
@@ -20,6 +27,12 @@ public readonly record struct Variable
     public MathValue Value { get; }
 
     /// <summary>
+    /// Gets the canonical abstract syntax tree defining this variable, or
+    /// <see langword="null"/> if the variable was supplied externally without an AST.
+    /// </summary>
+    public ExpressionNode? Expression { get; }
+
+    /// <summary>
     /// Gets the original expression text that defined this variable (e.g.
     /// <c>"105 + 15%"</c>), or <see langword="null"/> if the variable was supplied
     /// externally without a defining expression.
@@ -27,19 +40,49 @@ public readonly record struct Variable
     public string? Definition { get; }
 
     /// <summary>
-    /// Initializes a new instance of the Variable class with a name, value, and optional
-    /// definition.
+    /// Gets the unique set of variable names referenced by this variable's defining expression,
+    /// or an empty set if the variable has no defining expression.
+    /// </summary>
+    public IReadOnlySet<string> ReferencedVariables =>
+        Expression?.GetReferencedVariables() ?? FrozenSet<string>.Empty;
+
+    /// <summary>
+    /// Initializes a new instance of the Variable class with a name, value, optional AST expression,
+    /// and optional definition text.
     /// </summary>
     /// <param name="name">Variable name.</param>
     /// <param name="value">Variable value.</param>
-    /// <param name="definition">Optional expression text that defines the variable.
-    /// </param>
-    public Variable(string name, MathValue value, string? definition = null)
+    /// <param name="expression">Optional canonical AST defining the variable.</param>
+    /// <param name="definition">Optional expression text that defines the variable.</param>
+    public Variable(string name, MathValue value, ExpressionNode? expression, string? definition = null)
     {
         ArgumentNullException.ThrowIfNull(name, nameof(name));
         Name = name;
         Value = value;
+        Expression = expression;
         Definition = definition;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the Variable class with a name, value, and optional
+    /// definition text.
+    /// </summary>
+    /// <param name="name">Variable name.</param>
+    /// <param name="value">Variable value.</param>
+    /// <param name="definition">Optional expression text that defines the variable.</param>
+    public Variable(string name, MathValue value, string? definition)
+        : this(name, value, null, definition)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the Variable class with a name and value.
+    /// </summary>
+    /// <param name="name">Variable name.</param>
+    /// <param name="value">Variable value.</param>
+    public Variable(string name, MathValue value)
+        : this(name, value, null, null)
+    {
     }
 
     /// <summary>
@@ -74,6 +117,17 @@ public readonly record struct Variable
     {
         name = Name;
         value = Value;
+        definition = Definition;
+    }
+
+    /// <summary>
+    /// Deconstructs the variable into its name, value, canonical AST expression, and definition text.
+    /// </summary>
+    public void Deconstruct(out string name, out MathValue value, out ExpressionNode? expression, out string? definition)
+    {
+        name = Name;
+        value = Value;
+        expression = Expression;
         definition = Definition;
     }
 

@@ -973,4 +973,87 @@ public sealed class AstAndFormattingTests
         var invalidCall = new FunctionCallNode("sqrt", []);
         Assert.Throws<ExpressionException>(() => Calculator.Evaluate(invalidCall));
     }
+
+    [TestMethod]
+    public void ExpressionNode_GetVariableReferences_CoversAllNodeTypesAndSpanAccuracy()
+    {
+        // 1. Literal number has zero references
+        var num = new NumberNode(new MathValue(42), new TextSpan(0, 2));
+        Assert.IsEmpty(num.GetVariableReferences());
+        Assert.IsEmpty(num.GetReferencedVariables());
+
+        // 2. Unary expression (e.g. -x)
+        var unary = new UnaryNode(
+            UnaryOperator.Negate,
+            new IdentifierNode("x", null, new TextSpan(1, 1)),
+            new TextSpan(0, 2));
+        var unaryRefs = unary.GetVariableReferences();
+        Assert.HasCount(1, unaryRefs);
+        Assert.AreEqual("x", unaryRefs[0].Name);
+        Assert.AreEqual(new TextSpan(1, 1), unaryRefs[0].Span);
+
+        // 3. Binary expression with duplicate variable names (e.g. x + X)
+        var binary = new BinaryNode(
+            BinaryOperator.Add,
+            new IdentifierNode("x", null, new TextSpan(0, 1)),
+            new IdentifierNode("X", null, new TextSpan(4, 1)),
+            new TextSpan(0, 5));
+        var binaryRefs = binary.GetVariableReferences();
+        Assert.HasCount(2, binaryRefs, "Both syntactic occurrences are recorded");
+        Assert.HasCount(1, binary.GetReferencedVariables(), "Case-insensitive unique set collapses duplicates");
+        Assert.Contains("x", binary.GetReferencedVariables());
+
+        // 4. Function call node (e.g. max(a, b, c))
+        var fn = new FunctionCallNode(
+            "max",
+            [
+                new IdentifierNode("a", null, new TextSpan(4, 1)),
+                new IdentifierNode("b", null, new TextSpan(7, 1)),
+                new IdentifierNode("c", null, new TextSpan(10, 1))
+            ],
+            new TextSpan(0, 12));
+        var fnRefs = fn.GetVariableReferences();
+        Assert.HasCount(3, fnRefs);
+        Assert.AreSequenceEqual(new[] { "a", "b", "c" }, fnRefs.Select(r => r.Name).ToList());
+
+        // 5. Comparison chain node (e.g. a < b <= c)
+        var comp = new ComparisonChainNode(
+            [
+                new IdentifierNode("a", null, new TextSpan(0, 1)),
+                new IdentifierNode("b", null, new TextSpan(4, 1)),
+                new IdentifierNode("c", null, new TextSpan(9, 1))
+            ],
+            [ComparisonOperator.LessThan, ComparisonOperator.LessThanOrEqual],
+            new TextSpan(0, 10));
+        var compRefs = comp.GetVariableReferences();
+        Assert.HasCount(3, compRefs);
+        Assert.AreSequenceEqual(new[] { "a", "b", "c" }, compRefs.Select(r => r.Name).ToList());
+
+        // 6. Assignment node (LHS variable is not counted as a reference; RHS is)
+        var assign = new AssignmentNode(
+            "z",
+            new BinaryNode(
+                BinaryOperator.Multiply,
+                new IdentifierNode("x", null, new TextSpan(4, 1)),
+                new IdentifierNode("y", null, new TextSpan(8, 1)),
+                new TextSpan(4, 5)),
+            "x * y",
+            new TextSpan(0, 9));
+        var assignRefs = assign.GetVariableReferences();
+        Assert.HasCount(2, assignRefs);
+        Assert.AreSequenceEqual(new[] { "x", "y" }, assignRefs.Select(r => r.Name).ToList());
+        Assert.DoesNotContain("z", assign.GetReferencedVariables());
+
+        // 7. Unknown node type throws NotSupportedException via exhaustive pattern matching
+        var custom = new DummyTestNode();
+        Assert.Throws<NotSupportedException>(() => custom.GetVariableReferences());
+    }
+
+    private sealed record DummyTestNode() : ExpressionNode(Span: default)
+    {
+        private protected override T AcceptCore<T>(IExpressionVisitor<T> visitor) => throw new NotImplementedException();
+#if DEBUG
+        internal override string ToDisplayString(int maxDepth = 3) => "dummy";
+#endif
+    }
 }

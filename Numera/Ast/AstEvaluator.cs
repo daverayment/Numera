@@ -1,4 +1,6 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace Numera.Ast;
 
@@ -10,30 +12,30 @@ namespace Numera.Ast;
 /// </summary>
 internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 {
-	private readonly CalculatorOptions _options;
-	private readonly EvaluationContext _context;
+    private readonly CalculatorOptions _options;
+    private readonly EvaluationContext _context;
     private List<Variable>? _assignments;
 
     public IReadOnlyList<Variable>? Assignments => _assignments;
 
     public AstEvaluator(CalculatorOptions options, EvaluationContext? context = null)
-	{
-		_options = options;
-		_context = context ?? EvaluationContext.Empty;
-	}
+    {
+        _options = options;
+        _context = context ?? EvaluationContext.Empty;
+    }
 
-	public MathValue Visit(NumberNode node) => node.Value;
+    public MathValue Visit(NumberNode node) => node.Value;
 
-	public MathValue Visit(IdentifierNode node)
-	{
-		// Constant resolution produces a high-precision decimal (up to 28 digits)
-		// for direct inspection and linear decimal/integer arithmetic.
-		if (ConstantCatalog.TryResolve(node.Name, out _, out decimal value))
-		{
-			return new MathValue(value);
-		}
+    public MathValue Visit(IdentifierNode node)
+    {
+        // Constant resolution produces a high-precision decimal (up to 28 digits)
+        // for direct inspection and linear decimal/integer arithmetic.
+        if (ConstantCatalog.TryResolve(node.Name, out _, out decimal value))
+        {
+            return new MathValue(value);
+        }
 
-        // Check recent assignments.
+        // Check recent assignments within this evaluation.
         if (_assignments is not null)
         {
             for (int i = _assignments.Count - 1; i >= 0; i--)
@@ -45,103 +47,404 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
             }
         }
 
-        // Check the evaluation context variables, including previous result "ans".
-        if (_context.TryResolveVariable(node.Name, out var variableValue))
-		{
-			return variableValue;
-		}
+        // Check the evaluation context variables.
+        if (_context.TryResolveFullVariable(node.Name, out var contextVar))
+        {
+            return contextVar.Value;
+        }
 
-		throw new ExpressionException(new EvaluationDiagnostic(
-			EvaluationError.UnknownConstant, $"Unknown constant or variable '{node.Name}'.",
-			node.Span.Start, node.Span.Length));
-	}
+        throw new ExpressionException(new EvaluationDiagnostic(
+            EvaluationError.UnknownConstant, $"Unknown constant or variable '{node.Name}'.",
+            node.Span.Start, node.Span.Length));
+    }
 
-	public MathValue Visit(UnaryNode node)
-	{
-		var value = node.Operand.Accept(this);
-		try
-		{
-			return node.Op switch
-			{
-				UnaryOperator.Negate => -value,
-				UnaryOperator.Positive => value,
-				UnaryOperator.LogicalNot => MathValue.LogicalNot(value),
-				UnaryOperator.BitwiseNot => MathValue.BitwiseNot(value),
-				UnaryOperator.Factorial => EvaluateFactorial(value),
-				UnaryOperator.Percent => value / new MathValue(100m),
-				_ => throw new ExpressionException(new EvaluationDiagnostic(
-					EvaluationError.InvalidSyntax, "Unknown unary operator.")),
-			};
-		}
-		catch (Exception ex) when (ex is ExpressionException or DivideByZeroException or OverflowException)
-		{
-			throw Enrich(ex, node.Span);
-		}
-	}
+    public MathValue Visit(UnaryNode node)
+    {
+        var value = node.Operand.Accept(this);
+        try
+        {
+            return node.Op switch
+            {
+                UnaryOperator.Negate => -value,
+                UnaryOperator.Positive => value,
+                UnaryOperator.LogicalNot => MathValue.LogicalNot(value),
+                UnaryOperator.BitwiseNot => MathValue.BitwiseNot(value),
+                UnaryOperator.Factorial => EvaluateFactorial(value),
+                UnaryOperator.Percent => value / new MathValue(100m),
+                _ => throw new ExpressionException(new EvaluationDiagnostic(
+                    EvaluationError.InvalidSyntax, "Unknown unary operator.")),
+            };
+        }
+        catch (Exception ex) when (ex is ExpressionException or DivideByZeroException or OverflowException)
+        {
+            throw Enrich(ex, node.Span);
+        }
+    }
 
-	public MathValue Visit(BinaryNode node)
-	{
-		// Fast path with no spine allocation. Power nodes must take it too, or the loop below
-		// would recurse into this method forever; they are not flattened because they count
-		// towards nesting height (see BinaryNode.Height).
-		if (node.Op == BinaryOperator.Power || node.Left is not BinaryNode { Op: not BinaryOperator.Power })
-		{
-			return Apply(node, node.Left.Accept(this));
-		}
+    public MathValue Visit(BinaryNode node)
+    {
+        // Exact rational reduction fast-path for contiguous multiplicative/division
+        // chains: When a node begins a chain of * and / operators containing division,
+        // evaluate factors rationally to eliminate intermediate division rounding errors
+        // (e.g. (1/3) * 3 == 1). If there is no division in the chain, or if any operand
+        // is inexact (e.g. Double), standard evaluation applies to preserve expected data
+        // types.
+        if (node.Op is BinaryOperator.Multiply or BinaryOperator.Divide)
+        {
+            if (TryEvaluateMultiplicativeChain(node, out var rationalResult))
+            {
+                return rationalResult;
+            }
+        }
 
-		// Walk the non-power left spine iteratively so long flat chains (e.g. thousands of additive
-		// terms) cannot overflow the call stack. This is the same rule as BinaryNode.Height.
-		var spine = new Stack<BinaryNode>();
-		ExpressionNode current = node;
-		while (current is BinaryNode { Op: not BinaryOperator.Power } bin)
-		{
-			spine.Push(bin);
-			current = bin.Left;
-		}
+        // Fast path with no spine allocation. Power nodes must take it too, or the loop
+        // below would recurse into this method forever; they are not flattened because
+        // they count towards nesting height (see BinaryNode.Height).
+        if (node.Op == BinaryOperator.Power ||
+            node.Left is not BinaryNode { Op: not BinaryOperator.Power })
+        {
+            return Apply(node, node.Left.Accept(this));
+        }
 
-		MathValue left = current.Accept(this);
-		while (spine.Count > 0)
-		{
-			left = Apply(spine.Pop(), left);
-		}
+        // Walk the non-power left spine iteratively at the same precedence level so long
+        // flat chains (e.g. thousands of additive terms) cannot overflow the call stack.
+        // This is the same rule as BinaryNode.Height.
+        var spine = new Stack<BinaryNode>();
+        ExpressionNode current = node;
+        while (current is BinaryNode bin &&
+            IsSamePrecedence(node.Op, bin.Op) &&
+            bin.Op is not BinaryOperator.Power)
+        {
+            spine.Push(bin);
+            current = bin.Left;
+        }
 
-		return left;
-	}
+        MathValue left = current.Accept(this);
+        while (spine.Count > 0)
+        {
+            left = Apply(spine.Pop(), left);
+        }
 
-	private MathValue Apply(BinaryNode node, MathValue left)
-	{
-		if (node.Op == BinaryOperator.LogicalOr && !left.IsZero)
-		{
-			return Guard(node.Span, () => MathValue.LogicalOr(left, new MathValue(1m)));
-		}
+        return left;
+    }
 
-		if (node.Op == BinaryOperator.LogicalAnd && left.IsZero)
-		{
-			return Guard(node.Span, () => MathValue.LogicalAnd(left, new MathValue(0m)));
-		}
+    private static bool IsSamePrecedence(BinaryOperator a, BinaryOperator b) =>
+        (a, b) switch
+        {
+            (BinaryOperator.Add or BinaryOperator.Subtract,
+                BinaryOperator.Add or BinaryOperator.Subtract) => true,
+            (BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo,
+                BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo) => true,
+            (BinaryOperator.ShiftLeft or BinaryOperator.ShiftRight,
+                BinaryOperator.ShiftLeft or BinaryOperator.ShiftRight) => true,
+            (BinaryOperator.LogicalAnd, BinaryOperator.LogicalAnd) => true,
+            (BinaryOperator.LogicalOr, BinaryOperator.LogicalOr) => true,
+            (BinaryOperator.LogicalXor, BinaryOperator.LogicalXor) => true,
+            _ => false,
+        };
 
-		var right = node.Right.Accept(this);
-		bool markup = PercentRules.IsMarkup(node);
-		var one = new MathValue(1m);
-		return Guard(node.Span, () => node.Op switch
-		{
-			BinaryOperator.Add when markup => left * (one + right),
-			BinaryOperator.Subtract when markup => left * (one - right),
-			BinaryOperator.Of => left * right,
-			BinaryOperator.Add => left + right,
-			BinaryOperator.Subtract => left - right,
-			BinaryOperator.Multiply => left * right,
-			BinaryOperator.Divide => left / right,
-			BinaryOperator.Modulo => left % right,
-			BinaryOperator.Power => MathValue.Pow(left, right),
-			BinaryOperator.ShiftLeft => MathValue.ShiftLeft(left, right),
-			BinaryOperator.ShiftRight => MathValue.ShiftRight(left, right),
-			BinaryOperator.LogicalAnd => MathValue.LogicalAnd(left, right),
-			BinaryOperator.LogicalOr => MathValue.LogicalOr(left, right),
-			BinaryOperator.LogicalXor => MathValue.LogicalXor(left, right),
-			_ => throw new ExpressionException(new EvaluationDiagnostic(EvaluationError.InvalidSyntax, "Unknown binary operator.")),
-		});
-	}
+    /// <summary>
+    /// Attempts exact rational reduction across a contiguous chain of multiplication and
+    /// division.
+    /// </summary>
+    /// <param name="root">The root binary node of the chain.</param>
+    /// <param name="result">The exact or reduced <see cref="MathValue"/> if successful.
+    /// </param>
+    /// <returns><see langword="true"/> if the chain was evaluated rationally; otherwise
+    /// <see langword="false"/>.</returns>
+    private bool TryEvaluateMultiplicativeChain(BinaryNode root, out MathValue result)
+    {
+        result = default;
+
+        // Unroll the left-leaning chain of * and / operations into an ordered list of
+        // factors.
+        var factors = new List<(ExpressionNode Node, bool IsDivision, TextSpan Span)>();
+        var path = new HashSet<string>(Identifier.Comparer);
+        bool hasDivision = false;
+
+        // Flatten both left (multiplied) and right (divided if op is Divide) trees.
+        FlattenMultiplicativeNode(
+            root.Left, isDivision: false, root.Span, factors, ref hasDivision, path, depth: 0);
+        FlattenMultiplicativeNode(
+            root.Right, isDivision: root.Op == BinaryOperator.Divide, root.Span, factors, ref hasDivision, path, depth: 0);
+
+        // A chain requires at least 2 operations (at least 3 factors, e.g. a * b / c).
+        // Single binary operations (e.g. 0.3 / 0.01 or ANS / 2) have only 2 factors and
+        // must not undergo rational reduction, preserving standard typed operator rules,
+        // so Decimal / Decimal == Decimal.
+        if (!hasDivision || factors.Count < 3)
+        {
+            return false;
+        }
+
+        BigInteger totalNum = BigInteger.One;
+        BigInteger totalDen = BigInteger.One;
+
+        foreach (var (factorNode, isDivision, span) in factors)
+        {
+            var factorVal = factorNode.Accept(this);
+            if (!MathValue.TryToRational(
+                factorVal, out BigInteger factorNum, out BigInteger factorDen))
+            {
+                return false;
+            }
+
+            if (isDivision)
+            {
+                if (factorNum.IsZero)
+                {
+                    // Division by zero will be caught or thrown with appropriate span.
+                    throw Enrich(new DivideByZeroException(), span);
+                }
+
+                totalNum *= factorDen;
+                totalDen *= factorNum;
+            }
+            else
+            {
+                totalNum *= factorNum;
+                totalDen *= factorDen;
+            }
+
+            if (totalDen.Sign < 0)
+            {
+                totalNum = -totalNum;
+                totalDen = -totalDen;
+            }
+
+            // Incremental GCD reduction to prevent unbounded BigInteger bit growth.
+            BigInteger gcd = BigInteger.GreatestCommonDivisor(BigInteger.Abs(totalNum), totalDen);
+            if (gcd > BigInteger.One)
+            {
+                totalNum /= gcd;
+                totalDen /= gcd;
+            }
+
+            if (BigInteger.Abs(totalNum).GetBitLength() > CalculationLimits.MaxIntegerBits ||
+                totalDen.GetBitLength() > CalculationLimits.MaxIntegerBits)
+            {
+                throw new CalculationLimitException();
+            }
+        }
+
+        result = MathValue.FromRational(totalNum, totalDen);
+        return true;
+    }
+
+    /// <summary>
+    /// Recursively flattens an arbitrary tree of multiplications, divisions,
+    /// parenthesized groups, and unrolled variable definitions into an ordered list of
+    /// atomic factors.
+    /// </summary>
+    /// <remarks>
+    /// Any contiguous chain of * and / operations can be expressed as:
+    /// (N1 * N2 * ...) / (D1 * D2 * ...)
+    /// 
+    /// The flattener traverses subtrees and inverts operations when descending into a
+    /// divisor:
+    /// - Dividing by (A * B) means dividing by A and dividing by B.
+    /// - Dividing by (A / B) means dividing by A and MULTIPLYING by B.
+    /// 
+    /// Variables whose defining expressions are themselves * or / trees are inlined
+    /// transparently, allowing cross-round rational reduction (e.g. r = 71 / 9 followed
+    /// by r * 9 == 71).
+    /// </remarks>
+    private void FlattenMultiplicativeNode(
+        ExpressionNode node,
+        bool isDivision,
+        TextSpan divisionSpan,
+        List<(ExpressionNode Node, bool IsDivision, TextSpan Span)> factors,
+        ref bool hasDivision,
+        HashSet<string> path,
+        int depth)
+    {
+        if (depth >= CalculationLimits.MaxNestingDepth ||
+            !RuntimeHelpers.TryEnsureSufficientExecutionStack())
+        {
+            if (isDivision)
+            {
+                hasDivision = true;
+            }
+
+            factors.Add((node, isDivision, isDivision ? divisionSpan : node.Span));
+            return;
+        }
+
+        // Grouped or inline BinaryNode multiplication/division (e.g. (1 / 3) or 1 / 3).
+        if (node is BinaryNode bin &&
+            bin.Op is BinaryOperator.Multiply or BinaryOperator.Divide &&
+            !PercentRules.IsMarkup(bin))
+        {
+            FlattenMultiplicativeNode(bin.Left, isDivision, divisionSpan, factors, ref hasDivision, path, depth + 1);
+            bool rightIsDivision = bin.Op == BinaryOperator.Divide ? !isDivision : isDivision;
+            TextSpan rightDivSpan = bin.Op == BinaryOperator.Divide ? bin.Span : divisionSpan;
+            FlattenMultiplicativeNode(bin.Right, rightIsDivision, rightDivSpan, factors, ref hasDivision, path, depth + 1);
+
+            return;
+        }
+
+        // IdentifierNode resolving to a variable with a multiplicative AST.
+        if (node is IdentifierNode identifier &&
+            !ConstantCatalog.TryResolve(identifier.Name, out _, out _) &&
+            !path.Contains(identifier.Name) &&
+            TryResolveVariableExpression(identifier.Name, out var variableExpr))
+        {
+            var unwrapped = UnwrapAssignment(variableExpr);
+            if (unwrapped is BinaryNode varBin &&
+                varBin.Op is BinaryOperator.Multiply or BinaryOperator.Divide &&
+                !PercentRules.IsMarkup(varBin))
+            {
+                path.Add(identifier.Name);
+                FlattenMultiplicativeNode(varBin.Left, isDivision, divisionSpan, factors, ref hasDivision, path, depth + 1);
+                bool rightIsDivision = varBin.Op == BinaryOperator.Divide ? !isDivision : isDivision;
+                TextSpan rightDivSpan = varBin.Op == BinaryOperator.Divide ? varBin.Span : divisionSpan;
+                FlattenMultiplicativeNode(varBin.Right, rightIsDivision, rightDivSpan, factors, ref hasDivision, path, depth + 1);
+                path.Remove(identifier.Name);
+
+                return;
+            }
+        }
+
+        // Atomic leaf factor.
+        if (isDivision)
+        {
+            hasDivision = true;
+        }
+
+        factors.Add((node, isDivision, isDivision ? divisionSpan : node.Span));
+    }
+
+    private bool TryResolveVariableExpression(string name, [NotNullWhen(true)] out ExpressionNode? expression)
+    {
+        if (_assignments is not null)
+        {
+            for (int i = _assignments.Count - 1; i >= 0; i--)
+            {
+                if (_assignments[i].Name.Equals(name, Identifier.Comparison))
+                {
+                    expression = _assignments[i].Expression;
+                    return expression is not null;
+                }
+            }
+        }
+
+        if (_context.TryResolveFullVariable(name, out var variable))
+        {
+            expression = variable.Expression;
+            return expression is not null;
+        }
+
+        expression = null;
+        return false;
+    }
+
+    private static ExpressionNode UnwrapAssignment(ExpressionNode node)
+    {
+        while (node is AssignmentNode assignment)
+        {
+            node = assignment.Value;
+        }
+
+        return node;
+    }
+
+    private bool TryUnrollVariableMultiplicativeNode(
+        ExpressionNode node,
+        out ExpressionNode unrolledRoot,
+        out bool containsDivision)
+    {
+        unrolledRoot = node;
+        containsDivision = false;
+
+        if (node is IdentifierNode identifier &&
+            ConstantCatalog.TryResolve(identifier.Name, out _, out _) == false &&
+            _context.TryResolveFullVariable(identifier.Name, out var variable) &&
+            variable.Expression is BinaryNode exprBin &&
+            exprBin.Op is BinaryOperator.Multiply or BinaryOperator.Divide &&
+            !PercentRules.IsMarkup(exprBin))
+        {
+            unrolledRoot = variable.Expression;
+            containsDivision = HasDivisionInMultiplicativeTree(variable.Expression);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool HasDivisionInMultiplicativeTree(ExpressionNode node)
+    {
+        ExpressionNode cur = node;
+        while (cur is BinaryNode bin && bin.Op is BinaryOperator.Multiply or BinaryOperator.Divide)
+        {
+            if (bin.Op == BinaryOperator.Divide) return true;
+            cur = bin.Left;
+        }
+        return false;
+    }
+
+    private static void UnrollMultiplicativeSubtree(
+        ExpressionNode subtree,
+        bool invertOperations,
+        List<(ExpressionNode Node, bool IsDivision, TextSpan Span)> terms,
+        ref bool hasDivision,
+        ref ExpressionNode leftmost)
+    {
+        var localTerms = new List<(ExpressionNode Node, bool IsDivision, TextSpan Span)>();
+        ExpressionNode cur = subtree;
+
+        while (cur is BinaryNode bin && bin.Op is BinaryOperator.Multiply or BinaryOperator.Divide && !PercentRules.IsMarkup(bin))
+        {
+            bool isDiv = bin.Op == BinaryOperator.Divide;
+            if (invertOperations)
+            {
+                isDiv = !isDiv; // dividing by (a / b) multiplies by b and divides by a
+            }
+
+            if (isDiv) hasDivision = true;
+            localTerms.Add((bin.Right, isDiv, bin.Span));
+            cur = bin.Left;
+        }
+
+        localTerms.Reverse();
+        leftmost = cur;
+        terms.AddRange(localTerms);
+    }
+
+    private MathValue Apply(BinaryNode node, MathValue left)
+    {
+        if (node.Op == BinaryOperator.LogicalOr && !left.IsZero)
+        {
+            return Guard(node.Span, () => MathValue.LogicalOr(left, new MathValue(1m)));
+        }
+
+        if (node.Op == BinaryOperator.LogicalAnd && left.IsZero)
+        {
+            return Guard(node.Span, () => MathValue.LogicalAnd(left, new MathValue(0m)));
+        }
+
+        var right = node.Right.Accept(this);
+        bool markup = PercentRules.IsMarkup(node);
+        var one = new MathValue(1m);
+        return Guard(node.Span, () => node.Op switch
+        {
+            BinaryOperator.Add when markup => left * (one + right),
+            BinaryOperator.Subtract when markup => left * (one - right),
+            BinaryOperator.Of => left * right,
+            BinaryOperator.Add => left + right,
+            BinaryOperator.Subtract => left - right,
+            BinaryOperator.Multiply => left * right,
+            BinaryOperator.Divide => left / right,
+            BinaryOperator.Modulo => left % right,
+            BinaryOperator.Power => MathValue.Pow(left, right),
+            BinaryOperator.ShiftLeft => MathValue.ShiftLeft(left, right),
+            BinaryOperator.ShiftRight => MathValue.ShiftRight(left, right),
+            BinaryOperator.LogicalAnd => MathValue.LogicalAnd(left, right),
+            BinaryOperator.LogicalOr => MathValue.LogicalOr(left, right),
+            BinaryOperator.LogicalXor => MathValue.LogicalXor(left, right),
+            _ => throw new ExpressionException(
+                new EvaluationDiagnostic(EvaluationError.InvalidSyntax, "Unknown binary operator.")),
+        });
+    }
 
     /// <summary>
     /// Evaluates a comparison chain node by evaluating its operands and applying the
@@ -149,24 +452,24 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
     /// </summary>
     /// <param name="node">The comparison chain node to evaluate.</param>
     /// <returns>The result of evaluating the comparison chain.</returns>
-	public MathValue Visit(ComparisonChainNode node)
-	{
-		var left = node.Operands[0].Accept(this);
-		for (int i = 0; i < node.Operators.Count; i++)
-		{
-			// Later operands are skipped once a comparison fails, avoiding needless work
+    public MathValue Visit(ComparisonChainNode node)
+    {
+        var left = node.Operands[0].Accept(this);
+        for (int i = 0; i < node.Operators.Count; i++)
+        {
+            // Later operands are skipped once a comparison fails, avoiding needless work
             // and errors.
-			var right = node.Operands[i + 1].Accept(this);
-			if (!EvaluateComparison(node.Operators[i], left, right))
-			{
-				return new MathValue(0m);
-			}
+            var right = node.Operands[i + 1].Accept(this);
+            if (!EvaluateComparison(node.Operators[i], left, right))
+            {
+                return new MathValue(0m);
+            }
 
-			left = right;
-		}
+            left = right;
+        }
 
-		return new MathValue(1m);
-	}
+        return new MathValue(1m);
+    }
 
     /// <summary>
     /// Evaluates a function call node by evaluating its arguments and dispatching to the
@@ -174,46 +477,46 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
     /// </summary>
     /// <param name="node">The function call node to evaluate.</param>
     /// <returns>The result of evaluating the function call.</returns>
-	public MathValue Visit(FunctionCallNode node)
-	{
-		var args = new List<MathValue>(node.Arguments.Count);
-		foreach (var arg in node.Arguments)
-		{
-			args.Add(arg.Accept(this));
-		}
+    public MathValue Visit(FunctionCallNode node)
+    {
+        var args = new List<MathValue>(node.Arguments.Count);
+        foreach (var arg in node.Arguments)
+        {
+            args.Add(arg.Accept(this));
+        }
 
-		if (_options.CustomFunctions.TryGet(node.FunctionName, out var customFunction))
-		{
-			try
-			{
-				var result = customFunction.Implementation(args);
-				if (result.Kind is MathValue.DataType.Integer &&
-					BigInteger.Abs(result.IntegerValue).GetBitLength() > CalculationLimits.MaxIntegerBits)
-				{
-					throw new CalculationLimitException();
-				}
+        if (_options.CustomFunctions.TryGet(node.FunctionName, out var customFunction))
+        {
+            try
+            {
+                var result = customFunction.Implementation(args);
+                if (result.Kind is MathValue.DataType.Integer &&
+                    BigInteger.Abs(result.IntegerValue).GetBitLength() > CalculationLimits.MaxIntegerBits)
+                {
+                    throw new CalculationLimitException();
+                }
 
-				return result;
-			}
-			catch (CalculationLimitException)
-			{
-				throw;
-			}
-			catch (Exception ex)
-			{
-				throw Enrich(ex, node.Span);
-			}
-		}
+                return result;
+            }
+            catch (CalculationLimitException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw Enrich(ex, node.Span);
+            }
+        }
 
-		try
-		{
-			return EvaluateFunction(node.FunctionName, args);
-		}
-		catch (Exception ex) when (ex is ExpressionException or DivideByZeroException or OverflowException)
-		{
-			throw Enrich(ex, node.Span);
-		}
-	}
+        try
+        {
+            return EvaluateFunction(node.FunctionName, args);
+        }
+        catch (Exception ex) when (ex is ExpressionException or DivideByZeroException or OverflowException)
+        {
+            throw Enrich(ex, node.Span);
+        }
+    }
 
     /// <summary>
     /// Evaluates an assignment node by evaluating the expression referred to by its Value
@@ -228,9 +531,10 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         var value = node.Value.Accept(this);
 
         // Record the assignment in the list of assignments for later retrieval. Create
-        // the list lazily.
+        // the list lazily. Preserves the parsed AST node so exact rational reductions and
+        // symbolic fidelity survive variable assignments.
         (_assignments ??= []).Add(
-            new Variable(node.VariableName, value, node.Definition));
+            new Variable(node.VariableName, value, node.Value, node.Definition));
         return value;
     }
 
@@ -238,17 +542,17 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
     /// Guards an evaluation action against runtime exceptions and enriches them with
     /// source span information.
     /// </summary>
-	private static T Guard<T>(TextSpan span, Func<T> action)
-	{
-		try
-		{
-			return action();
-		}
-		catch (Exception ex) when (ex is ExpressionException or DivideByZeroException or OverflowException)
-		{
-			throw Enrich(ex, span);
-		}
-	}
+    private static T Guard<T>(TextSpan span, Func<T> action)
+    {
+        try
+        {
+            return action();
+        }
+        catch (Exception ex) when (ex is ExpressionException or DivideByZeroException or OverflowException)
+        {
+            throw Enrich(ex, span);
+        }
+    }
 
     /// <summary>
     /// Creates an <see cref="ExpressionException"/> with an evaluation diagnostic and
@@ -264,49 +568,49 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
     /// cref="ExpressionException"/> with the same diagnostic; otherwise, a new
     /// <see cref="ExpressionException"/> that wraps the original exception and carries
     /// the resolved diagnostic.</returns>
-	private static Exception Enrich(Exception ex, TextSpan span)
-	{
-		EvaluationDiagnostic diagnostic = ex switch
-		{
-			ExpressionException ee => ee.Diagnostic,
-			DivideByZeroException => new EvaluationDiagnostic(
-				EvaluationError.DivisionByZero, "Division by zero."),
-			OverflowException => new EvaluationDiagnostic(
-				EvaluationError.NumericOverflow, "Numeric overflow."),
-			_ => new EvaluationDiagnostic(
-				EvaluationError.EvaluationFailed, ex.Message),
-		};
+    private static Exception Enrich(Exception ex, TextSpan span)
+    {
+        EvaluationDiagnostic diagnostic = ex switch
+        {
+            ExpressionException ee => ee.Diagnostic,
+            DivideByZeroException => new EvaluationDiagnostic(
+                EvaluationError.DivisionByZero, "Division by zero."),
+            OverflowException => new EvaluationDiagnostic(
+                EvaluationError.NumericOverflow, "Numeric overflow."),
+            _ => new EvaluationDiagnostic(
+                EvaluationError.EvaluationFailed, ex.Message),
+        };
 
-		if (diagnostic.Position is null && span.HasValue)
-		{
-			diagnostic = diagnostic with { Position = span.Start, Length = span.Length };
-		}
+        if (diagnostic.Position is null && span.HasValue)
+        {
+            diagnostic = diagnostic with { Position = span.Start, Length = span.Length };
+        }
 
-		return ex is ExpressionException exception && ReferenceEquals(diagnostic, exception.Diagnostic)
-			? ex
-			: new ExpressionException(diagnostic, ex);
-	}
+        return ex is ExpressionException exception && ReferenceEquals(diagnostic, exception.Diagnostic)
+            ? ex
+            : new ExpressionException(diagnostic, ex);
+    }
 
-	private static bool EvaluateComparison(ComparisonOperator op, MathValue left, MathValue right)
-	{
-		// IEEE 754: every comparison with NaN is false except inequality.
-		if (left.IsNaN || right.IsNaN)
-		{
-			return op is ComparisonOperator.NotEqual;
-		}
+    private static bool EvaluateComparison(ComparisonOperator op, MathValue left, MathValue right)
+    {
+        // IEEE 754: every comparison with NaN is false except inequality.
+        if (left.IsNaN || right.IsNaN)
+        {
+            return op is ComparisonOperator.NotEqual;
+        }
 
-		int cmp = MathValue.Compare(left, right);
-		return op switch
-		{
-			ComparisonOperator.Equal => cmp == 0,
-			ComparisonOperator.NotEqual => cmp != 0,
-			ComparisonOperator.LessThan => cmp < 0,
-			ComparisonOperator.LessThanOrEqual => cmp <= 0,
-			ComparisonOperator.GreaterThan => cmp > 0,
-			ComparisonOperator.GreaterThanOrEqual => cmp >= 0,
-			_ => false,
-		};
-	}
+        int cmp = MathValue.Compare(left, right);
+        return op switch
+        {
+            ComparisonOperator.Equal => cmp == 0,
+            ComparisonOperator.NotEqual => cmp != 0,
+            ComparisonOperator.LessThan => cmp < 0,
+            ComparisonOperator.LessThanOrEqual => cmp <= 0,
+            ComparisonOperator.GreaterThan => cmp > 0,
+            ComparisonOperator.GreaterThanOrEqual => cmp >= 0,
+            _ => false,
+        };
+    }
 
     private MathValue EvaluateFunction(ReadOnlySpan<char> name, List<MathValue> args)
     {
@@ -936,10 +1240,20 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
     private static MathValue EvaluateMinMax(List<MathValue> args, bool findMinimum)
     {
+        // IEEE 754: every comparison with NaN is false except inequality. If any argument
+        // is NaN, the result of min/max is NaN.
+        for (int i = 0; i < args.Count; i++)
+        {
+            if (args[i].IsNaN)
+            {
+                return new MathValue(double.NaN);
+            }
+        }
+
         // Compare without converting every argument to double, and return the selected
         // operand unchanged so its numeric representation is preserved.
         var result = args[0];
-        for (var i = 1; i < args.Count; i++)
+        for (int i = 1; i < args.Count; i++)
         {
             var comparison = MathValue.Compare(result, args[i]);
             if (findMinimum ? comparison > 0 : comparison < 0)
@@ -964,6 +1278,16 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
     private static MathValue EvaluateMedian(List<MathValue> args)
     {
+        // IEEE 754: every comparison with NaN is false except inequality. If any argument
+        // is NaN, the result of median is NaN.
+        for (int i = 0; i < args.Count; i++)
+        {
+            if (args[i].IsNaN)
+            {
+                return new MathValue(double.NaN);
+            }
+        }
+
         var sorted = new List<MathValue>(args);
         sorted.Sort(MathValue.Compare);
 

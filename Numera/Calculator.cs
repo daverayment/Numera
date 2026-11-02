@@ -195,37 +195,19 @@ public static class Calculator
     /// <returns>A <see cref="FormattedCalculation"/> holding the original value, the
     /// culture-specific display text, an invariant-culture string safe for machine use,
     /// and prefixed hex, binary and octal forms.</returns>
-    public static FormattedCalculation FormatResult(MathValue value, CultureInfo? culture = null)
-    {
-        culture ??= CultureInfo.CurrentCulture;
-        string primaryDisplay = value.ToString(culture);
-        string machineReadable = value.ToString(CultureInfo.InvariantCulture);
-
-        return new FormattedCalculation(
-            Value: value,
-            PrimaryDisplay: primaryDisplay,
-            MachineReadable: machineReadable,
-            HexRepresentation: value.ToHexString(prefix: true),
-            BinaryRepresentation: value.ToBinaryString(prefix: true),
-            OctalRepresentation: value.ToOctalString(prefix: true));
-    }
+    public static FormattedCalculation FormatResult(MathValue value, CultureInfo? culture = null) =>
+        CalculatorEngine.Default.FormatResult(value, culture ?? CultureInfo.CurrentCulture);
 
     /// <summary>
-    /// Formats an evaluation result for display using the specified culture and preserves
-    /// assigned variables when present.
+    /// Formats an evaluation result for display using the specified culture, and
+    /// preserves assigned variables when present.
     /// </summary>
-    /// <remarks>Assigned variables are included only when the evaluation reports
-    /// assignments; otherwise, the formatted result contains no assigned variables.
-    /// </remarks>
     /// <param name="result">Evaluation output to format, including the computed value and
     /// assignment metadata.</param>
     /// <param name="culture">Culture used for formatting. If null, the current culture is
     /// used.</param>
     /// <returns>A formatted calculation that contains the formatted value and any
     /// assigned variables from the evaluation result.</returns>
-    public static FormattedCalculation FormatResult(EvaluationResult result, CultureInfo? culture = null)
-    {
-        var card = FormatResult(result.Value, culture);
-        return card with { AssignedVariables = result.HasAssignments ? result.AssignedVariables : null };
-    }
+    public static FormattedCalculation FormatResult(EvaluationResult result, CultureInfo? culture = null) =>
+        CalculatorEngine.Default.FormatResult(result, culture ?? CultureInfo.CurrentCulture);
 }

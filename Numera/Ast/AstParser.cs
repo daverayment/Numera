@@ -71,6 +71,15 @@ internal sealed class AstParser
         _options = options;
     }
 
+    private void ThrowSyntaxErrorBracketsOrSemicolon(char c) =>
+        throw SyntaxError(
+            c switch
+            {
+                '[' or ']' => "'Square brackets '[]' are reserved for future vector and matrix syntax. Use round parentheses '()' for grouping.",
+                ';' => "Semicolons ';' are reserved for future matrix row separation. Use commas ',' to separate function arguments.",
+                _ => throw new ArgumentException($"Parser error. '{c}' should not be passed to this method.")
+            });
+
     public ExpressionNode Parse()
     {
         var result = ParseStatement();
@@ -85,8 +94,7 @@ internal sealed class AstParser
             char trailing = _input[_pos];
             if (trailing is '[' or ']' or ';')
             {
-                throw SyntaxError(
-                    $"'{trailing}' is reserved for future matrix and array syntax.");
+                ThrowSyntaxErrorBracketsOrSemicolon(trailing);
             }
 
             throw SyntaxError($"Unexpected character '{trailing}'.");
@@ -704,7 +712,7 @@ internal sealed class AstParser
 
         if (c is '[' or ']' or ';')
         {
-            throw SyntaxError($"'{c}' is reserved for future matrix and array syntax.");
+            ThrowSyntaxErrorBracketsOrSemicolon(c);
         }
 
         if (c == '(')
@@ -785,16 +793,11 @@ internal sealed class AstParser
                 EvaluationError.UnknownFunction, $"Unknown function '{identifier}'.", identifierStart, identifier.Length));
         }
 
-        if (Peek() is '[' or ']')
+        if (Peek() is '[' or ']' or ';')
         {
-            throw SyntaxError("Square brackets '[]' are reserved for future vector and matrix syntax. Use round parentheses '()' for grouping.");
+            ThrowSyntaxErrorBracketsOrSemicolon(Peek());
         }
             
-        if (Peek() == ';')
-        {
-            throw SyntaxError("Semicolons ';' are reserved for future matrix row separation. Use commas ',' to separate function arguments.");
-        }
-
         if (ConstantCatalog.TryResolve(identifier, out var constantKind, out _))
         {
             return new IdentifierNode(identifier, constantKind, Span(identifierStart, identifier.Length));
