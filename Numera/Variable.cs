@@ -1,4 +1,5 @@
 ﻿using System.Collections.Frozen;
+using System.Numerics;
 using Numera.Ast;
 
 namespace Numera;
@@ -84,6 +85,21 @@ public readonly record struct Variable
         : this(name, value, null, null)
     {
     }
+
+    /// <summary>
+    /// Gets the decimal value of the variable's <see cref="MathValue"/>. 
+    /// </summary>
+    public decimal DecimalValue { get => Value.DecimalValue; }
+
+    /// <summary>
+    /// Gets the integer value of the variable's <see cref="MathValue"/>.
+    /// </summary>
+    public BigInteger IntegerValue { get => Value.IntegerValue; }
+
+    /// <summary>
+    /// Gets the double value of the variable's <see cref="MathValue"/>.
+    /// </summary>
+    public double DoubleValue { get => Value.DoubleValue; }
 
     /// <summary>
     /// Defines an implicit conversion from <see cref="Variable"/> to

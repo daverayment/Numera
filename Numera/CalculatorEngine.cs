@@ -248,7 +248,7 @@ public sealed class CalculatorEngine
                 ?? new EvaluationContext(evaluator.Assignments, mathValue, node);
 
             var delta = evaluator.Assignments != null ?
-                new VariableCollection(evaluator.Assignments) :
+                evaluator.Assignments.ToVariableCollection() :
                 VariableCollection.Empty;
 
             return new EvaluationResult(mathValue, nextContext, delta, this);

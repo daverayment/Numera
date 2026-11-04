@@ -125,11 +125,10 @@ public sealed class ImplicitMultiplicationTests
     public void Variables_SupportJuxtapositionWithAndWithoutWhitespace(string expression, int expected)
     {
         var context = new EvaluationContext(
-            new VariableCollection(
             [
-                new Variable("x", new MathValue(10m)),
-                new Variable("y", new MathValue(3m))
-            ]), null);
+                ("x", 10m),
+                ("y", 3m)
+            ], null);
 
         var result = Calculator.Evaluate(expression, context);
         Assert.AreEqual(expected, (int)result.DecimalValue);
@@ -143,9 +142,9 @@ public sealed class ImplicitMultiplicationTests
             new CalculatorOptions { AllowImplicitMultiplication = false });
 
         var context = new EvaluationContext(
-        [
-            new Variable("x", new(5m)),
-        ], null);
+            [
+                ("x", 5m),
+            ], null);
 
         Assert.IsFalse(strictEngine.TryEvaluate("2x", out _, out var d1, context));
         Assert.AreEqual(EvaluationError.InvalidSyntax, d1.Code);

@@ -105,7 +105,7 @@ public sealed record EvaluationContext
     public EvaluationContext(IEnumerable<Variable>? variables,
         MathValue? previousResult = null,
         ExpressionNode? previousExpression = null)
-        : this(variables is null ? null : new(variables), previousResult, previousExpression)
+        : this(variables is null ? VariableCollection.Empty : variables.ToVariableCollection(), previousResult, previousExpression)
     {
     }
 

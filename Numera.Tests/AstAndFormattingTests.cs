@@ -1049,6 +1049,148 @@ public sealed class AstAndFormattingTests
         Assert.Throws<NotSupportedException>(() => custom.GetVariableReferences());
     }
 
+    [TestMethod]
+    public void PrecedenceIsolation_ExhaustiveCartesianProduct_NeverLeaksAcrossOperatorBoundaries()
+    {
+        var engine = CalculatorEngine.Default;
+
+        // Operators eligible to be the parent or child node in: Op1(Op2(a, b), c).
+        var operators = Enum.GetValues<BinaryOperator>()
+            .Except([BinaryOperator.Of])
+            .ToArray();
+
+        // Deterministic, domain-safe triplets to exercise the operator pairs with.
+        (int A, int B, int C)[] testTriplets =
+        [
+            (12, 4, 2),  // Even divisions, small shifts/powers
+            (6, 2, 3),   // Clean divisors
+            (1, 1, 1)    // Identity / boundary
+        ];
+
+        int distinctPairsTested = 0;
+        int totalEvaluationsRun = 0;
+
+        foreach (var opParent in operators)
+        {
+            foreach (var opChild in operators)
+            {
+                distinctPairsTested++;
+
+                foreach (var (a, b, c) in testTriplets)
+                {
+                    var childNode = new BinaryNode(opChild, new NumberNode(a), new NumberNode(b));
+                    var fullTree = new BinaryNode(opParent, childNode, new NumberNode(c));
+
+                    // 1. Evaluate the child subtree in complete isolation.
+                    bool childOk = engine.TryEvaluate(childNode, out var isolatedChild, out var childDiag);
+                    Assert.IsTrue(childOk,
+                        $"Isolated child evaluation failed for {opChild}({a}, {b}): {childDiag?.Message}");
+
+                    // 2. Evaluate the parent with the isolated child value.
+                    var isolatedParentTree = new BinaryNode(
+                        opParent,
+                        new NumberNode(isolatedChild.Value),
+                        new NumberNode(c));
+                    bool parentOk = engine.TryEvaluate(isolatedParentTree, out var expectedResult, out var parentDiag);
+                    Assert.IsTrue(parentOk,
+                        $"Full tree evaluation failed for {opParent}({isolatedChild.Value}, {c}): {parentDiag?.Message}");
+
+                    // 3. Evaluate the full compound tree (exercises the spine flattener).
+                    bool treeOk = engine.TryEvaluate(fullTree, out var actualResult, out var treeDiag);
+                    Assert.IsTrue(treeOk,
+                        $"Failed to evaluate full tree: {opParent}({opChild}({a}, {b}), {c}) - {treeDiag?.Message}");
+
+                    // Tree evaluation must identically match isolated evaluation.
+                    Assert.AreEqual(0, MathValue.Compare(expectedResult.Value, actualResult.Value),
+                        $"Spine leak detected for pair {opParent} -> {opChild} with inputs ({a}, {b}, {c})! " +
+                        $"Expected {expectedResult.Value} ({expectedResult.Value.Kind}), " +
+                        $"got {actualResult.Value} ({actualResult.Value.Kind})");
+
+                    totalEvaluationsRun++;
+                }
+            }
+        }
+
+        // Every single pair and triplet must be evaluated.
+        Assert.AreEqual(
+            operators.Length * operators.Length, distinctPairsTested,
+            "Did not test all operator pairs.");
+        Assert.AreEqual(
+            operators.Length * operators.Length * testTriplets.Length, totalEvaluationsRun,
+            "Did not run all evaluations.");
+    }
+
+    [TestMethod]
+    public void PrecedenceIsolation_OperatorOf_MaintainsIsolation()
+    {
+        var engine = CalculatorEngine.Default;
+
+        // 1. 'Of' as child: (10% of 200) <op> 5.
+        // 10% of 200 = 20.
+        var ofChild = new BinaryNode(
+            BinaryOperator.Of,
+            new UnaryNode(UnaryOperator.Percent, new NumberNode(10)),
+            new NumberNode(200));
+
+        BinaryOperator[] parents =
+        [
+            BinaryOperator.Add,
+            BinaryOperator.Subtract,
+            BinaryOperator.Multiply,
+            BinaryOperator.Divide
+        ];
+
+        foreach (var parent in parents)
+        {
+            var tree = new BinaryNode(parent, ofChild, new NumberNode(5));
+            var isolated = engine.Evaluate(ofChild); // 20
+            var expected = engine.Evaluate(new BinaryNode(
+                parent, new NumberNode(isolated.Value), new NumberNode(5)));
+
+            var actual = engine.Evaluate(tree);
+            Assert.AreEqual(0, MathValue.Compare(expected.Value, actual.Value),
+                $"Failed for parent {parent} with child 'Of'");
+        }
+
+        // 2. 'Of' as parent: 10% of (200 <op> 5).
+        // Left operand is explicitly percent-shaped; right operand is a subexpression.
+        foreach (var childOp in parents)
+        {
+            var childSubtree = new BinaryNode(childOp, new NumberNode(200), new NumberNode(5));
+            var fullTree = new BinaryNode(
+                BinaryOperator.Of,
+                new UnaryNode(UnaryOperator.Percent, new NumberNode(10)),
+                childSubtree);
+
+            var isolatedChild = engine.Evaluate(childSubtree);
+            var expected = engine.Evaluate(new BinaryNode(
+                BinaryOperator.Of,
+                new UnaryNode(UnaryOperator.Percent, new NumberNode(10)),
+                new NumberNode(isolatedChild.Value)));
+
+            var actual = engine.Evaluate(fullTree);
+            Assert.AreEqual(0, MathValue.Compare(expected.Value, actual.Value),
+                $"Failed for 'Of' parent with child {childOp}");
+        }
+    }
+
+    [TestMethod]
+    public void RationalReduction_DeepParenthesesAndGrouping_DissolvesCompletely()
+    {
+        var engine = CalculatorEngine.Default;
+
+        // Deeply nested groupings across products and divisions:
+        // ((24 * (1 / 2)) / ((1 / 3) * (2 / 1))) 
+        // Numerator: 24 * (1/2) = 12
+        // Denominator: (1/3) * 2 = 2/3
+        // 12 / (2/3) = 18
+        var result = engine.Evaluate("((24 * (1 / 2)) / ((1 / 3) * (2 / 1)))");
+
+        Assert.AreEqual(MathValue.DataType.Integer, result.Value.Kind);
+        Assert.AreEqual(new BigInteger(18), result.Value.IntegerValue);
+        Assert.AreEqual("18", result.PrimaryDisplay);
+    }
+
     private sealed record DummyTestNode() : ExpressionNode(Span: default)
     {
         private protected override T AcceptCore<T>(IExpressionVisitor<T> visitor) => throw new NotImplementedException();

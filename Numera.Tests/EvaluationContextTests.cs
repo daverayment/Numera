@@ -107,7 +107,7 @@ public sealed class EvaluationContextTests
         Assert.IsFalse(boxed is System.Collections.IList);
 
         // Mutation operations like Add produce a new collection instance, preserving the original.
-        var updated = context.Variables.Add("y", new MathValue(2m));
+        var updated = context.Variables.SetItem("y", new MathValue(2m));
         Assert.AreNotSame(context.Variables, updated);
         Assert.IsFalse(context.Variables.ContainsKey("y"));
         Assert.IsTrue(updated.ContainsKey("y"));
@@ -348,7 +348,7 @@ public sealed class EvaluationContextTests
     {
         var engine = new CalculatorEngine();
         var context = new EvaluationContext(
-            new VariableCollection(
+            VariableCollection.Create(
             [
                 new Variable("subtotal", new MathValue(100m)),
                 new Variable("bill", new MathValue(60m)),
@@ -426,7 +426,7 @@ public sealed class EvaluationContextTests
         Assert.AreEqual(45, r2ContextVar.Value.IntegerValue);
 
         // Direct Add(Variable) on collection also preserves definition
-        var directAdded = r2.Context.Variables.Add(new Variable("depth", new MathValue(20m), "2 * 10"));
+        var directAdded = r2.Context.Variables.SetItem(new Variable("depth", new MathValue(20m), "2 * 10"));
         Assert.IsTrue(directAdded.TryGetVariable("depth", out var directVar));
         Assert.AreEqual("2 * 10", directVar.Definition);
         Assert.AreEqual(20m, directVar.Value.DecimalValue);
@@ -486,7 +486,7 @@ public sealed class EvaluationContextTests
         var context = new EvaluationContext(Vars(("x", 5m)), null);
         var result = engine.Evaluate("x =", context);
         Assert.AreEqual(5m, result.Value.DecimalValue);
-        Assert.AreEqual(5m, context.Variables["x"].DecimalValue);
+        Assert.AreEqual(5m, context.Variables["x"].Value.DecimalValue);
     }
 
     [TestMethod]

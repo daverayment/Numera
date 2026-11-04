@@ -268,7 +268,7 @@ public sealed class IntegrationAndArchitectureTests
     [TestMethod]
     public void VariableCollection_ToString_OutputsReadableSummary()
     {
-        var vars = new VariableCollection(
+        var vars = VariableCollection.CreateRange(
         [
             ("a", new MathValue(10m)),
             ("b", new MathValue(20m))
