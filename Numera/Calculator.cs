@@ -73,7 +73,7 @@ public static class Calculator
     /// meaningful.</param>
     /// <param name="diagnostic">On failure, the structured error (code, message and,
     /// where known, source position); otherwise <c>null</c>. Positions refer to the
-    /// normalized text.</param>
+    /// original input.</param>
     /// <param name="context">Optional variables and previous result.</param>
     /// <returns><c>true</c> if evaluation succeeded; <c>false</c> if normalization,
     /// parsing or evaluation failed.</returns>
@@ -108,8 +108,7 @@ public static class Calculator
 
     /// <summary>
     /// Parses an expression into an abstract syntax tree without evaluating it.
-    /// Normalization runs first, so node spans refer to the normalized text rather than
-    /// the original input.
+    /// Node spans refer to the original input, including when normalization is enabled.
     /// </summary>
     /// <param name="expression">The expression to parse.</param>
     /// <param name="context">Optional variables; supplying them lets their names parse as

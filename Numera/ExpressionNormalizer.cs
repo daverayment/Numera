@@ -11,10 +11,10 @@ namespace Numera;
 /// <remarks>
 /// Passes run in a fixed order: launcher equals, Unicode operators, division colons, then
 /// culture and number formatting. Colons inside square brackets are left alone, so they
-/// are never rewritten to division. Normalization changes character offsets, so positions
-/// in later parse diagnostics and AST spans refer to the normalized text, not the
-/// caller's original input. A source map is returned to translate normalized offsets back
-/// to the original input.
+/// are never rewritten to division. Normalization can change character offsets. Overloads
+/// that return a source map allow offsets in the normalized text to be translated back to
+/// the original input. Calculator string APIs apply this map when parsing, so their
+/// diagnostics and AST spans refer to the input supplied to those APIs.
 /// </remarks>
 public static class ExpressionNormalizer
 {

@@ -246,12 +246,6 @@ public sealed class VariableCollection : IReadOnlyList<Variable>
     {
         ArgumentNullException.ThrowIfNull(items);
 
-        if (items is VariableCollection existing)
-        {
-            // Already an immutable collection, so just return.
-            return existing;
-        }
-
         if (items.TryGetCount(out int count) && count == 0) // avoids enumeration if possible
         {
             return this;

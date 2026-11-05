@@ -16,7 +16,8 @@ namespace Numera;
 /// An engine is bound to a single culture; applications serving users with different
 /// cultures should keep one engine per culture. When
 /// <see cref="CalculatorOptions.Normalization"/> is set, input is normalized before
-/// parsing, so diagnostic positions and AST source spans refer to the normalized text.
+/// parsing, and diagnostic positions and AST source spans are mapped back to the original
+/// input.
 /// <code>
 /// var engine = new CalculatorEngine(CalculatorOptions.ForCulture(new CultureInfo("de-DE")));
 /// MathValue value = engine.Evaluate("1.000,5 + 2");   // 1002.5
@@ -273,7 +274,7 @@ public sealed class CalculatorEngine
     /// <param name="result">On success, the result; otherwise <c>default</c> and not
     /// meaningful.</param>
     /// <param name="diagnostic">On failure, the structured error (code, message and,
-    /// where known, source position in the normalized text); otherwise <c>null</c>.
+    /// where known, source position in the original input); otherwise <c>null</c>.
     /// </param>
     /// <param name="context">Optional variables and previous result.</param>
     /// <returns><c>true</c> if evaluation succeeded; <c>false</c> if normalization,

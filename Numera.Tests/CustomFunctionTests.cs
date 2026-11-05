@@ -139,6 +139,73 @@ public sealed class CustomFunctionTests
     }
 
     [TestMethod]
+    public void CustomFunction_ConstructorRejectsInvalidArgumentBounds()
+    {
+        (int Minimum, int? Maximum)[] invalidBounds =
+        [
+            (-1, null),
+            (-1, 0),
+            (0, -1),
+            (2, 1)
+        ];
+
+        foreach (var (minimum, maximum) in invalidBounds)
+        {
+            var signature = new FunctionSignature(minimum, maximum);
+            var ex = Assert.Throws<ArgumentException>(() =>
+                new CustomFunction("myFunc", signature, _ => new MathValue(0m)));
+
+            Assert.AreEqual("signature", ex.ParamName);
+        }
+    }
+
+    [TestMethod]
+    public void CustomFunction_ConstructorAcceptsValidArgumentBounds()
+    {
+        (int Minimum, int? Maximum)[] validBounds =
+        [
+            (0, 0),
+            (1, 1),
+            (0, 2),
+            (0, null),
+            (2, null)
+        ];
+
+        foreach (var (minimum, maximum) in validBounds)
+        {
+            var signature = new FunctionSignature(minimum, maximum);
+            var function = new CustomFunction("myFunc", signature, _ => new MathValue(0m));
+
+            Assert.AreSame(signature, function.Signature);
+        }
+    }
+
+    [TestMethod]
+    public void CustomFunction_CreateVariadicRejectsNegativeMinimum()
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            CustomFunction.CreateVariadic("myFunc", -1, _ => new MathValue(0m)));
+        var collectionEx = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            CustomFunctionCollection.Empty.SetItem("myFunc", -1, _ => new MathValue(0m)));
+
+        Assert.AreEqual("minArgs", ex.ParamName);
+        Assert.AreEqual("minArgs", collectionEx.ParamName);
+        Assert.AreEqual(0, CustomFunctionCollection.Empty.Count);
+    }
+
+    [TestMethod]
+    public void CustomFunction_CreateVariadicWithZeroMinimumAcceptsZeroArguments()
+    {
+        var function = CustomFunction.CreateVariadic("countArgs", 0, args => new MathValue((decimal)args.Count));
+        var engine = new CalculatorEngine(new CalculatorOptions { CustomFunctions = [function] });
+
+        Assert.AreEqual(0, function.Signature.MinimumArguments);
+        Assert.IsNull(function.Signature.MaximumArguments);
+        Assert.AreEqual(0m, engine.Evaluate("countArgs()").DecimalValue);
+        Assert.AreEqual(2m, engine.Evaluate("countArgs(1, 2)").DecimalValue);
+    }
+
+    [TestMethod]
     public void CustomFunction_RequiresParentheses()
     {
         var options = new CalculatorOptions

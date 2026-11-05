@@ -42,6 +42,8 @@ public sealed class CustomFunction
     /// <param name="implementation">The callback delegate that executes the function.
     /// </param>
     /// <param name="description">Optional description of the function.</param>
+    /// <exception cref="ArgumentException">The signature has a negative minimum or a
+    /// maximum less than its minimum.</exception>
     public CustomFunction(
         string name,
         FunctionSignature signature,
@@ -51,6 +53,14 @@ public sealed class CustomFunction
         ArgumentNullException.ThrowIfNull(name);
         ArgumentNullException.ThrowIfNull(signature);
         ArgumentNullException.ThrowIfNull(implementation);
+
+        if (signature.MinimumArguments < 0 ||
+            signature.MaximumArguments is int maximum && maximum < signature.MinimumArguments)
+        {
+            throw new ArgumentException(
+                "The minimum argument count must be nonnegative and the maximum must not be less than the minimum.",
+                nameof(signature));
+        }
 
         // Name validation.
         if (!Identifier.IsValidIdentifier(name, out string? errorMessage))
@@ -137,9 +147,12 @@ public sealed class CustomFunction
     /// Creates a variadic custom function accepting at least <paramref name="minArgs"/>
     /// arguments: <c>func(...args)</c>.
     /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The minimum argument count is
+    /// negative.</exception>
     public static CustomFunction CreateVariadic(string name, int minArgs, Func<IReadOnlyList<MathValue>, MathValue> handler, string? description = null)
     {
         ArgumentNullException.ThrowIfNull(handler);
+        ArgumentOutOfRangeException.ThrowIfNegative(minArgs);
         return new(name, new FunctionSignature(minArgs, null, [new ParameterInfo("values", IsVariadic: true)]), handler.Invoke, description);
     }
 

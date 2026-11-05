@@ -326,6 +326,35 @@ public sealed class VariableCollectionTests
     }
 
     [TestMethod]
+    public void SetItems_CollectionAsEnumerable_MergesAndPreservesMetadata()
+    {
+        var node = new NumberNode(10);
+        VariableCollection initial = [V("a", 1m, "initial"), V("b", 2m), V("c", 3m)];
+        VariableCollection updates = [new Variable("A", new MathValue(10m), node, "updated"), V("d", 4m)];
+        IEnumerable<Variable> sequence = updates;
+
+        var result = initial.SetItems(sequence);
+
+        Assert.AreSequenceEqual(["b", "c", "A", "d"], Names(result));
+        Assert.AreSequenceEqual([2m, 3m, 10m, 4m], Decimals(result));
+        Assert.AreEqual("updated", result["a"].Definition);
+        Assert.AreSame(node, result["a"].Expression);
+        Assert.AreSequenceEqual(["a", "b", "c"], Names(initial));
+        Assert.AreEqual("initial", initial["a"].Definition);
+        Assert.AreSequenceEqual(["A", "d"], Names(updates));
+    }
+
+    [TestMethod]
+    public void SetItems_EmptyCollectionAsEnumerable_ReturnsReceiver()
+    {
+        VariableCollection initial = [V("a", 1m)];
+        IEnumerable<Variable> empty = VariableCollection.Empty;
+
+        Assert.AreSame(initial, initial.SetItems(empty));
+        Assert.AreSequenceEqual(["a"], Names(initial));
+    }
+
+    [TestMethod]
     public void SetItems_WithItself_IsSafeAndPreservesOrder()
     {
         VariableCollection vars = [V("a", 1m), V("b", 2m), V("c", 3m)];
