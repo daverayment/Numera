@@ -20,7 +20,7 @@ internal static class FunctionArity
             return true;
         }
 
-        if (customFunctions is not null && customFunctions.TryGet(name, out var custom))
+        if (customFunctions is not null && customFunctions.TryGetFunction(name, out var custom))
         {
             signature = custom.Signature;
             return true;
@@ -41,7 +41,7 @@ internal static class FunctionArity
             return true;
         }
 
-        if (customFunctions is not null && customFunctions.TryGet(name, out var custom))
+        if (customFunctions is not null && customFunctions.TryGetFunction(name, out var custom))
         {
             signature = custom.Signature;
             return true;

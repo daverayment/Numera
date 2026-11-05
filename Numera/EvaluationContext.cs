@@ -118,8 +118,9 @@ public sealed record EvaluationContext
     /// <returns><c>true</c> if the name resolved to a variable or <c>ans</c>.</returns>
     internal bool TryResolveVariable(string name, out MathValue value)
     {
-        if (Variables.TryGetValue(name, out value))
+        if (Variables.TryGetVariable(name, out var variable))
         {
+            value = variable.Value;
             return true;
         }
 
@@ -220,8 +221,9 @@ public sealed record EvaluationContext
 
         foreach (var variable in Variables!)
         {
-            if (!other.Variables!.TryGetValue(variable.Name, out MathValue otherValue) ||
-                !EqualityComparer<MathValue>.Default.Equals(variable.Value, otherValue))
+            // TODO: compare Variables directly?
+            if (!other.Variables!.TryGetVariable(variable.Name, out var otherVariable) ||
+                !EqualityComparer<MathValue>.Default.Equals(variable.Value, otherVariable.Value))
             {
                 return false;
             }

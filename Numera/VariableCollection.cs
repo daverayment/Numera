@@ -62,7 +62,8 @@ public sealed class VariableCollection : IReadOnlyList<Variable>
     /// the collection.</exception>
     public Variable this[string name] =>
         _storage?.TryGetValue(name, out var variable) == true ?
-        variable : throw new KeyNotFoundException($"Variable '{name}' not found.");
+            variable :
+            throw new KeyNotFoundException($"Variable '{name}' not found.");
 
     /// <summary>
     /// Positional lookup by chronological/recency order. O(1).
@@ -159,13 +160,12 @@ public sealed class VariableCollection : IReadOnlyList<Variable>
             return existing;
         }
 
-        int capacity = source.TryGetNonEnumeratedCount(out int count) ? count : 0;
-        if (capacity == 0 && source is ICollection<Variable> or IReadOnlyCollection<Variable>)
+        if (source.TryGetCount(out int count) && count == 0) // avoids enumeration if possible
         {
             return _empty;
         }
 
-        var storage = new OrderedDictionary<string, Variable>(capacity, NameComparer);
+        var storage = new OrderedDictionary<string, Variable>(count, NameComparer);
         foreach (var variable in source)
         {
             Put(storage, variable, nameof(source));
@@ -246,7 +246,18 @@ public sealed class VariableCollection : IReadOnlyList<Variable>
     {
         ArgumentNullException.ThrowIfNull(items);
 
-        var next = CopyStorage(items.TryGetNonEnumeratedCount(out int count) ? count : 0);
+        if (items is VariableCollection existing)
+        {
+            // Already an immutable collection, so just return.
+            return existing;
+        }
+
+        if (items.TryGetCount(out int count) && count == 0) // avoids enumeration if possible
+        {
+            return this;
+        }
+
+        var next = CopyStorage(count);
         bool anyAdded = false;
         foreach (var variable in items)
         {
@@ -277,8 +288,9 @@ public sealed class VariableCollection : IReadOnlyList<Variable>
 
     private OrderedDictionary<string, Variable> CopyStorage(int extraCapacity)
     {
-        var capacity = (_storage?.Count ?? 0) + extraCapacity;
-        var next = new OrderedDictionary<string, Variable>(capacity, NameComparer);
+        var next = new OrderedDictionary<string, Variable>(
+            Count + extraCapacity, NameComparer);
+
         if (_storage is not null)
         {
             foreach (var (key, value) in _storage)
@@ -329,11 +341,17 @@ public sealed class VariableCollection : IReadOnlyList<Variable>
         {
             ArgumentNullException.ThrowIfNull(name);
 
-            if ((next ?? _storage).ContainsKey(name))
+            if (next is null)
             {
-                next ??= CopyStorage(extraCapacity: 0);
-                next.Remove(name);
+                if (!_storage.ContainsKey(name))
+                {
+                    continue;
+                }
+
+                next = CopyStorage(extraCapacity: 0);
             }
+
+            next.Remove(name);
         }
 
         return next is null ?
@@ -345,25 +363,6 @@ public sealed class VariableCollection : IReadOnlyList<Variable>
     /// Determines whether the collection contains a variable with the specified name.
     /// </summary>
     public bool ContainsKey(string name) => _storage?.ContainsKey(name) == true;
-
-    /// <summary>
-    /// Gets the value associated with the specified variable name.
-    /// </summary>
-    /// <param name="name">The identifier of the variable to get.</param>
-    /// <param name="value">Set to the variable value, if found.</param>
-    /// <returns><c>true</c> if the collection contains a variable with the supplied
-    /// identifier; otherwise <c>false</c>.</returns>
-    public bool TryGetValue(string name, out MathValue value)
-    {
-        if (_storage is not null && _storage.TryGetValue(name, out var variable))
-        {
-            value = variable.Value;
-            return true;
-        }
-
-        value = default;
-        return false;
-    }
 
     /// <summary>
     /// Gets the full <see cref="Variable"/> associated with the specified name.

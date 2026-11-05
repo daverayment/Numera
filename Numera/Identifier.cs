@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Numera;
 
 /// <summary>
@@ -24,34 +26,54 @@ public static class Identifier
     public static StringComparison Comparison => StringComparison.OrdinalIgnoreCase;
 
     /// <summary>
-    /// Determines whether the specified character is a valid starting character for an identifier.
+    /// Determines whether the specified character is a valid starting character for an
+    /// identifier; it must be a letter or underscore.
     /// </summary>
-    public static bool IsIdentifierStart(char c) =>
-        char.IsLetter(c) || c == '_';
+    public static bool IsIdentifierStart(char c) => char.IsLetter(c) || c == '_';
 
     /// <summary>
-    /// Determines whether the specified character is a valid subsequent character for an identifier.
+    /// Determines whether the specified character is a valid subsequent character for an
+    /// identifier.
     /// </summary>
     public static bool IsIdentifierPart(char c) =>
-        (char.IsLetter(c) || char.IsAsciiDigit(c) || c == '_') && !ConstantCatalog.IsConstantLetter(c);
+        (char.IsLetter(c) || char.IsAsciiDigit(c) || c == '_') &&
+        !ConstantCatalog.IsConstantLetter(c);
 
     /// <summary>
     /// Determines whether the specified string is a syntactically valid identifier.
     /// </summary>
-    public static bool IsValidIdentifier(ReadOnlySpan<char> name)
+    public static bool IsValidIdentifier(
+        ReadOnlySpan<char> name, [NotNullWhen(false)] out string? errorMessage)
     {
+        errorMessage = null;
         if (name.IsEmpty)
         {
+            errorMessage = "Identifier cannot be empty.";
             return false;
         }
 
+        if (name.Trim().Length != name.Length)
+        {
+            errorMessage = "Identifier cannot have leading or trailing whitespace.";
+            return false;
+        }
+
+        // Allow single-character constant letters (e.g. "π") as valid identifiers, but
+        // reject multi-character identifiers that contain constant letters (e.g. "πx").
         if (ConstantCatalog.IsConstantLetter(name[0]))
         {
-            return name.Length == 1;
+            if (name.Length != 1)
+            {
+                errorMessage = "Identifier cannot contain constant letters.";
+                return false;
+            }
+
+            return true;
         }
 
         if (!IsIdentifierStart(name[0]))
         {
+            errorMessage = "Identifier must start with a letter or underscore.";
             return false;
         }
 
@@ -59,6 +81,8 @@ public static class Identifier
         {
             if (!IsIdentifierPart(name[i]))
             {
+                errorMessage =
+                    "Identifier can only contain letters, digits, and underscores.";
                 return false;
             }
         }

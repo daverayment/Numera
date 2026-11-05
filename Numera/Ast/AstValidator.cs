@@ -232,7 +232,7 @@ internal static class AstValidator
                 {
                     throw Invalid(node, EvaluationError.InvalidSyntax, $"Cannot assign to function name '{assignment.VariableName}'.");
                 }
-                if (options.CustomFunctions.TryGet(assignment.VariableName, out _))
+                if (options.CustomFunctions.TryGetFunction(assignment.VariableName, out _))
                 {
                     throw Invalid(node, EvaluationError.InvalidSyntax, $"Cannot assign to function name '{assignment.VariableName}'.");
                 }

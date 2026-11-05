@@ -29,9 +29,5 @@ public sealed record FormattedCalculation(
     /// <summary>
     /// Gets a formatted summary of assigned variables.
     /// </summary>
-    /// <remarks>Each assignment is formatted as "name = value" and entries are separated
-    /// by ", ".</remarks>
-    public string? AssignmentSummary => AssignedVariables is { Count: > 0 } ?
-        string.Join(", ", AssignedVariables.Select(v => $"{v.Name} = {v.Value}")) :
-        null;
+    public string? AssignmentSummary => AssignedVariables?.ToString();
 }

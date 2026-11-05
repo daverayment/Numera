@@ -115,7 +115,7 @@ public sealed class VariableCollectionTests
 
         Assert.AreEqual(5m, vars["TOTAL"].DecimalValue);
         Assert.IsTrue(vars.ContainsKey("total"));
-        Assert.IsTrue(vars.TryGetValue("ToTaL", out var v));
+        Assert.IsTrue(vars.TryGetVariable("ToTaL", out var v));
         Assert.AreEqual(5m, v.DecimalValue);
         Assert.IsTrue(vars.TryGetVariable("TOTAL", out var variable));
         Assert.AreEqual("Total", variable.Name); // stored casing is preserved
@@ -147,7 +147,7 @@ public sealed class VariableCollectionTests
     {
         VariableCollection vars = [V("x", 1m)];
 
-        Assert.IsFalse(vars.TryGetValue("missing", out _));
+        Assert.IsFalse(vars.TryGetVariable("missing", out _));
         Assert.IsFalse(vars.TryGetVariable("missing", out var variable));
         Assert.IsNull(variable.Name);
         Assert.AreEqual(default, variable);
@@ -523,7 +523,7 @@ public sealed class VariableCollectionTests
         Assert.IsEmpty(empty.Keys);
         Assert.IsEmpty(empty.Values);
         Assert.IsFalse(empty.ContainsKey("x"));
-        Assert.IsFalse(empty.TryGetValue("x", out _));
+        Assert.IsFalse(empty.TryGetVariable("x", out _));
         Assert.Throws<KeyNotFoundException>(() => _ = empty["x"]);
         Assert.Throws<IndexOutOfRangeException>(() => _ = empty[0]);
     }
@@ -538,7 +538,7 @@ public sealed class VariableCollectionTests
 
         Assert.AreEqual(3, vars.Count);
         Assert.AreSequenceEqual(["a", "b", "c"], vars.Keys.ToArray());
-        Assert.AreSequenceEqual([1m, 2m, 3m], vars.Values.Select(v => v.DecimalValue).ToArray());
+        Assert.AreSequenceEqual([1m, 2m, 3m], vars.Select(v => v.DecimalValue).ToArray());
 
         Assert.AreEqual("a", vars[0].Name);
         Assert.AreEqual(1m, vars[0].Value.DecimalValue);
@@ -562,7 +562,7 @@ public sealed class VariableCollectionTests
 
         Assert.AreEqual(3, updated.Count);
         Assert.AreSequenceEqual(["b", "c", "A"], updated.Keys.ToArray());
-        Assert.AreSequenceEqual([2m, 3m, 10m], updated.Values.Select(v => v.DecimalValue).ToArray());
+        Assert.AreSequenceEqual([2m, 3m, 10m], updated.Select(v => v.DecimalValue).ToArray());
         Assert.AreEqual(10m, updated["a"].DecimalValue);
         Assert.AreEqual(10m, updated["A"].DecimalValue);
 

@@ -89,17 +89,17 @@ public readonly record struct Variable
     /// <summary>
     /// Gets the decimal value of the variable's <see cref="MathValue"/>. 
     /// </summary>
-    public decimal DecimalValue { get => Value.DecimalValue; }
+    public decimal DecimalValue => Value.DecimalValue;
 
     /// <summary>
     /// Gets the integer value of the variable's <see cref="MathValue"/>.
     /// </summary>
-    public BigInteger IntegerValue { get => Value.IntegerValue; }
+    public BigInteger IntegerValue => Value.IntegerValue;
 
     /// <summary>
     /// Gets the double value of the variable's <see cref="MathValue"/>.
     /// </summary>
-    public double DoubleValue { get => Value.DoubleValue; }
+    public double DoubleValue => Value.DoubleValue;
 
     /// <summary>
     /// Defines an implicit conversion from <see cref="Variable"/> to

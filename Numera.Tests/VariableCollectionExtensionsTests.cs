@@ -11,7 +11,7 @@ public sealed class VariableCollectionExtensionsTests
     private static string[] Names(VariableCollection c) => c.Keys.ToArray();
 
     private static decimal[] Decimals(VariableCollection c) =>
-        c.Values.Select(v => v.DecimalValue).ToArray();
+        c.Select(v => v.DecimalValue).ToArray();
 
     // A sequence that is not an ICollection and records how many times it is enumerated,
     // to verify that the extension methods do not enumerate more than once.

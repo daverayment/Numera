@@ -9,7 +9,8 @@ public delegate MathValue CustomFunctionCallback(IReadOnlyList<MathValue> args);
 
 /// <summary>
 /// Represents a caller-defined custom function that can be supplied via
-/// <see cref="CalculatorOptions.CustomFunctions"/> to extend Numera's evaluation capabilities.
+/// <see cref="CalculatorOptions.CustomFunctions"/> to extend Numera's evaluation
+/// capabilities.
 /// </summary>
 public sealed class CustomFunction
 {
@@ -38,7 +39,8 @@ public sealed class CustomFunction
     /// </summary>
     /// <param name="name">The name of the function.</param>
     /// <param name="signature">The argument bounds and parameter metadata.</param>
-    /// <param name="implementation">The callback delegate that executes the function.</param>
+    /// <param name="implementation">The callback delegate that executes the function.
+    /// </param>
     /// <param name="description">Optional description of the function.</param>
     public CustomFunction(
         string name,
@@ -49,6 +51,45 @@ public sealed class CustomFunction
         ArgumentNullException.ThrowIfNull(name);
         ArgumentNullException.ThrowIfNull(signature);
         ArgumentNullException.ThrowIfNull(implementation);
+
+        // Name validation.
+        if (!Identifier.IsValidIdentifier(name, out string? errorMessage))
+        {
+            throw new ArgumentException(
+                $"Custom function name '{name}' is not a valid identifier." +
+                (errorMessage is null ? "" : " " + errorMessage),
+                nameof(name));
+        }
+
+        // Protect "ans" from being shadowed by a custom function name.
+        if (name.Equals(EvaluationContext.PreviousResultVariableName, Identifier.Comparison))
+        {
+            throw new ArgumentException(
+                $"Custom function name '{name}' cannot shadow the " +
+                $"'{EvaluationContext.PreviousResultVariableName}' variable.",
+                nameof(name));
+        }
+
+        if (KeywordCatalog.IsReserved(name))
+        {
+            throw new ArgumentException(
+                $"Custom function name '{name}' cannot shadow reserved keyword.",
+                nameof(name));
+        }
+
+        if (ConstantCatalog.TryResolve(name, out _, out _))
+        {
+            throw new ArgumentException(
+                $"Custom function name '{name}' cannot shadow reserved constant.",
+                nameof(name));
+        }
+
+        if (FunctionCatalog.TryGetInfo(name, out _))
+        {
+            throw new ArgumentException(
+                $"Custom function name '{name}' cannot shadow built-in function.",
+                nameof(name));
+        }
 
         Name = name;
         Signature = signature;
@@ -93,7 +134,8 @@ public sealed class CustomFunction
     }
 
     /// <summary>
-    /// Creates a variadic custom function accepting at least <paramref name="minArgs"/> arguments: <c>func(...args)</c>.
+    /// Creates a variadic custom function accepting at least <paramref name="minArgs"/>
+    /// arguments: <c>func(...args)</c>.
     /// </summary>
     public static CustomFunction CreateVariadic(string name, int minArgs, Func<IReadOnlyList<MathValue>, MathValue> handler, string? description = null)
     {

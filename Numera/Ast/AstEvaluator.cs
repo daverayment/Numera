@@ -485,7 +485,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
             args.Add(arg.Accept(this));
         }
 
-        if (_options.CustomFunctions.TryGet(node.FunctionName, out var customFunction))
+        if (_options.CustomFunctions.TryGetFunction(node.FunctionName, out var customFunction))
         {
             try
             {

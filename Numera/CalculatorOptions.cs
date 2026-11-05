@@ -131,41 +131,8 @@ public sealed record CalculatorOptions
             throw new ArgumentOutOfRangeException(nameof(MaxNestingDepth));
         }
 
+        // Custom functions are validated on construction, but the collection itself must
+        // be non-null.
         ArgumentNullException.ThrowIfNull(CustomFunctions);
-
-        foreach (var func in CustomFunctions)
-        {
-            if (string.IsNullOrWhiteSpace(func.Name) || !Identifier.IsValidIdentifier(func.Name))
-            {
-                throw new ArgumentException(
-                    $"Custom function name '{func.Name}' is not a valid identifier.", nameof(CustomFunctions));
-            }
-
-            // Protect "ans" from being shadowed by a custom function name.
-            if (func.Name.Equals(EvaluationContext.PreviousResultVariableName, Identifier.Comparison))
-            {
-                throw new ArgumentException(
-                    $"Custom function name '{func.Name}' cannot shadow the '{EvaluationContext.PreviousResultVariableName}' variable.",
-                    nameof(CustomFunctions));
-            }
-
-            if (KeywordCatalog.IsReserved(func.Name))
-            {
-                throw new ArgumentException(
-                    $"Custom function name '{func.Name}' cannot shadow reserved keyword.", nameof(CustomFunctions));
-            }
-
-            if (ConstantCatalog.TryResolve(func.Name, out _, out _))
-            {
-                throw new ArgumentException(
-                    $"Custom function name '{func.Name}' cannot shadow reserved constant.", nameof(CustomFunctions));
-            }
-
-            if (FunctionCatalog.TryGetInfo(func.Name, out _))
-            {
-                throw new ArgumentException(
-                    $"Custom function name '{func.Name}' cannot shadow built-in function.", nameof(CustomFunctions));
-            }
-        }
     }
 }

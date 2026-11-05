@@ -193,7 +193,7 @@ internal sealed class AstParser
                 name.Length));
         }
 
-        if (_options.CustomFunctions.TryGet(name, out _))
+        if (_options.CustomFunctions.TryGetFunction(name, out _))
         {
             throw new ExpressionException(Diagnostic(
                 EvaluationError.InvalidSyntax,

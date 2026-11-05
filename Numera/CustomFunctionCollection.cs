@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.Contracts;
 using System.Runtime.CompilerServices;
 
 namespace Numera;
@@ -7,11 +8,11 @@ namespace Numera;
 /// <summary>
 /// An immutable, ordered collection of <see cref="CustomFunction"/> definitions.
 /// Preserves order of registration while providing case-insensitive O(1) lookup by name.
+/// Creation or adding functions throws <see cref="ArgumentException"/> if duplicate names
+/// are provided.
 /// </summary>
 [CollectionBuilder(typeof(CustomFunctionCollection), nameof(Create))]
-public sealed class CustomFunctionCollection :
-    IReadOnlyList<CustomFunction>,
-    IReadOnlyDictionary<string, CustomFunction>
+public sealed class CustomFunctionCollection : IReadOnlyList<CustomFunction>
 {
     /// <summary>
     /// The single comparer used for every function name lookup, forwarding to
@@ -19,11 +20,14 @@ public sealed class CustomFunctionCollection :
     /// </summary>
     public static StringComparer NameComparer => Identifier.Comparer;
 
+    // Note: not "= []", as that would call Create() while this is still null.
+    private static readonly CustomFunctionCollection _empty = new();
+
     /// <summary>
     /// Gets an empty custom function collection, which is the same instance every time.
     /// Safe to share.
     /// </summary>
-    public static CustomFunctionCollection Empty { get; } = new();
+    public static CustomFunctionCollection Empty { get; } = _empty;
 
     private readonly OrderedDictionary<string, CustomFunction>? _storage;
 
@@ -35,11 +39,7 @@ public sealed class CustomFunctionCollection :
     /// <summary>
     /// The names of the custom functions in the collection.
     /// </summary>
-    public IEnumerable<string> Names => _storage?.Keys is not null ? _storage.Keys : [];
-
-    IEnumerable<string> IReadOnlyDictionary<string, CustomFunction>.Keys => Names;
-
-    IEnumerable<CustomFunction> IReadOnlyDictionary<string, CustomFunction>.Values => this;
+    public IEnumerable<string> Names => this.Select(f => f.Name);
 
     /// <summary>
     /// Retrieves a custom function by name, case-insensitive. O(1).
@@ -76,31 +76,7 @@ public sealed class CustomFunctionCollection :
     /// <summary>
     /// Initializes an empty <see cref="CustomFunctionCollection"/>.
     /// </summary>
-    public CustomFunctionCollection() { }
-
-    /// <summary>
-    /// Initializes a new collection from an existing sequence of
-    /// <see cref="CustomFunction"/>s. If duplicate names are provided (comparing case-
-    /// insensitively), later functions overwrite earlier ones.
-    /// </summary>
-    /// <param name="functions">The functions to include.</param>
-    public CustomFunctionCollection(IEnumerable<CustomFunction>? functions)
-    {
-        if (functions is not null)
-        {
-            int capacity = functions is ICollection<CustomFunction> coll ? coll.Count : 1;
-            var storage = new OrderedDictionary<string, CustomFunction>(capacity, NameComparer);
-
-            foreach (var func in functions)
-            {
-                ArgumentNullException.ThrowIfNull(func);
-                storage.Remove(func.Name);
-                storage.Add(func.Name, func);
-            }
-
-            _storage = storage;
-        }
-    }
+    private CustomFunctionCollection() { }
 
     private CustomFunctionCollection(OrderedDictionary<string, CustomFunction> storage)
     {
@@ -110,25 +86,57 @@ public sealed class CustomFunctionCollection :
     /// <summary>
     /// Factory method enabling C# collection expression syntax (<c>[fn1, fn2]</c>).
     /// </summary>
-    /// <param name="functions">The functions to include in the collection.</param>
+    /// <param name="items">The functions to include in the collection.</param>
     /// <returns>A new <see cref="CustomFunctionCollection"/> containing the specified
     /// functions.</returns>
-    public static CustomFunctionCollection Create(ReadOnlySpan<CustomFunction> functions)
+    /// <exception cref="ArgumentException">Thrown if duplicate function names are
+    /// provided.</exception>
+    public static CustomFunctionCollection Create(ReadOnlySpan<CustomFunction> items)
     {
-        if (functions.IsEmpty)
+        if (items.IsEmpty)
         {
-            return Empty;
+            return _empty;
         }
 
-        var storage = new OrderedDictionary<string, CustomFunction>(functions.Length, NameComparer);
-        foreach (var func in functions)
+        var storage = new OrderedDictionary<string, CustomFunction>(items.Length, NameComparer);
+        foreach (var function in items)
         {
-            ArgumentNullException.ThrowIfNull(func);
-            storage.Remove(func.Name);
-            storage.Add(func.Name, func);
+            AddNew(storage, function, nameof(items));
         }
 
         return new CustomFunctionCollection(storage);
+    }
+
+    /// <summary>
+    /// Creates a new collection from an enumerable of <see cref="CustomFunction"/>s.
+    /// </summary>
+    /// <param name="source">The source enumerable of custom functions.</param>
+    /// <returns>A new <see cref="CustomFunctionCollection"/> containing the specified
+    /// functions.</returns>
+    /// <exception cref="ArgumentException">Thrown if duplicate function names are
+    /// provided.</exception>
+    public static CustomFunctionCollection CreateRange(IEnumerable<CustomFunction> source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        if (source is CustomFunctionCollection existing)
+        {
+            // Already an immutable collection, return as-is.
+            return existing;
+        }
+
+        if (source.TryGetCount(out int count) && count == 0) // avoids enumeration if possible
+        {
+            return _empty;
+        }
+
+        var storage = new OrderedDictionary<string, CustomFunction>(count, NameComparer);
+        foreach (var function in source)
+        {
+            AddNew(storage, function, nameof(source));
+        }
+
+        return storage.Count == 0 ? _empty : new CustomFunctionCollection(storage);
     }
 
     /// <summary>
@@ -136,53 +144,113 @@ public sealed class CustomFunctionCollection :
     /// </summary>
     /// <param name="function">The function to add or update.</param>
     /// <returns>A new <see cref="CustomFunctionCollection"/>.</returns>
-    public CustomFunctionCollection Add(CustomFunction function)
+    [Pure]
+    public CustomFunctionCollection SetItem(CustomFunction function)
     {
         ArgumentNullException.ThrowIfNull(function);
-        ArgumentNullException.ThrowIfNull(function.Name, nameof(function.Name));
 
-        var next = _storage is null ?
-            new OrderedDictionary<string, CustomFunction>(1, NameComparer) :
-            new OrderedDictionary<string, CustomFunction>(_storage, NameComparer);
-
-        next.Remove(function.Name);
-        next.Add(function.Name, function);
-
+        var next = CopyStorage(extraCapacity: 1);
+        next[function.Name] = function;
         return new CustomFunctionCollection(next);
     }
 
     // Fluent overloads.
-    /// <summary>
-    /// Adds a single-argument custom function.
-    /// </summary>
-    public CustomFunctionCollection Add(string name, Func<MathValue, MathValue> handler, string? description = null) =>
-        Add(CustomFunction.Create(name, handler, description));
 
     /// <summary>
-    /// Adds a two-argument custom function.
+    /// Returns a new collection with the given custom function added or updated, keyed by
+    /// the specified name. 
     /// </summary>
-    public CustomFunctionCollection Add(string name, Func<MathValue, MathValue, MathValue> handler, string? description = null) =>
-        Add(CustomFunction.Create(name, handler, description));
+    /// <param name="name">The name of the custom function.</param>
+    /// <param name="handler">The function handler.</param>
+    /// <param name="description">An optional description of the function.</param>
+    /// <returns>A new <see cref="CustomFunctionCollection"/> with the added/updated
+    /// function.</returns>
+    /// <exception cref="ArgumentException"></exception>
+    [Pure]
+    public CustomFunctionCollection SetItem(string name, Func<MathValue, MathValue> handler, string? description = null) =>
+        SetItem(CustomFunction.Create(name, handler, description));
 
     /// <summary>
-    /// Adds a three-argument custom function.
+    /// Returns a new collection with the given custom function added or updated, keyed by
+    /// the specified name. 
     /// </summary>
-    public CustomFunctionCollection Add(string name, Func<MathValue, MathValue, MathValue, MathValue> handler, string? description = null) =>
-        Add(CustomFunction.Create(name, handler, description));
+    /// <param name="name">The name of the custom function.</param>
+    /// <param name="handler">The function handler.</param>
+    /// <param name="description">An optional description of the function.</param>
+    /// <returns>A new <see cref="CustomFunctionCollection"/> with the added/updated
+    /// function.</returns>
+    /// <exception cref="ArgumentException"></exception>
+    [Pure]
+    public CustomFunctionCollection SetItem(string name, Func<MathValue, MathValue, MathValue> handler, string? description = null) =>
+        SetItem(CustomFunction.Create(name, handler, description));
 
     /// <summary>
-    /// Adds a variadic custom function with a minimum number of arguments.
+    /// Returns a new collection with the given custom function added or updated, keyed by
+    /// the specified name. 
     /// </summary>
-    public CustomFunctionCollection Add(string name, int minArgs, Func<IReadOnlyList<MathValue>, MathValue> handler, string? description = null) =>
-        Add(CustomFunction.CreateVariadic(name, minArgs, handler, description));
+    /// <param name="name">The name of the custom function.</param>
+    /// <param name="handler">The function handler.</param>
+    /// <param name="description">An optional description of the function.</param>
+    /// <returns>A new <see cref="CustomFunctionCollection"/> with the added/updated
+    /// function.</returns>
+    /// <exception cref="ArgumentException"></exception>
+    [Pure]
+    public CustomFunctionCollection SetItem(string name, Func<MathValue, MathValue, MathValue, MathValue> handler, string? description = null) =>
+        SetItem(CustomFunction.Create(name, handler, description));
+
+    /// <summary>
+    /// Returns a new collection with the given variadic custom function added or updated, keyed by
+    /// the specified name. 
+    /// </summary>
+    /// <param name="name">The name of the custom function.</param>
+    /// <param name="minArgs">The minimum number of arguments.</param>
+    /// <param name="handler">The function handler.</param>
+    /// <param name="description">An optional description of the function.</param>
+    /// <returns>A new <see cref="CustomFunctionCollection"/> with the added/updated
+    /// function.</returns>
+    /// <exception cref="ArgumentException"></exception>
+    [Pure]
+    public CustomFunctionCollection SetItem(string name, int minArgs, Func<IReadOnlyList<MathValue>, MathValue> handler, string? description = null) =>
+        SetItem(CustomFunction.CreateVariadic(name, minArgs, handler, description));
+
+    private OrderedDictionary<string, CustomFunction> CopyStorage(int extraCapacity)
+    {
+        var next = new OrderedDictionary<string, CustomFunction>(
+            Count + extraCapacity, NameComparer);
+        if (_storage is not null)
+        {
+            foreach (var (key, value) in _storage)
+            {
+                next.Add(key, value);
+            }
+        }
+
+        return next;
+    }
+
+    private static void AddNew(
+        OrderedDictionary<string, CustomFunction> storage, CustomFunction function, string paramName)
+    {
+        if (function is null)
+        {
+            throw new ArgumentException(
+                "Collection contains a null function.", paramName);
+        }
+
+        if (!storage.TryAdd(function.Name, function))
+        {
+            throw new ArgumentException(
+                $"A function with the name '{function.Name}' already exists in the " + 
+                "collection. (Names are case-insensitive.)",
+                paramName);
+        }
+    }
 
     /// <summary>
     /// Determines whether the collection contains a function with the specified name.
     /// </summary>
     /// <param name="name">The function name to check.</param>
-    public bool Contains(string name) => _storage?.ContainsKey(name) == true;
-
-    bool IReadOnlyDictionary<string, CustomFunction>.ContainsKey(string key) => Contains(key);
+    public bool ContainsName(string name) => _storage?.ContainsKey(name) == true;
 
     /// <summary>
     /// Attempts to retrieve a custom function by name.
@@ -190,31 +258,28 @@ public sealed class CustomFunctionCollection :
     /// <param name="name">The function name to resolve.</param>
     /// <param name="function">When found, receives the custom function instance.</param>
     /// <returns><c>true</c> if found; otherwise <c>false</c>.</returns>
-    public bool TryGet(string name, [NotNullWhen(true)] out CustomFunction? function)
+    public bool TryGetFunction(string name, [NotNullWhen(true)] out CustomFunction? function)
     {
         if (_storage is not null && _storage.TryGetValue(name, out function))
         {
             return true;
         }
 
-        function = null;
+        function = default;
         return false;
     }
-
-    bool IReadOnlyDictionary<string, CustomFunction>.TryGetValue(string key, [NotNullWhen(true)] out CustomFunction? value) =>
-        TryGet(key, out value);
 
     /// <summary>
     /// Attempts to retrieve a custom function by span name.
     /// </summary>
-    public bool TryGet(ReadOnlySpan<char> name, [NotNullWhen(true)] out CustomFunction? function)
+    public bool TryGetFunction(ReadOnlySpan<char> name, [NotNullWhen(true)] out CustomFunction? function)
     {
         if (_storage is not null)
         {
-            return TryGet(name.ToString(), out function);
+            return TryGetFunction(name.ToString(), out function);
         }
 
-        function = null;
+        function = default;
         return false;
     }
 
@@ -230,8 +295,16 @@ public sealed class CustomFunctionCollection :
         }
     }
 
-    IEnumerator<KeyValuePair<string, CustomFunction>> IEnumerable<KeyValuePair<string, CustomFunction>>.GetEnumerator() =>
-        _storage?.GetEnumerator() ?? Enumerable.Empty<KeyValuePair<string, CustomFunction>>().GetEnumerator();
-
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    /// <inheritdoc/>
+    public override string ToString()
+    {
+        if (Count == 0)
+        {
+            return "(empty)";
+        }
+
+        return string.Join(", ", Names);
+    }
 }

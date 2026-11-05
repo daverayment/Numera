@@ -173,31 +173,6 @@ public sealed class CustomFunctionTests
     }
 
     [TestMethod]
-    public void CustomFunction_OptionsValidation_RejectsShadowingBuiltins()
-    {
-        // Shadow built-in function.
-        var optionsShadowFunc = new CalculatorOptions
-        {
-            CustomFunctions = [CustomFunction.Create("sin", x => x)]
-        };
-        Assert.Throws<ArgumentException>(() => new CalculatorEngine(optionsShadowFunc));
-
-        // Shadow built-in constant.
-        var optionsShadowConst = new CalculatorOptions
-        {
-            CustomFunctions = [CustomFunction.Create("pi", x => x)]
-        };
-        Assert.Throws<ArgumentException>(() => new CalculatorEngine(optionsShadowConst));
-
-        // Shadow reserved keyword.
-        var optionsShadowKeyword = new CalculatorOptions
-        {
-            CustomFunctions = [CustomFunction.Create("and", x => x)]
-        };
-        Assert.Throws<ArgumentException>(() => new CalculatorEngine(optionsShadowKeyword));
-    }
-
-    [TestMethod]
     public void CustomFunction_UnhandledCallbackException_MapsToEvaluationFailed()
     {
         var options = new CalculatorOptions
@@ -256,7 +231,7 @@ public sealed class CustomFunctionTests
         var f1 = CustomFunction.Create("a", x => x);
         var f2 = CustomFunction.Create("b", x => x, "description b");
 
-        var col = new CustomFunctionCollection([f1, f2]);
+        var col = CustomFunctionCollection.CreateRange([f1, f2]);
 
         Assert.AreEqual(2, col.Count);
         Assert.AreSequenceEqual(["a", "b"], col.Names.ToArray());
@@ -264,25 +239,25 @@ public sealed class CustomFunctionTests
         Assert.AreSame(f2, col[1]);
         Assert.AreSame(f1, col["A"]);
         Assert.AreSame(f2, col["B"]);
-        Assert.IsTrue(col.Contains("a"));
-        Assert.IsFalse(col.Contains("c"));
+        Assert.IsTrue(col.ContainsName("a"));
+        Assert.IsFalse(col.ContainsName("c"));
 
-        var added = col.Add(CustomFunction.Create("c", x => x));
+        var added = col.SetItem(CustomFunction.Create("c", x => x));
         Assert.AreEqual(3, added.Count);
         Assert.AreEqual(2, col.Count); // Immutability
 
-        // Fluent Add overloads
+        // Fluent SetItem  overloads
         var fluent = CustomFunctionCollection.Empty
-            .Add("f1", x => x)
-            .Add("f2", (a, b) => a + b)
-            .Add("f3", (a, b, c) => a + b + c)
-            .Add("fVar", minArgs: 1, args => args[0]);
+            .SetItem("f1", x => x)
+            .SetItem("f2", (a, b) => a + b)
+            .SetItem("f3", (a, b, c) => a + b + c)
+            .SetItem("fVar", minArgs: 1, args => args[0]);
 
         Assert.AreEqual(4, fluent.Count);
-        Assert.IsTrue(fluent.Contains("f1"));
-        Assert.IsTrue(fluent.Contains("f2"));
-        Assert.IsTrue(fluent.Contains("f3"));
-        Assert.IsTrue(fluent.Contains("fVar"));
+        Assert.IsTrue(fluent.ContainsName("f1"));
+        Assert.IsTrue(fluent.ContainsName("f2"));
+        Assert.IsTrue(fluent.ContainsName("f3"));
+        Assert.IsTrue(fluent.ContainsName("fVar"));
     }
 
     [TestMethod]
@@ -371,23 +346,33 @@ public sealed class CustomFunctionTests
         Assert.AreEqual(36m, engine.Evaluate("4triple(3)").DecimalValue);
     }
 
-    [TestMethod]
     [DataRow("")]
     [DataRow("    ")]
     [DataRow("123bad")]
     [DataRow("my-func")]
     [DataRow("my func")]
-    public void CustomFunction_OptionsValidation_RejectsInvalidIdentifierNames(string invalidName)
+    [DataRow("πx")]
+    [DataRow("xπ")]
+    [DataRow("myFunc!")]
+    [DataRow("2-1")]
+    [DataRow(EvaluationContext.PreviousResultVariableName)] // "ans" is reserved as the previous answer variable
+    [DataRow("and")]    // reserved keyword
+    [DataRow("E")]      // reserved constant
+    [DataRow("pi")]     // reserved constant
+    [DataRow("sin")]    // built-in function
+    [DataRow("true")]   // built-in constant
+    [TestMethod]    
+    public void CustomFunction_CreateRejectsInvalidIdentifierNames(string invalidName)
     {
-        var options = new CalculatorOptions
-        {
-            CustomFunctions =
-            [
-                CustomFunction.Create(invalidName, x => x)
-            ]
-        };
+        Assert.Throws<ArgumentException>(() =>
+            CustomFunction.Create(invalidName, x => x));
+    }
 
-        Assert.Throws<ArgumentException>(() => new CalculatorEngine(options));
+    [TestMethod]
+    public void CustomFunction_CreateRejectsNullImplementation()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            CustomFunction.Create("myFunc", (Func<MathValue, MathValue>)null!));
     }
 
     [TestMethod]

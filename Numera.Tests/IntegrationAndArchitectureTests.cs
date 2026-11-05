@@ -287,7 +287,7 @@ public sealed class IntegrationAndArchitectureTests
 
         // Direct result inspection.
         Assert.IsTrue(res.HasAssignments);
-        Assert.AreEqual("x = 42", res.AssignmentSummary);
+        Assert.AreEqual("x = 42 (42)", res.AssignmentSummary);
         Assert.AreEqual("42", res.PrimaryDisplay);
 
         // Directly format to presentation card.
@@ -298,6 +298,6 @@ public sealed class IntegrationAndArchitectureTests
         // Card preserves AssignedVariables and AssingmentSummary.
         Assert.IsNotNull(card.AssignedVariables);
         Assert.AreEqual(1, card.AssignedVariables.Count);
-        Assert.AreEqual("x = 42", card.AssignmentSummary);
+        Assert.AreEqual("x = 42 (42)", card.AssignmentSummary);
     }
 }
