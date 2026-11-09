@@ -9,13 +9,7 @@ public sealed class PercentageTortureTests
     {
         decimal expectedDecimal = decimal.Parse(expected, CultureInfo.InvariantCulture);
         MathValue actual = Calculator.Evaluate(input);
-        decimal actualDecimal = actual.Kind switch
-        {
-            MathValue.DataType.Integer => (decimal)actual.IntegerValue,
-            MathValue.DataType.Decimal => actual.DecimalValue,
-            _ => (decimal)actual.DoubleValue,
-        };
-        Assert.AreEqual(expectedDecimal, actualDecimal);
+        Assert.AreEqual(new MathValue(expectedDecimal).GetExactFraction(), actual.GetExactFraction(), input);
     }
 
     [TestMethod]

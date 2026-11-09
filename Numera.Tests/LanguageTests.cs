@@ -168,41 +168,41 @@ public class LanguageTests
         // `1 < 2 == 1` evaluates to `(1 < 2) == 1` -> `true == 1` -> true (1).
         // Under conjunctive chaining, all comparison operators share equal precedence:
         // `1 < 2 == 1` means `(1 < 2) and (2 == 1)` -> true and false -> false (0).
-        Assert.AreEqual(0m, Calculator.Evaluate("1 < 2 == 1").DecimalValue);
+        Assert.AreEqual(new MathValue(0m), Calculator.Evaluate("1 < 2 == 1").Value);
 
         // Similarly:
         // C# `2 > 1 == 1` -> `(2 > 1) == 1` -> 1
         // Numera: `2 > 1 and 1 == 1` -> 1
-        Assert.AreEqual(1m, Calculator.Evaluate("2 > 1 == 1").DecimalValue);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("2 > 1 == 1").Value);
 
         // C# `1 < 3 == 2` -> `(1 < 3) == 2` -> `1 == 2` -> 0
         // Numera: `1 < 3 and 3 == 2` -> false -> 0
-        Assert.AreEqual(0m, Calculator.Evaluate("1 < 3 == 2").DecimalValue);
+        Assert.AreEqual(new MathValue(0m), Calculator.Evaluate("1 < 3 == 2").Value);
 
         // Mixed relational & equality chains:
         // `0 < 5 == 5 < 10` -> `0 < 5 and 5 == 5 and 5 < 10` -> 1
-        Assert.AreEqual(1m, Calculator.Evaluate("0 < 5 == 5 < 10").DecimalValue);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("0 < 5 == 5 < 10").Value);
 
         // `0 < 5 == 6 < 10` -> `0 < 5 and 5 == 6 ...` -> 0
-        Assert.AreEqual(0m, Calculator.Evaluate("0 < 5 == 6 < 10").DecimalValue);
+        Assert.AreEqual(new MathValue(0m), Calculator.Evaluate("0 < 5 == 6 < 10").Value);
 
         // Under traditional left-fold equality:
         // `2 == 2 == 1` was `(2 == 2) == 1` -> `1 == 1` -> 1.
         // Under conjunctive chaining:
         // `2 == 2 == 1` means `2 == 2 and 2 == 1` -> 0.
-        Assert.AreEqual(0m, Calculator.Evaluate("2 == 2 == 1").DecimalValue);
+        Assert.AreEqual(new MathValue(0m), Calculator.Evaluate("2 == 2 == 1").Value);
 
         // `2 == 3 == 0` was `(2 == 3) == 0` -> `0 == 0` -> 1.
         // Under conjunctive chaining: `2 == 3 and 3 == 0` -> 0.
-        Assert.AreEqual(0m, Calculator.Evaluate("2 == 3 == 0").DecimalValue);
+        Assert.AreEqual(new MathValue(0m), Calculator.Evaluate("2 == 3 == 0").Value);
 
         // `2 == 2 == 2` is 1.
-        Assert.AreEqual(1m, Calculator.Evaluate("2 == 2 == 2").DecimalValue);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("2 == 2 == 2").Value);
 
         // Users can still explicitly group if they want boolean-as-number comparisons:
-        Assert.AreEqual(1m, Calculator.Evaluate("(1 < 2) == 1").DecimalValue);
-        Assert.AreEqual(1m, Calculator.Evaluate("(2 == 2) == 1").DecimalValue);
-        Assert.AreEqual(1m, Calculator.Evaluate("(2 == 3) == 0").DecimalValue);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("(1 < 2) == 1").Value);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("(2 == 2) == 1").Value);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("(2 == 3) == 0").Value);
     }
 
     [TestMethod]
@@ -262,12 +262,12 @@ public class LanguageTests
     public void PrefixLogicalNotBindsLooserThanComparisonMatchingPythonConvention()
     {
         // "not 1 == 0" parses as "not (1 == 0)", so not(0) -> 1.
-        Assert.AreEqual(1m, Calculator.Evaluate("not 1 == 0").DecimalValue);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("not 1 == 0").Value);
         // "not 0 == 0" parses as "not (0 == 0)", so not(1) -> 0.
-        Assert.AreEqual(0m, Calculator.Evaluate("not 0 == 0").DecimalValue);
+        Assert.AreEqual(new MathValue(0m), Calculator.Evaluate("not 0 == 0").Value);
         // "!1 == 0" also parses as "!(1 == 0)", so !(0) -> 1.
-        Assert.AreEqual(1m, Calculator.Evaluate("!1 == 0").DecimalValue);
-        Assert.AreEqual(0m, Calculator.Evaluate("!0 == 0").DecimalValue);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("!1 == 0").Value);
+        Assert.AreEqual(new MathValue(0m), Calculator.Evaluate("!0 == 0").Value);
 
         // AST verification matches precedence and structure: logical NOT wraps the comparison chain:
         var ast = Calculator.Parse("not 1 == 0");
@@ -286,12 +286,12 @@ public class LanguageTests
         Assert.IsInstanceOfType<ComparisonChainNode>(bangNode.Operand);
 
         // Logical NOT binds tighter than logical AND: "not 1 == 0 and 1" is "(not (1 == 0)) and 1" -> 1
-        Assert.AreEqual(1m, Calculator.Evaluate("not 1 == 0 and 1").DecimalValue);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("not 1 == 0 and 1").Value);
 
         // Arithmetic unary still binds tighter than power:
         Assert.AreEqual(new BigInteger(-16), Calculator.Evaluate("-2^4").IntegerValue);
         // And logical not of arithmetic term:
-        Assert.AreEqual(0m, Calculator.Evaluate("not 1 + 1").DecimalValue); // not (2) -> 0
+        Assert.AreEqual(new MathValue(0m), Calculator.Evaluate("not 1 + 1").Value); // not (2) -> 0
     }
 
     [TestMethod]
@@ -323,16 +323,16 @@ public class LanguageTests
         Assert.AreEqual(EvaluationError.AmbiguousLogicalNegation, ex7.Diagnostic.Code);
 
         // Explicitly parenthesized logical NOT remains valid in strict mode (including nested groups)
-        Assert.AreEqual(1m, strict.Evaluate("not (1 == 0)").DecimalValue);
-        Assert.AreEqual(1m, strict.Evaluate("!(1 == 0)").DecimalValue);
-        Assert.AreEqual(1m, strict.Evaluate("not ((1) == 0)").DecimalValue);
-        Assert.AreEqual(0m, strict.Evaluate("not (1 < 2 <= 3)").DecimalValue);
+        Assert.AreEqual(new MathValue(1m), strict.Evaluate("not (1 == 0)").Value);
+        Assert.AreEqual(new MathValue(1m), strict.Evaluate("!(1 == 0)").Value);
+        Assert.AreEqual(new MathValue(1m), strict.Evaluate("not ((1) == 0)").Value);
+        Assert.AreEqual(new MathValue(0m), strict.Evaluate("not (1 < 2 <= 3)").Value);
         Assert.IsNotNull(strict.Parse("not (1 == 0)"));
         Assert.IsNotNull(strict.Parse("not ((1) == 0)"));
 
         // Logical NOT applied to non-comparison does not require extra parentheses
-        Assert.AreEqual(0m, strict.Evaluate("not 1").DecimalValue);
-        Assert.AreEqual(1m, strict.Evaluate("!0").DecimalValue);
+        Assert.AreEqual(new MathValue(0m), strict.Evaluate("not 1").Value);
+        Assert.AreEqual(new MathValue(1m), strict.Evaluate("!0").Value);
     }
 
     [TestMethod]
@@ -355,25 +355,26 @@ public class LanguageTests
     [TestMethod]
     public void ScientificNotationLiterals_UnderflowAndPrecisionSemantics()
     {
-        // Non-zero mantissa that underflows IEEE 754 double throws NumericOverflow rather than silently flushing to 0
-        var evalUnderflow = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("1e-999"));
-        Assert.AreEqual(EvaluationError.NumericOverflow, evalUnderflow.Diagnostic.Code);
-
-        var parseUnderflow = Assert.Throws<ExpressionException>(() => Calculator.Parse("1e-999"));
-        Assert.AreEqual(EvaluationError.NumericOverflow, parseUnderflow.Diagnostic.Code);
+        // Scientific literals stay exact even below the IEEE 754 double range.
+        var tiny = Calculator.Evaluate("1e-999");
+        Assert.AreEqual(MathValue.DataType.Rational, tiny.Type);
+        Assert.AreEqual(BigInteger.One, tiny.Value.Numerator);
+        Assert.AreEqual(BigInteger.Pow(10, 999), tiny.Value.Denominator);
+        Assert.AreEqual(tiny.Value, ((NumberNode)Calculator.Parse("1e-999")).Value);
 
         // Zero mantissa with extreme negative exponent remains exact zero
-        Assert.AreEqual(0m, Calculator.Evaluate("0e-999").DecimalValue);
-        Assert.AreEqual(0m, ((NumberNode)Calculator.Parse("0e-999")).Value.DecimalValue);
+        Assert.AreEqual(new MathValue(BigInteger.Zero), Calculator.Evaluate("0e-999").Value);
+        Assert.AreEqual(new MathValue(BigInteger.Zero), ((NumberNode)Calculator.Parse("0e-999")).Value);
 
-        // 1e5 and 100000.0 both parse as exact Decimal within decimal range
+        // Authored decimal notation retains Decimal even for integral values.
         var sci1e5 = Calculator.Evaluate("1e5");
         var dec100k = Calculator.Evaluate("100000.0");
-        Assert.AreEqual(MathValue.DataType.Decimal, sci1e5.Type);
+        Assert.AreEqual(MathValue.DataType.Integer, sci1e5.Type);
         Assert.AreEqual(MathValue.DataType.Decimal, dec100k.Type);
-        Assert.AreEqual(100000m, sci1e5.DecimalValue);
+        Assert.AreEqual(new BigInteger(100000), sci1e5.IntegerValue);
         Assert.AreEqual(100000.0m, dec100k.DecimalValue);
-        Assert.AreEqual(sci1e5.DecimalValue, dec100k.DecimalValue);
+        Assert.AreEqual(sci1e5.GetExactFraction(), dec100k.GetExactFraction());
+        Assert.AreEqual(sci1e5.Value, dec100k.Value);
     }
 
     [TestMethod]
@@ -394,14 +395,14 @@ public class LanguageTests
         Assert.AreEqual(new BigInteger(120), Calculator.Evaluate("5!").IntegerValue);
 
         // Inequality != is not mistaken for factorial
-        Assert.AreEqual(1m, Calculator.Evaluate("5 != 3").DecimalValue);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("5 != 3").Value);
 
         // Leading prefix logical negation ! is left intact
-        Assert.AreEqual(1m, Calculator.Evaluate("!0").DecimalValue);
-        Assert.AreEqual(1m, Calculator.Evaluate("!1 == 0").DecimalValue);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("!0").Value);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("!1 == 0").Value);
 
         // Combined postfix factorial, !=, and prefix !
-        Assert.AreEqual(1m, Calculator.Evaluate("! (3! != 6)").DecimalValue);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("! (3! != 6)").Value);
     }
 
     [TestMethod]
@@ -580,8 +581,8 @@ public class LanguageTests
         Assert.HasCount(2, cmpChainNode.Operators);
         Assert.AreEqual(ComparisonOperator.LessThan, cmpChainNode.Operators[0]);
         Assert.AreEqual(ComparisonOperator.LessThan, cmpChainNode.Operators[1]);
-        Assert.AreEqual(1m, Calculator.Evaluate("1 < 2 < 3").DecimalValue);
-        Assert.AreEqual(0m, Calculator.Evaluate("1 < 3 < 2").DecimalValue);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("1 < 2 < 3").Value);
+        Assert.AreEqual(new MathValue(0m), Calculator.Evaluate("1 < 3 < 2").Value);
 
         // not a == b: logical NOT wrapping ComparisonChainNode
         var notEq = Calculator.Parse("not 4 == 5");
@@ -589,8 +590,8 @@ public class LanguageTests
         var notEqNode = (UnaryNode)notEq;
         Assert.AreEqual(UnaryOperator.LogicalNot, notEqNode.Op);
         Assert.IsInstanceOfType<ComparisonChainNode>(notEqNode.Operand);
-        Assert.AreEqual(1m, Calculator.Evaluate("not 4 == 5").DecimalValue);
-        Assert.AreEqual(0m, Calculator.Evaluate("not 5 == 5").DecimalValue);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("not 4 == 5").Value);
+        Assert.AreEqual(new MathValue(0m), Calculator.Evaluate("not 5 == 5").Value);
     }
 
     [TestMethod]
@@ -724,7 +725,7 @@ public class LanguageTests
     public void BooleanLiteralsEvaluateAsConstants(string expression, int expected)
     {
         var result = Calculator.Evaluate(expression);
-        Assert.AreEqual(new BigInteger(expected), result.IntegerValue != 0 ? result.IntegerValue : (BigInteger)result.DecimalValue);
+        Assert.AreEqual(new MathValue(expected), result.Value);
     }
 
     [TestMethod]
@@ -734,11 +735,11 @@ public class LanguageTests
         var optionsAns = new EvaluationContext(
             variables: null, previousResult: new MathValue(42m));
         var ansResult = Calculator.Evaluate("ans * 2 + 1", optionsAns);
-        Assert.AreEqual(85m, ansResult.DecimalValue);
+        Assert.AreEqual(new MathValue(85m), ansResult.Value);
 
         // Case-insensitivity check for Ans
         var ansUpperResult = Calculator.Evaluate("ANS / 2", optionsAns);
-        Assert.AreEqual(21m, ansUpperResult.DecimalValue);
+        Assert.AreEqual(new MathValue(21m), ansUpperResult.Value);
 
         // 2. Custom collection of caller-supplied variables
         var variables = new Variable[]
@@ -748,7 +749,7 @@ public class LanguageTests
         };
         var optionsVars = new EvaluationContext(variables, null);
         var varsResult = Calculator.Evaluate("3 * x + 4 * y", optionsVars);
-        Assert.AreEqual(40m, varsResult.DecimalValue);
+        Assert.AreEqual(new MathValue(40m), varsResult.Value);
 
         // 3. Unbound variable produces UnknownConstant diagnostic
         Assert.IsFalse(Calculator.TryEvaluate("z + 1", out _, out var diagnostic, optionsVars));

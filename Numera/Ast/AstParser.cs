@@ -18,6 +18,7 @@ internal sealed class AstParser
     private readonly bool _allowUnboundVariables;
     private int _pos;
     private int _depth;
+    private HashSet<string>? _declaredVariables;
 
     // Outer extents (parentheses included) of nodes that were written inside a group.
     // Keyed by reference: nodes are records, so default equality would be structural.
@@ -75,7 +76,7 @@ internal sealed class AstParser
         throw SyntaxError(
             c switch
             {
-                '[' or ']' => "'Square brackets '[]' are reserved for future vector and matrix syntax. Use round parentheses '()' for grouping.",
+                '[' or ']' => "Square brackets '[]' are reserved for future vector and matrix syntax. Use round parentheses '()' for grouping.",
                 ';' => "Semicolons ';' are reserved for future matrix row separation. Use commas ',' to separate function arguments.",
                 _ => throw new ArgumentException($"Parser error. '{c}' should not be passed to this method.")
             });
@@ -142,6 +143,7 @@ internal sealed class AstParser
                     inner.Definition :
                     _input[valueStart.._pos].Trim();
 
+                (_declaredVariables ??= new HashSet<string>(Identifier.Comparer)).Add(identifier);
                 return new AssignmentNode(
                     identifier, value, definition, Span(savePos, _pos - savePos));
             }
@@ -719,7 +721,7 @@ internal sealed class AstParser
         {
             int groupStart = _pos;
             Consume();
-            var value = ParseLogical();
+            var value = ParseStatement();
             SkipWhitespace();
 
             if (Peek() != ')')
@@ -809,7 +811,8 @@ internal sealed class AstParser
                 EvaluationError.InvalidSyntax, $"Function '{identifier}' requires parentheses.", identifierStart, identifier.Length));
         }
 
-        if (_context.TryResolveVariable(identifier, out _))
+        if (_context.TryResolveVariable(identifier, out _) ||
+            _declaredVariables?.Contains(identifier) == true)
         {
             return new IdentifierNode(identifier, null, Span(identifierStart, identifier.Length));
         }
@@ -927,12 +930,19 @@ internal sealed class AstParser
             // Guard against bit lengths that exceed the maximum integer ceiling before
             // allocating BigInteger.
             int digitCount = _pos - digitsStart;
-            if ((long)digitCount * radix.BitsPerDigit > CalculationLimits.MaxIntegerBits)
+            var digits = _input.AsSpan(digitsStart, digitCount).TrimStart('0');
+            int bitLimit = Math.Min(_options.MaxIntegerBits, CalculationLimits.MaxIntermediateBits);
+            if ((long)Math.Max(0, digits.Length - 1) * radix.BitsPerDigit > bitLimit)
             {
-                throw new CalculationLimitException();
+                throw LiteralLimit(start);
             }
 
-            return new MathValue(radix.Parse(_input.AsSpan(digitsStart, digitCount)));
+            var result = new MathValue(radix.Parse(digits));
+            if (result.IntegerValue.GetBitLength() > bitLimit)
+            {
+                throw LiteralLimit(start);
+            }
+            return result;
         }
 
         bool hasDecimal = false;
@@ -993,180 +1003,84 @@ internal sealed class AstParser
 
         var numberSpan = _input.AsSpan(start, _pos - start);
 
-        if (!hasDecimal && !hasExponent)
+        int exponentIndex = numberSpan.IndexOfAny('e', 'E');
+        var mantissa = exponentIndex < 0 ? numberSpan : numberSpan[..exponentIndex];
+        if (mantissa.IndexOfAnyInRange('0', '9') < 0)
         {
-            // L decimal digits require at least (L - 1) * log2(10) bits (~3.3219).
-            // Reject excessively large plain integer literals before attempting BigInteger parsing.
-            if ((numberSpan.Length - 1) * 3.3219 > CalculationLimits.MaxIntegerBits)
-            {
-                throw new CalculationLimitException();
-            }
-
-            if (BigInteger.TryParse(numberSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
-            {
-                if (intValue.GetBitLength() > CalculationLimits.MaxIntegerBits)
-                {
-                    throw new CalculationLimitException();
-                }
-
-                return new MathValue(intValue);
-            }
-        }
-        else if (decimal.TryParse(
-            numberSpan, NumberStyles.Float, CultureInfo.InvariantCulture, out var decValue))
-        {
-            if (decValue != 0m || IsZeroMantissa(numberSpan))
-            {
-                return new MathValue(decValue);
-            }
+            throw new ExpressionException(Diagnostic(
+                EvaluationError.InvalidSyntax, "Expected a number.", start, Math.Max(1, _pos - start)));
         }
 
-        if (double.TryParse(
-            numberSpan, NumberStyles.Float, CultureInfo.InvariantCulture, out double doubleValue))
+        int dot = mantissa.IndexOf('.');
+        int fractionalDigits = dot < 0 ? 0 : mantissa.Length - dot - 1;
+        // Zero is exact even with an exponent too large to represent or allocate.
+        if (mantissa.IndexOfAnyInRange('1', '9') < 0)
         {
-            if (!double.IsFinite(doubleValue))
+            long zeroScale = fractionalDigits;
+            if (exponentIndex >= 0)
             {
-                // If a large floating-point literal represents an exact integer (e.g.
-                // '1e309' or '2.5e400') and fits within the configured BigInteger bit
-                // ceiling, promote it to an exact BigInteger.
-                if (TryPromoteScientificToBigInteger(numberSpan, out var bigIntValue))
-                {
-                    return new MathValue(bigIntValue);
-                }
-
-                throw new ExpressionException(
-                    Diagnostic(EvaluationError.NumericOverflow, "Literal overflowed floating-point range.", start, Math.Max(1, _pos - start)));
+                var exponentText = numberSpan[(exponentIndex + 1)..];
+                zeroScale = long.TryParse(exponentText, NumberStyles.AllowLeadingSign,
+                    CultureInfo.InvariantCulture, out var zeroExponent)
+                    ? zeroExponent >= fractionalDigits ? 0
+                        : zeroExponent < -MathValue.MaxDecimalDisplayScale ? MathValue.MaxDecimalDisplayScale
+                        : fractionalDigits - zeroExponent
+                    : exponentText.StartsWith("-") ? MathValue.MaxDecimalDisplayScale : 0;
             }
-
-            if (doubleValue == 0.0 && !IsZeroMantissa(numberSpan))
-            {
-                throw new ExpressionException(
-                    Diagnostic(EvaluationError.NumericOverflow, "Literal underflowed floating-point range.", start, Math.Max(1, _pos - start)));
-            }
-
-            return new MathValue(doubleValue);
+            bool decimalZero = hasDecimal || (exponentIndex >= 0 && numberSpan[exponentIndex + 1] == '-');
+            return MathValue.FromExactFraction(BigInteger.Zero, BigInteger.One, decimalZero)
+                .WithDecimalDisplayScale(zeroScale);
         }
 
-        // Check if a literal that could not parse as double can still be represented as
-        // an exact BigInteger.
-        if (TryPromoteScientificToBigInteger(numberSpan, out var bigIntFallback))
+        long exponent = 0;
+        if (exponentIndex >= 0 &&
+            (!long.TryParse(numberSpan[(exponentIndex + 1)..], NumberStyles.AllowLeadingSign,
+                CultureInfo.InvariantCulture, out exponent) ||
+             exponent < -_options.MaxExponentMagnitude ||
+             exponent > _options.MaxExponentMagnitude))
         {
-            return new MathValue(bigIntFallback);
+            throw LiteralLimit(start);
         }
 
-        throw new ExpressionException(
-            Diagnostic(EvaluationError.InvalidSyntax, "Expected a number.", start, Math.Max(1, _pos - start)));
-    }
-
-    private static bool TryPromoteScientificToBigInteger(ReadOnlySpan<char> span,
-        out BigInteger result)
-    {
-        result = BigInteger.Zero;
-        int expIndex = span.IndexOfAny('e', 'E');
-        if (expIndex < 0)
+        string coefficientText = dot < 0 ? mantissa.ToString() :
+            string.Concat(mantissa[..dot], mantissa[(dot + 1)..]);
+        var coefficientDigits = coefficientText.AsSpan().TrimStart('0');
+        int trailingZeros = coefficientDigits.Length - coefficientDigits.TrimEnd('0').Length;
+        coefficientDigits = coefficientDigits[..(coefficientDigits.Length - trailingZeros)];
+        long power = exponent - fractionalDigits + trailingZeros;
+        if ((coefficientDigits.Length - 1L) * 3.3219280948873623 > CalculationLimits.MaxIntermediateBits ||
+            Math.Abs(power) * 3.3219280948873623 > CalculationLimits.MaxIntermediateBits)
         {
-            return false;
+            throw LiteralLimit(start);
         }
 
-        var mantissaSpan = span[..expIndex];
-        var expSpan = span[(expIndex + 1)..];
-
-        if (expSpan.StartsWith("+"))
+        var coefficient = BigInteger.Parse(coefficientDigits, NumberStyles.None, CultureInfo.InvariantCulture);
+        var scale = BigInteger.Pow(10, checked((int)Math.Abs(power)));
+        if (coefficient.GetBitLength() > CalculationLimits.MaxIntermediateBits ||
+            scale.GetBitLength() > CalculationLimits.MaxIntermediateBits ||
+            (power > 0 && coefficient.GetBitLength() + scale.GetBitLength() - 1 > CalculationLimits.MaxIntermediateBits))
         {
-            expSpan = expSpan[1..];
-        }
-
-        if (expSpan.StartsWith("-"))
-        {
-            // Negative exponent cannot be promoted to a large integer.
-            return false;
-        }
-
-        if (!int.TryParse(expSpan, NumberStyles.None, CultureInfo.InvariantCulture, out int exponent))
-        {
-            return false;
-        }
-
-        int dotIndex = mantissaSpan.IndexOf('.');
-        int fractionDigits = 0;
-        BigInteger mantissaInt;
-
-        if (dotIndex >= 0)
-        {
-            var integerPart = mantissaSpan[..dotIndex];
-            var fractionalPart = mantissaSpan[(dotIndex + 1)..];
-            fractionDigits = fractionalPart.Length;
-
-            if (exponent < fractionDigits)
-            {
-                // Has remaining fractional digits, so it cannot be an exact integer.
-                return false;
-            }
-
-            // Reject mantissas whose digit counts alone exceed the integer bit ceiling
-            // to guard against pathological allocations or huge BigInteger parsing.
-            if ((long)(integerPart.Length + fractionalPart.Length) * 4 > CalculationLimits.MaxIntegerBits)
-            {
-                return false;
-            }
-
-            // Avoid heap allocation by using stackalloc for the mantissa buffer.
-            Span<char> buffer = stackalloc char[integerPart.Length + fractionalPart.Length];
-            integerPart.CopyTo(buffer);
-            fractionalPart.CopyTo(buffer[integerPart.Length..]);
-            if (!BigInteger.TryParse(buffer, NumberStyles.Integer, CultureInfo.InvariantCulture, out mantissaInt))
-            {
-                return false;
-            }
-        }
-        else
-        {
-            if ((long)mantissaSpan.Length * 4 > CalculationLimits.MaxIntegerBits)
-            {
-                return false;
-            }
-
-            if (!BigInteger.TryParse(mantissaSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out mantissaInt))
-            {
-                return false;
-            }
-        }
-
-        long effectiveExponent = (long)exponent - fractionDigits;
-        // Upper bound check: 10^k takes about k * log2(10) bits. This is only a cheap guard
-        // against pathological Pow calls, so it must not be stricter than the authoritative
-        // bit-length check below. Use 64-bit maths to avoid overflow with large exponents.
-        if (effectiveExponent > 0)
-        {
-            if (effectiveExponent > CalculationLimits.MaxIntegerBits ||
-                effectiveExponent * 3.3219280948873623 > CalculationLimits.MaxIntegerBits)
-            {
-                return false;
-            }
+            throw LiteralLimit(start);
         }
 
         try
         {
-            result = mantissaInt * BigInteger.Pow(10, (int)effectiveExponent);
-            if (BigInteger.Abs(result).GetBitLength() > CalculationLimits.MaxIntegerBits)
-            {
-                return false;
-            }
-
-            return true;
+            bool decimalDomain = hasDecimal || exponent < 0;
+            var result = power >= 0
+                ? MathValue.FromExactFraction(coefficient * scale, BigInteger.One, decimalDomain)
+                : MathValue.FromExactFraction(coefficient, scale, decimalDomain);
+            result.ValidateLimits(_options.MaxIntegerBits);
+            return result.WithDecimalDisplayScale(Math.Max(0, fractionalDigits - exponent));
         }
-        catch (ArithmeticException)
+        catch (CalculationLimitException)
         {
-            return false;
+            throw LiteralLimit(start);
         }
     }
 
-    private static bool IsZeroMantissa(ReadOnlySpan<char> span)
-    {
-        int expIndex = span.IndexOfAny('e', 'E');
-        var mantissa = expIndex >= 0 ? span[..expIndex] : span;
-        return mantissa.IndexOfAnyInRange('1', '9') < 0;
-    }
+    private CalculationLimitException LiteralLimit(int start) => new(Diagnostic(
+        EvaluationError.LimitExceeded, "Number literal exceeds the configured computation limits.",
+        start, Math.Max(1, _pos - start)));
 
     private static BigInteger ParseHexBigInteger(ReadOnlySpan<char> span)
     {

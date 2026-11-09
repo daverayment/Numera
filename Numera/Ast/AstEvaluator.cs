@@ -1,6 +1,4 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
-using System.Runtime.CompilerServices;
 
 namespace Numera.Ast;
 
@@ -24,15 +22,17 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         _context = context ?? EvaluationContext.Empty;
     }
 
-    public MathValue Visit(NumberNode node) => node.Value;
+    public MathValue Visit(NumberNode node) => Guard(node.Span, () => ValidateValue(node.Value));
 
     public MathValue Visit(IdentifierNode node)
     {
         // Constant resolution produces a high-precision decimal (up to 28 digits)
         // for direct inspection and linear decimal/integer arithmetic.
-        if (ConstantCatalog.TryResolve(node.Name, out _, out decimal value))
+        if (ConstantCatalog.TryResolve(node.Name, out var constant, out decimal value))
         {
-            return new MathValue(value);
+            return Guard(node.Span, () => ValidateValue(new MathValue(value).WithAccuracy(
+                constant is ConstantKind.True or ConstantKind.False
+                    ? CalculationAccuracy.Exact : CalculationAccuracy.Unverified)));
         }
 
         // Check recent assignments within this evaluation.
@@ -42,7 +42,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
             {
                 if (_assignments[i].Name.Equals(node.Name, Identifier.Comparison))
                 {
-                    return _assignments[i].Value;
+                    return Guard(node.Span, () => ValidateValue(_assignments[i].Value));
                 }
             }
         }
@@ -50,7 +50,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         // Check the evaluation context variables.
         if (_context.TryResolveFullVariable(node.Name, out var contextVar))
         {
-            return contextVar.Value;
+            return Guard(node.Span, () => ValidateValue(contextVar.Value));
         }
 
         throw new ExpressionException(new EvaluationDiagnostic(
@@ -63,19 +63,19 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         var value = node.Operand.Accept(this);
         try
         {
-            return node.Op switch
+            return ValidateValue(PropagateAccuracy(node.Op switch
             {
-                UnaryOperator.Negate => -value,
+                UnaryOperator.Negate => MathValue.Negate(value),
                 UnaryOperator.Positive => value,
                 UnaryOperator.LogicalNot => MathValue.LogicalNot(value),
                 UnaryOperator.BitwiseNot => MathValue.BitwiseNot(value),
                 UnaryOperator.Factorial => EvaluateFactorial(value),
-                UnaryOperator.Percent => value / new MathValue(100m),
+                UnaryOperator.Percent => Divide(value, new MathValue(100)),
                 _ => throw new ExpressionException(new EvaluationDiagnostic(
                     EvaluationError.InvalidSyntax, "Unknown unary operator.")),
-            };
+            }, [value]));
         }
-        catch (Exception ex) when (ex is ExpressionException or DivideByZeroException or OverflowException)
+        catch (Exception ex) when (ex is ExpressionException or CalculationLimitException or DivideByZeroException or OverflowException)
         {
             throw Enrich(ex, node.Span);
         }
@@ -83,20 +83,6 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
     public MathValue Visit(BinaryNode node)
     {
-        // Exact rational reduction fast-path for contiguous multiplicative/division
-        // chains: When a node begins a chain of * and / operators containing division,
-        // evaluate factors rationally to eliminate intermediate division rounding errors
-        // (e.g. (1/3) * 3 == 1). If there is no division in the chain, or if any operand
-        // is inexact (e.g. Double), standard evaluation applies to preserve expected data
-        // types.
-        if (node.Op is BinaryOperator.Multiply or BinaryOperator.Divide)
-        {
-            if (TryEvaluateMultiplicativeChain(node, out var rationalResult))
-            {
-                return rationalResult;
-            }
-        }
-
         // Fast path with no spine allocation. Power nodes must take it too, or the loop
         // below would recurse into this method forever; they are not flattened because
         // they count towards nesting height (see BinaryNode.Height).
@@ -106,13 +92,12 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
             return Apply(node, node.Left.Accept(this));
         }
 
-        // Walk the non-power left spine iteratively at the same precedence level so long
+        // Walk the non-power left spine iteratively so long
         // flat chains (e.g. thousands of additive terms) cannot overflow the call stack.
         // This is the same rule as BinaryNode.Height.
         var spine = new Stack<BinaryNode>();
         ExpressionNode current = node;
         while (current is BinaryNode bin &&
-            IsSamePrecedence(node.Op, bin.Op) &&
             bin.Op is not BinaryOperator.Power)
         {
             spine.Push(bin);
@@ -128,314 +113,32 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         return left;
     }
 
-    private static bool IsSamePrecedence(BinaryOperator a, BinaryOperator b) =>
-        (a, b) switch
-        {
-            (BinaryOperator.Add or BinaryOperator.Subtract,
-                BinaryOperator.Add or BinaryOperator.Subtract) => true,
-            (BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo,
-                BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo) => true,
-            (BinaryOperator.ShiftLeft or BinaryOperator.ShiftRight,
-                BinaryOperator.ShiftLeft or BinaryOperator.ShiftRight) => true,
-            (BinaryOperator.LogicalAnd, BinaryOperator.LogicalAnd) => true,
-            (BinaryOperator.LogicalOr, BinaryOperator.LogicalOr) => true,
-            (BinaryOperator.LogicalXor, BinaryOperator.LogicalXor) => true,
-            _ => false,
-        };
-
-    /// <summary>
-    /// Attempts exact rational reduction across a contiguous chain of multiplication and
-    /// division.
-    /// </summary>
-    /// <param name="root">The root binary node of the chain.</param>
-    /// <param name="result">The exact or reduced <see cref="MathValue"/> if successful.
-    /// </param>
-    /// <returns><see langword="true"/> if the chain was evaluated rationally; otherwise
-    /// <see langword="false"/>.</returns>
-    private bool TryEvaluateMultiplicativeChain(BinaryNode root, out MathValue result)
-    {
-        result = default;
-
-        // Unroll the left-leaning chain of * and / operations into an ordered list of
-        // factors.
-        var factors = new List<(ExpressionNode Node, bool IsDivision, TextSpan Span)>();
-        var path = new HashSet<string>(Identifier.Comparer);
-        bool hasDivision = false;
-
-        // Flatten both left (multiplied) and right (divided if op is Divide) trees.
-        FlattenMultiplicativeNode(
-            root.Left, isDivision: false, root.Span, factors, ref hasDivision, path, depth: 0);
-        FlattenMultiplicativeNode(
-            root.Right, isDivision: root.Op == BinaryOperator.Divide, root.Span, factors, ref hasDivision, path, depth: 0);
-
-        // A chain requires at least 2 operations (at least 3 factors, e.g. a * b / c).
-        // Single binary operations (e.g. 0.3 / 0.01 or ANS / 2) have only 2 factors and
-        // must not undergo rational reduction, preserving standard typed operator rules,
-        // so Decimal / Decimal == Decimal.
-        if (!hasDivision || factors.Count < 3)
-        {
-            return false;
-        }
-
-        BigInteger totalNum = BigInteger.One;
-        BigInteger totalDen = BigInteger.One;
-
-        foreach (var (factorNode, isDivision, span) in factors)
-        {
-            var factorVal = factorNode.Accept(this);
-            if (!MathValue.TryToRational(
-                factorVal, out BigInteger factorNum, out BigInteger factorDen))
-            {
-                return false;
-            }
-
-            if (isDivision)
-            {
-                if (factorNum.IsZero)
-                {
-                    // Division by zero will be caught or thrown with appropriate span.
-                    throw Enrich(new DivideByZeroException(), span);
-                }
-
-                totalNum *= factorDen;
-                totalDen *= factorNum;
-            }
-            else
-            {
-                totalNum *= factorNum;
-                totalDen *= factorDen;
-            }
-
-            if (totalDen.Sign < 0)
-            {
-                totalNum = -totalNum;
-                totalDen = -totalDen;
-            }
-
-            // Incremental GCD reduction to prevent unbounded BigInteger bit growth.
-            BigInteger gcd = BigInteger.GreatestCommonDivisor(BigInteger.Abs(totalNum), totalDen);
-            if (gcd > BigInteger.One)
-            {
-                totalNum /= gcd;
-                totalDen /= gcd;
-            }
-
-            if (BigInteger.Abs(totalNum).GetBitLength() > CalculationLimits.MaxIntegerBits ||
-                totalDen.GetBitLength() > CalculationLimits.MaxIntegerBits)
-            {
-                throw new CalculationLimitException();
-            }
-        }
-
-        result = MathValue.FromRational(totalNum, totalDen);
-        return true;
-    }
-
-    /// <summary>
-    /// Recursively flattens an arbitrary tree of multiplications, divisions,
-    /// parenthesized groups, and unrolled variable definitions into an ordered list of
-    /// atomic factors.
-    /// </summary>
-    /// <remarks>
-    /// Any contiguous chain of * and / operations can be expressed as:
-    /// (N1 * N2 * ...) / (D1 * D2 * ...)
-    /// 
-    /// The flattener traverses subtrees and inverts operations when descending into a
-    /// divisor:
-    /// - Dividing by (A * B) means dividing by A and dividing by B.
-    /// - Dividing by (A / B) means dividing by A and MULTIPLYING by B.
-    /// 
-    /// Variables whose defining expressions are themselves * or / trees are inlined
-    /// transparently, allowing cross-round rational reduction (e.g. r = 71 / 9 followed
-    /// by r * 9 == 71).
-    /// </remarks>
-    private void FlattenMultiplicativeNode(
-        ExpressionNode node,
-        bool isDivision,
-        TextSpan divisionSpan,
-        List<(ExpressionNode Node, bool IsDivision, TextSpan Span)> factors,
-        ref bool hasDivision,
-        HashSet<string> path,
-        int depth)
-    {
-        if (depth >= CalculationLimits.MaxNestingDepth ||
-            !RuntimeHelpers.TryEnsureSufficientExecutionStack())
-        {
-            if (isDivision)
-            {
-                hasDivision = true;
-            }
-
-            factors.Add((node, isDivision, isDivision ? divisionSpan : node.Span));
-            return;
-        }
-
-        // Grouped or inline BinaryNode multiplication/division (e.g. (1 / 3) or 1 / 3).
-        if (node is BinaryNode bin &&
-            bin.Op is BinaryOperator.Multiply or BinaryOperator.Divide &&
-            !PercentRules.IsMarkup(bin))
-        {
-            FlattenMultiplicativeNode(bin.Left, isDivision, divisionSpan, factors, ref hasDivision, path, depth + 1);
-            bool rightIsDivision = bin.Op == BinaryOperator.Divide ? !isDivision : isDivision;
-            TextSpan rightDivSpan = bin.Op == BinaryOperator.Divide ? bin.Span : divisionSpan;
-            FlattenMultiplicativeNode(bin.Right, rightIsDivision, rightDivSpan, factors, ref hasDivision, path, depth + 1);
-
-            return;
-        }
-
-        // IdentifierNode resolving to a variable with a multiplicative AST.
-        if (node is IdentifierNode identifier &&
-            !ConstantCatalog.TryResolve(identifier.Name, out _, out _) &&
-            !path.Contains(identifier.Name) &&
-            TryResolveVariableExpression(identifier.Name, out var variableExpr))
-        {
-            var unwrapped = UnwrapAssignment(variableExpr);
-            if (unwrapped is BinaryNode varBin &&
-                varBin.Op is BinaryOperator.Multiply or BinaryOperator.Divide &&
-                !PercentRules.IsMarkup(varBin))
-            {
-                path.Add(identifier.Name);
-                FlattenMultiplicativeNode(varBin.Left, isDivision, divisionSpan, factors, ref hasDivision, path, depth + 1);
-                bool rightIsDivision = varBin.Op == BinaryOperator.Divide ? !isDivision : isDivision;
-                TextSpan rightDivSpan = varBin.Op == BinaryOperator.Divide ? varBin.Span : divisionSpan;
-                FlattenMultiplicativeNode(varBin.Right, rightIsDivision, rightDivSpan, factors, ref hasDivision, path, depth + 1);
-                path.Remove(identifier.Name);
-
-                return;
-            }
-        }
-
-        // Atomic leaf factor.
-        if (isDivision)
-        {
-            hasDivision = true;
-        }
-
-        factors.Add((node, isDivision, isDivision ? divisionSpan : node.Span));
-    }
-
-    private bool TryResolveVariableExpression(string name, [NotNullWhen(true)] out ExpressionNode? expression)
-    {
-        if (_assignments is not null)
-        {
-            for (int i = _assignments.Count - 1; i >= 0; i--)
-            {
-                if (_assignments[i].Name.Equals(name, Identifier.Comparison))
-                {
-                    expression = _assignments[i].Expression;
-                    return expression is not null;
-                }
-            }
-        }
-
-        if (_context.TryResolveFullVariable(name, out var variable))
-        {
-            expression = variable.Expression;
-            return expression is not null;
-        }
-
-        expression = null;
-        return false;
-    }
-
-    private static ExpressionNode UnwrapAssignment(ExpressionNode node)
-    {
-        while (node is AssignmentNode assignment)
-        {
-            node = assignment.Value;
-        }
-
-        return node;
-    }
-
-    private bool TryUnrollVariableMultiplicativeNode(
-        ExpressionNode node,
-        out ExpressionNode unrolledRoot,
-        out bool containsDivision)
-    {
-        unrolledRoot = node;
-        containsDivision = false;
-
-        if (node is IdentifierNode identifier &&
-            ConstantCatalog.TryResolve(identifier.Name, out _, out _) == false &&
-            _context.TryResolveFullVariable(identifier.Name, out var variable) &&
-            variable.Expression is BinaryNode exprBin &&
-            exprBin.Op is BinaryOperator.Multiply or BinaryOperator.Divide &&
-            !PercentRules.IsMarkup(exprBin))
-        {
-            unrolledRoot = variable.Expression;
-            containsDivision = HasDivisionInMultiplicativeTree(variable.Expression);
-            return true;
-        }
-
-        return false;
-    }
-
-    private static bool HasDivisionInMultiplicativeTree(ExpressionNode node)
-    {
-        ExpressionNode cur = node;
-        while (cur is BinaryNode bin && bin.Op is BinaryOperator.Multiply or BinaryOperator.Divide)
-        {
-            if (bin.Op == BinaryOperator.Divide) return true;
-            cur = bin.Left;
-        }
-        return false;
-    }
-
-    private static void UnrollMultiplicativeSubtree(
-        ExpressionNode subtree,
-        bool invertOperations,
-        List<(ExpressionNode Node, bool IsDivision, TextSpan Span)> terms,
-        ref bool hasDivision,
-        ref ExpressionNode leftmost)
-    {
-        var localTerms = new List<(ExpressionNode Node, bool IsDivision, TextSpan Span)>();
-        ExpressionNode cur = subtree;
-
-        while (cur is BinaryNode bin && bin.Op is BinaryOperator.Multiply or BinaryOperator.Divide && !PercentRules.IsMarkup(bin))
-        {
-            bool isDiv = bin.Op == BinaryOperator.Divide;
-            if (invertOperations)
-            {
-                isDiv = !isDiv; // dividing by (a / b) multiplies by b and divides by a
-            }
-
-            if (isDiv) hasDivision = true;
-            localTerms.Add((bin.Right, isDiv, bin.Span));
-            cur = bin.Left;
-        }
-
-        localTerms.Reverse();
-        leftmost = cur;
-        terms.AddRange(localTerms);
-    }
-
     private MathValue Apply(BinaryNode node, MathValue left)
     {
         if (node.Op == BinaryOperator.LogicalOr && !left.IsZero)
         {
-            return Guard(node.Span, () => MathValue.LogicalOr(left, new MathValue(1m)));
+            return Guard(node.Span, () => MathValue.LogicalOr(left, new MathValue(1)));
         }
 
         if (node.Op == BinaryOperator.LogicalAnd && left.IsZero)
         {
-            return Guard(node.Span, () => MathValue.LogicalAnd(left, new MathValue(0m)));
+            return Guard(node.Span, () => MathValue.LogicalAnd(left, new MathValue(0)));
         }
 
         var right = node.Right.Accept(this);
         bool markup = PercentRules.IsMarkup(node);
-        var one = new MathValue(1m);
-        return Guard(node.Span, () => node.Op switch
+        var one = new MathValue(1);
+        return Guard(node.Span, () => ValidateValue(PropagateAccuracy(node.Op switch
         {
-            BinaryOperator.Add when markup => left * (one + right),
-            BinaryOperator.Subtract when markup => left * (one - right),
-            BinaryOperator.Of => left * right,
-            BinaryOperator.Add => left + right,
-            BinaryOperator.Subtract => left - right,
-            BinaryOperator.Multiply => left * right,
-            BinaryOperator.Divide => left / right,
-            BinaryOperator.Modulo => left % right,
-            BinaryOperator.Power => MathValue.Pow(left, right),
+            BinaryOperator.Add when markup => Multiply(left, Add(one, right)),
+            BinaryOperator.Subtract when markup => Multiply(left, Subtract(one, right)),
+            BinaryOperator.Of => Multiply(left, right),
+            BinaryOperator.Add => Add(left, right),
+            BinaryOperator.Subtract => Subtract(left, right),
+            BinaryOperator.Multiply => Multiply(left, right),
+            BinaryOperator.Divide => Divide(left, right),
+            BinaryOperator.Modulo => MathValue.Modulo(left, right),
+            BinaryOperator.Power => MathValue.Pow(left, right, _options.MaxExponentMagnitude),
             BinaryOperator.ShiftLeft => MathValue.ShiftLeft(left, right),
             BinaryOperator.ShiftRight => MathValue.ShiftRight(left, right),
             BinaryOperator.LogicalAnd => MathValue.LogicalAnd(left, right),
@@ -443,7 +146,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
             BinaryOperator.LogicalXor => MathValue.LogicalXor(left, right),
             _ => throw new ExpressionException(
                 new EvaluationDiagnostic(EvaluationError.InvalidSyntax, "Unknown binary operator.")),
-        });
+        }, [left, right])));
     }
 
     /// <summary>
@@ -455,20 +158,24 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
     public MathValue Visit(ComparisonChainNode node)
     {
         var left = node.Operands[0].Accept(this);
+        bool exact = left.Accuracy == CalculationAccuracy.Exact;
         for (int i = 0; i < node.Operators.Count; i++)
         {
             // Later operands are skipped once a comparison fails, avoiding needless work
             // and errors.
             var right = node.Operands[i + 1].Accept(this);
-            if (!EvaluateComparison(node.Operators[i], left, right))
+            exact &= right.Accuracy == CalculationAccuracy.Exact;
+            if (!Guard(node.Span, () => EvaluateComparison(node.Operators[i], left, right)))
             {
-                return new MathValue(0m);
+                return new MathValue(BigInteger.Zero).WithAccuracy(
+                    exact ? CalculationAccuracy.Exact : CalculationAccuracy.Unverified);
             }
 
             left = right;
         }
 
-        return new MathValue(1m);
+        return new MathValue(BigInteger.One).WithAccuracy(
+            exact ? CalculationAccuracy.Exact : CalculationAccuracy.Unverified);
     }
 
     /// <summary>
@@ -490,17 +197,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
             try
             {
                 var result = customFunction.Implementation(args);
-                if (result.Kind is MathValue.DataType.Integer &&
-                    BigInteger.Abs(result.IntegerValue).GetBitLength() > CalculationLimits.MaxIntegerBits)
-                {
-                    throw new CalculationLimitException();
-                }
-
-                return result;
-            }
-            catch (CalculationLimitException)
-            {
-                throw;
+                return ValidateValue(PropagateAccuracy(result, args));
             }
             catch (Exception ex)
             {
@@ -510,9 +207,9 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
         try
         {
-            return EvaluateFunction(node.FunctionName, args);
+            return ValidateValue(PropagateAccuracy(EvaluateFunction(node.FunctionName, args), args));
         }
-        catch (Exception ex) when (ex is ExpressionException or DivideByZeroException or OverflowException)
+        catch (Exception ex) when (ex is ExpressionException or CalculationLimitException or DivideByZeroException or OverflowException)
         {
             throw Enrich(ex, node.Span);
         }
@@ -531,8 +228,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         var value = node.Value.Accept(this);
 
         // Record the assignment in the list of assignments for later retrieval. Create
-        // the list lazily. Preserves the parsed AST node so exact rational reductions and
-        // symbolic fidelity survive variable assignments.
+        // the list lazily. The AST is metadata only; future reads use the captured value.
         (_assignments ??= []).Add(
             new Variable(node.VariableName, value, node.Value, node.Definition));
         return value;
@@ -548,7 +244,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         {
             return action();
         }
-        catch (Exception ex) when (ex is ExpressionException or DivideByZeroException or OverflowException)
+        catch (Exception ex) when (ex is ExpressionException or CalculationLimitException or DivideByZeroException or OverflowException)
         {
             throw Enrich(ex, span);
         }
@@ -573,6 +269,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         EvaluationDiagnostic diagnostic = ex switch
         {
             ExpressionException ee => ee.Diagnostic,
+            CalculationLimitException limit => limit.Diagnostic,
             DivideByZeroException => new EvaluationDiagnostic(
                 EvaluationError.DivisionByZero, "Division by zero."),
             OverflowException => new EvaluationDiagnostic(
@@ -586,12 +283,39 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
             diagnostic = diagnostic with { Position = span.Start, Length = span.Length };
         }
 
+        if (ex is CalculationLimitException)
+        {
+            return new CalculationLimitException(diagnostic);
+        }
+
         return ex is ExpressionException exception && ReferenceEquals(diagnostic, exception.Diagnostic)
             ? ex
             : new ExpressionException(diagnostic, ex);
     }
 
-    private static bool EvaluateComparison(ComparisonOperator op, MathValue left, MathValue right)
+    private MathValue ValidateValue(MathValue value)
+    {
+        value.ValidateLimits(_options.MaxIntegerBits);
+        return value;
+    }
+
+    private MathValue Add(MathValue left, MathValue right) => MathValue.Add(left, right);
+    private MathValue Subtract(MathValue left, MathValue right) => MathValue.Subtract(left, right);
+    private MathValue Multiply(MathValue left, MathValue right) => MathValue.Multiply(left, right);
+    private MathValue Divide(MathValue left, MathValue right) => MathValue.Divide(left, right);
+
+    private static MathValue PropagateAccuracy(MathValue value, IReadOnlyList<MathValue> args) =>
+        args.Any(arg => arg.Accuracy != CalculationAccuracy.Exact)
+            ? value.WithAccuracy(CalculationAccuracy.Unverified)
+            : value;
+
+    // Factorization above the deterministic primality range can depend on probable primes.
+    private static MathValue FactorizationResult(BigInteger result, BigInteger input) =>
+        new MathValue(result).WithAccuracy(input > ulong.MaxValue
+            ? CalculationAccuracy.Unverified
+            : CalculationAccuracy.Exact);
+
+    private bool EvaluateComparison(ComparisonOperator op, MathValue left, MathValue right)
     {
         // IEEE 754: every comparison with NaN is false except inequality.
         if (left.IsNaN || right.IsNaN)
@@ -671,6 +395,39 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
         if (args.Count == 1)
         {
+            if (lower is "sqrt")
+            {
+                return EvaluateRoot(args[0], new MathValue(2));
+            }
+
+            if (lower is "cbrt")
+            {
+                return EvaluateRoot(args[0], new MathValue(3));
+            }
+
+            if (MathValue.TryToRational(args[0], out var numerator, out var denominator))
+            {
+                var integral = BigInteger.DivRem(numerator, denominator, out var remainder);
+                switch (lower)
+                {
+                    case "ceil":
+                        return ExactFunctionFraction(integral + (remainder.Sign > 0 ? BigInteger.One : BigInteger.Zero), BigInteger.One, args[0]);
+                    case "floor":
+                        return ExactFunctionFraction(integral - (remainder.Sign < 0 ? BigInteger.One : BigInteger.Zero), BigInteger.One, args[0]);
+                    case "trunc":
+                        return ExactFunctionFraction(integral, BigInteger.One, args[0]);
+                    case "frac":
+                        return ExactFunctionFraction(remainder, denominator, args[0])
+                            .WithDecimalDisplayScale(args[0].DecimalDisplayScale);
+                    case "abs":
+                        return numerator.Sign < 0 ? MathValue.Negate(args[0]) : args[0];
+                    case "sign" or "sgn":
+                        return new MathValue((BigInteger)numerator.Sign);
+                    case "round":
+                        return RoundFraction(numerator, denominator, 0, args[0]);
+                }
+            }
+
             // Math-based functions use double approximations. Branches that can operate
             // on integer or decimal values use the original argument instead.
             double v = args[0].AsDouble();
@@ -707,14 +464,6 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                         MathValue.DataType.Decimal => new MathValue(args[0].DecimalValue - decimal.Truncate(args[0].DecimalValue)),
                         _ => new MathValue(v - Math.Truncate(v)),
                     };
-
-                case "cbrt":
-                    if (args[0].Kind is MathValue.DataType.Integer && args[0].IntegerValue.TryGetExactRoot(3, out var exactCbrt))
-                    {
-                        return new MathValue(exactCbrt);
-                    }
-
-                    return new MathValue(Math.Cbrt(v));
 
                 case "bnot":
                     return MathValue.BitwiseNot(args[0]);
@@ -778,28 +527,6 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                             EvaluationError.UndefinedMathResult, "log1p argument must be strictly greater than -1."));
                     }
                     return new MathValue(double.LogP1(v));
-
-                case "sqrt":
-                    if (args[0].Kind is MathValue.DataType.Integer)
-                    {
-                        if (args[0].IntegerValue < BigInteger.Zero)
-                        {
-                            throw new ExpressionException(new EvaluationDiagnostic(
-                                EvaluationError.UndefinedMathResult, "Square root of a negative number has no real solution."));
-                        }
-
-                        if (args[0].IntegerValue.TryGetExactSquareRoot(out var exactIntRoot))
-                        {
-                            return new MathValue(exactIntRoot);
-                        }
-                    }
-
-                    if (v < 0)
-                    {
-                        throw new ExpressionException(new EvaluationDiagnostic(
-                            EvaluationError.UndefinedMathResult, "Square root of a negative number has no real solution."));
-                    }
-                    return new MathValue(Math.Sqrt(v));
 
                 case "factorial":
                     return EvaluateFactorial(args[0]);
@@ -1026,7 +753,11 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                         throw new ExpressionException(new EvaluationDiagnostic(
                             EvaluationError.IntegerRequired, "isprime requires an integer argument."));
                     }
-                    return new MathValue(NumberTheory.IsPrime(primeArg) ? BigInteger.One : BigInteger.Zero);
+                    bool prime = NumberTheory.IsPrime(primeArg);
+                    return new MathValue(prime ? BigInteger.One : BigInteger.Zero).WithAccuracy(
+                        prime && primeArg > ulong.MaxValue
+                            ? CalculationAccuracy.Unverified
+                            : CalculationAccuracy.Exact);
 
                 case "divcount" or "divisorcount":
                     if (!args[0].TryGetInteger(out var divCountArg))
@@ -1034,7 +765,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                         throw new ExpressionException(new EvaluationDiagnostic(
                             EvaluationError.IntegerRequired, $"{lower} requires an integer argument."));
                     }
-                    return new MathValue(NumberTheory.DivCount(divCountArg));
+                    return FactorizationResult(NumberTheory.DivCount(divCountArg), divCountArg);
 
                 case "sigma" or "divsum":
                     if (!args[0].TryGetInteger(out var sigmaArg))
@@ -1042,7 +773,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                         throw new ExpressionException(new EvaluationDiagnostic(
                             EvaluationError.IntegerRequired, $"{lower} requires an integer argument."));
                     }
-                    return new MathValue(NumberTheory.Sigma(sigmaArg));
+                    return FactorizationResult(NumberTheory.Sigma(sigmaArg), sigmaArg);
 
                 case "totient" or "phi" or "eulerphi":
                     if (!args[0].TryGetInteger(out var totientArg))
@@ -1050,7 +781,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                         throw new ExpressionException(new EvaluationDiagnostic(
                             EvaluationError.IntegerRequired, $"{lower} requires an integer argument."));
                     }
-                    return new MathValue(NumberTheory.Totient(totientArg));
+                    return FactorizationResult(NumberTheory.Totient(totientArg), totientArg);
 
                 default:
                     throw new ExpressionException(new EvaluationDiagnostic(
@@ -1063,7 +794,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
             switch (lower)
             {
                 case "pow":
-                    return MathValue.Pow(args[0], args[1]);
+                    return MathValue.Pow(args[0], args[1], _options.MaxExponentMagnitude);
 
                 case "logn":
                     var logVal = args[0].AsDouble();
@@ -1084,43 +815,13 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                     return new MathValue(Math.Sqrt(args[0].AsDouble() * args[0].AsDouble() + args[1].AsDouble() * args[1].AsDouble()));
 
                 case "mod":
-                    return args[0] % args[1];
+                    return MathValue.Modulo(args[0], args[1]);
 
                 case "round":
                     return EvaluateRound(args[0], args[1]);
 
                 case "root" or "nthroot":
-                    // If base and degree are both integers and degree is a positive int,
-                    // check for an exact integer root before falling back to double approximation.
-                    if (args[0].Kind is MathValue.DataType.Integer &&
-                        args[1].TryGetInteger(out var rootDegInt) &&
-                        rootDegInt > BigInteger.Zero &&
-                        rootDegInt <= int.MaxValue &&
-                        args[0].IntegerValue.TryGetExactRoot((int)rootDegInt, out var exactNthRoot))
-                    {
-                        return new MathValue(exactNthRoot);
-                    }
-
-                    double baseVal = args[0].AsDouble();
-                    double rootVal = args[1].AsDouble();
-                    if (rootVal == 0.0)
-                    {
-                        throw new ExpressionException(new EvaluationDiagnostic(
-                            EvaluationError.UndefinedMathResult, "Root degree cannot be zero."));
-                    }
-                    if (baseVal < 0)
-                    {
-                        if (Math.Abs(rootVal % 2) == 1)
-                        {
-                            // Odd integer roots have a real branch: root(-8, 3) = -2.
-                            return new MathValue(-Math.Pow(-baseVal, 1.0 / rootVal));
-                        }
-
-                        throw new ExpressionException(new EvaluationDiagnostic(
-                            EvaluationError.UndefinedMathResult, "Even root of a negative number has no real solution."));
-                    }
-
-                    return new MathValue(Math.Pow(baseVal, 1.0 / rootVal));
+                    return EvaluateRoot(args[0], args[1]);
 
                 case "shl":
                     return MathValue.ShiftLeft(args[0], args[1]);
@@ -1162,7 +863,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                         throw new ExpressionException(new EvaluationDiagnostic(
                             EvaluationError.IntegerRequired, $"{lower} requires integer arguments."));
                     }
-                    if (sigmaK < 0 || sigmaK > CalculationLimits.MaxExponentMagnitude)
+                    if (sigmaK < 0 || sigmaK > _options.MaxExponentMagnitude)
                     {
                         if (sigmaK < 0)
                         {
@@ -1171,7 +872,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                         }
                         throw new CalculationLimitException();
                     }
-                    return new MathValue(NumberTheory.Sigma(sigmaN, (int)sigmaK));
+                    return FactorizationResult(NumberTheory.Sigma(sigmaN, (int)sigmaK), sigmaN);
 
                 default:
                     throw new ExpressionException(new EvaluationDiagnostic(
@@ -1184,7 +885,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
             return lower switch
             {
                 "clamp" => EvaluateClamp(args[0], args[1], args[2]),
-                "lerp" => args[0] + (args[2] * (args[1] - args[0])), // a + t * (b - a)
+                "lerp" => Add(args[0], Multiply(args[2], Subtract(args[1], args[0]))),
                 _ => throw new ExpressionException(new EvaluationDiagnostic(
                     EvaluationError.UnknownFunction, $"Unknown function '{name}'.")),
             };
@@ -1194,7 +895,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
             EvaluationError.InvalidArgumentCount, $"Invalid argument count for '{name}'."));
     }
 
-    private static MathValue EvaluateGcd(List<MathValue> args)
+    private MathValue EvaluateGcd(List<MathValue> args)
     {
         if (!args[0].TryGetInteger(out var result))
         {
@@ -1216,7 +917,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         return new MathValue(BigInteger.Abs(result));
     }
 
-    private static MathValue EvaluateLcm(List<MathValue> args)
+    private MathValue EvaluateLcm(List<MathValue> args)
     {
         if (!args[0].TryGetInteger(out var result))
         {
@@ -1233,12 +934,13 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
             }
 
             result = NumberTheory.Lcm(result, next);
+            ValidateValue(new MathValue(result));
         }
 
         return new MathValue(BigInteger.Abs(result));
     }
 
-    private static MathValue EvaluateMinMax(List<MathValue> args, bool findMinimum)
+    private MathValue EvaluateMinMax(List<MathValue> args, bool findMinimum)
     {
         // IEEE 754: every comparison with NaN is false except inequality. If any argument
         // is NaN, the result of min/max is NaN.
@@ -1265,18 +967,18 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         return result;
     }
 
-    private static MathValue EvaluateAvg(List<MathValue> args)
+    private MathValue EvaluateAvg(List<MathValue> args)
     {
         var sum = args[0];
         for (int i = 1; i < args.Count; i++)
         {
-            sum += args[i];
+            sum = Add(sum, args[i]);
         }
 
-        return sum / new MathValue((BigInteger)args.Count);
+        return Divide(sum, new MathValue((BigInteger)args.Count));
     }
 
-    private static MathValue EvaluateMedian(List<MathValue> args)
+    private MathValue EvaluateMedian(List<MathValue> args)
     {
         // IEEE 754: every comparison with NaN is false except inequality. If any argument
         // is NaN, the result of median is NaN.
@@ -1289,7 +991,14 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         }
 
         var sorted = new List<MathValue>(args);
-        sorted.Sort(MathValue.Compare);
+        try
+        {
+            sorted.Sort((left, right) => MathValue.Compare(left, right));
+        }
+        catch (InvalidOperationException ex) when (ex.InnerException is CalculationLimitException limit)
+        {
+            throw limit;
+        }
 
         int count = sorted.Count;
         if (count % 2 == 1)
@@ -1299,53 +1008,53 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
         var mid1 = sorted[(count / 2) - 1];
         var mid2 = sorted[count / 2];
-        return (mid1 + mid2) / new MathValue(2m);
+        return Divide(Add(mid1, mid2), new MathValue(2));
     }
 
-    private static MathValue EvaluateVariance(List<MathValue> args)
+    private MathValue EvaluateVariance(List<MathValue> args)
     {
         // Sample variance requires n >= 2: s^2 = (1 / (n - 1)) * sum((x_i - mean)^2)
         var mean = EvaluateAvg(args);
-        var sumOfSquares = new MathValue(0m);
+        var sumOfSquares = new MathValue(0);
 
         for (int i = 0; i < args.Count; i++)
         {
-            var diff = args[i] - mean;
-            sumOfSquares += diff * diff;
+            var diff = Subtract(args[i], mean);
+            sumOfSquares = Add(sumOfSquares, Multiply(diff, diff));
         }
 
-        return sumOfSquares / new MathValue((BigInteger)(args.Count - 1));
+        return Divide(sumOfSquares, new MathValue((BigInteger)(args.Count - 1)));
     }
 
-    private static MathValue EvaluateStDev(List<MathValue> args)
+    private MathValue EvaluateStDev(List<MathValue> args)
     {
         var variance = EvaluateVariance(args);
-        return new MathValue(Math.Sqrt(variance.AsDouble()));
+        return new MathValue(EvaluateRoot(variance, new MathValue(2)).AsDouble());
     }
 
-    private static MathValue EvaluateSum(List<MathValue> args)
+    private MathValue EvaluateSum(List<MathValue> args)
     {
         var sum = args[0];
         for (int i = 1; i < args.Count; i++)
         {
-            sum += args[i];
+            sum = Add(sum, args[i]);
         }
 
         return sum;
     }
 
-    private static MathValue EvaluateMul(List<MathValue> args)
+    private MathValue EvaluateMul(List<MathValue> args)
     {
         var product = args[0];
         for (int i = 1; i < args.Count; i++)
         {
-            product *= args[i];
+            product = Multiply(product, args[i]);
         }
 
         return product;
     }
 
-    private static MathValue EvaluateClamp(MathValue val, MathValue min, MathValue max)
+    private MathValue EvaluateClamp(MathValue val, MathValue min, MathValue max)
     {
         // Propagate NaN without throwing ArgumentOutOfRange.
         if (val.IsNaN || min.IsNaN || max.IsNaN)
@@ -1372,7 +1081,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         return val;
     }
 
-    private static MathValue EvaluateRound(MathValue value, MathValue placesArg)
+    private MathValue EvaluateRound(MathValue value, MathValue placesArg)
     {
         if (!placesArg.TryGetInteger(out var placesInt))
         {
@@ -1391,24 +1100,15 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
         int places = (int)placesInt;
 
-        if (value.Kind is MathValue.DataType.Integer)
+        if (MathValue.TryToRational(value, out var numerator, out var denominator))
         {
-            return value;
+            return RoundFraction(numerator, denominator, places, value)
+                .WithDecimalDisplayScale(Math.Min(value.DecimalDisplayScale, places));
         }
 
         if (places == 0)
         {
-            if (value.Kind is MathValue.DataType.Decimal)
-            {
-                return new MathValue((BigInteger)Math.Round(value.DecimalValue, MidpointRounding.AwayFromZero));
-            }
-
             return ToIntegralMathValue(Math.Round(value.AsDouble(), MidpointRounding.AwayFromZero));
-        }
-
-        if (value.Kind is MathValue.DataType.Decimal)
-        {
-            return new MathValue(Math.Round(value.DecimalValue, places, MidpointRounding.AwayFromZero));
         }
 
         if (places <= 15)
@@ -1419,6 +1119,112 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         // Double values beyond 15 fractional decimal digits exceed double.Round's
         // argument ceiling. We preserve full IEEE 754 value without crashing.
         return value;
+    }
+
+    private MathValue ExactFunctionFraction(BigInteger numerator, BigInteger denominator, MathValue input) =>
+        MathValue.FromExactFraction(numerator, denominator, input.Kind == MathValue.DataType.Decimal);
+
+    private MathValue EvaluateRoot(MathValue value, MathValue degree)
+    {
+        if (degree.IsZero)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UndefinedMathResult, "Root degree cannot be zero."));
+        }
+
+        bool hasFraction = MathValue.TryToRational(value, out var numerator, out var denominator);
+        bool isNegative = hasFraction ? numerator.Sign < 0 : value.DoubleValue < 0;
+        bool hasIntegerDegree = degree.TryGetInteger(out var integerDegree);
+
+        if (isNegative && (!hasIntegerDegree || integerDegree.IsEven))
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UndefinedMathResult, "A negative number requires an odd integer root degree."));
+        }
+
+        if (hasFraction && hasIntegerDegree && integerDegree > 0 && integerDegree <= int.MaxValue)
+        {
+            int exactDegree = (int)integerDegree;
+            if (numerator.TryGetExactRoot(exactDegree, out var numeratorRoot) &&
+                denominator.TryGetExactRoot(exactDegree, out var denominatorRoot))
+            {
+                return ExactFunctionFraction(numeratorRoot, denominatorRoot, value);
+            }
+        }
+
+        double projectedValue = value.AsDouble();
+        double magnitude = isNegative ? -projectedValue : projectedValue;
+        double root = hasFraction && !numerator.IsZero && !double.IsNormal(magnitude)
+            ? ApproximateFractionRoot(BigInteger.Abs(numerator), denominator, degree)
+            : ApproximateRoot(magnitude, degree.AsDouble());
+
+        return new MathValue(isNegative ? -root : root);
+    }
+
+    private static double ApproximateRoot(double value, double degree) => degree switch
+    {
+        2 => Math.Sqrt(value),
+        3 => Math.Cbrt(value),
+        _ => Math.Pow(value, 1.0 / degree)
+    };
+
+    private static double ApproximateFractionRoot(BigInteger numerator, BigInteger denominator, MathValue degree)
+    {
+        // Keep the magnitude in a separate exponent before converting the fraction to Double.
+        int exponent = (int)(numerator.GetBitLength() - denominator.GetBitLength());
+        BigInteger scaledNumerator = numerator;
+        BigInteger scaledDenominator = denominator;
+        if (exponent >= 0)
+        {
+            scaledDenominator <<= exponent;
+        }
+        else
+        {
+            scaledNumerator <<= -exponent;
+        }
+
+        double mantissa = MathValue.DivideIntegersAsDouble(scaledNumerator, scaledDenominator);
+        double approximateDegree = degree.AsDouble();
+
+        if (degree.TryGetInteger(out var integerDegree) && integerDegree >= int.MinValue && integerDegree <= int.MaxValue)
+        {
+            // Split the exponent so underflow or overflow occurs only at the final root's scale.
+            int divisor = (int)integerDegree;
+            int rootExponent = exponent / divisor;
+            int remainder = exponent % divisor;
+            double mantissaRoot = ApproximateRoot(mantissa, approximateDegree);
+            double fractionalScale = Math.Pow(2, (double)remainder / divisor);
+            return Math.ScaleB(mantissaRoot * fractionalScale, rootExponent);
+        }
+
+        double logarithm = exponent + Math.Log2(mantissa);
+        return Math.Pow(2, logarithm / approximateDegree);
+    }
+
+    private MathValue RoundFraction(BigInteger numerator, BigInteger denominator, int places, MathValue input)
+    {
+        if (denominator.IsOne || numerator.IsZero)
+        {
+            return ExactFunctionFraction(numerator, BigInteger.One, input);
+        }
+        var scale = BigInteger.Pow(10, places);
+        if (scale.GetBitLength() > CalculationLimits.MaxIntermediateBits ||
+            (!numerator.IsZero &&
+             BigInteger.Abs(numerator).GetBitLength() + scale.GetBitLength() - 1 > CalculationLimits.MaxIntermediateBits))
+        {
+            throw new CalculationLimitException();
+        }
+        var scaled = numerator * scale;
+        if (BigInteger.Abs(scaled).GetBitLength() > CalculationLimits.MaxIntermediateBits)
+        {
+            throw new CalculationLimitException();
+        }
+        var integral = BigInteger.DivRem(scaled, denominator, out var remainder);
+        if (BigInteger.Abs(remainder) >= (denominator + 1) / 2)
+        {
+            integral += numerator.Sign;
+        }
+        return ExactFunctionFraction(integral, scale, input);
     }
 
     // 100 revolutions (800 quarter-turns) provides ample range for practical angular
@@ -1691,17 +1497,17 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
     private static MathValue ToIntegralMathValue(double roundedValue)
     {
         // When rounding or truncating an IEEE 754 double, preserve integer closure if the
-        // resulting number is finite and within supported integer bit limits. Non-finite values
-        // (NaN, infinities) remain Double.
+        // resulting number is finite and within supported integer bit limits. Non-finite
+        // values (NaN, infinities) remain Double.
         if (double.IsFinite(roundedValue))
         {
-            return new MathValue((BigInteger)roundedValue);
+            return new MathValue((BigInteger)roundedValue).WithAccuracy(CalculationAccuracy.Unverified);
         }
 
         return new MathValue(roundedValue);
     }
 
-    private static MathValue EvaluateFactorial(MathValue argument)
+    private MathValue EvaluateFactorial(MathValue argument)
     {
         if (!argument.TryGetInteger(out var factorialArgument))
         {
@@ -1724,7 +1530,8 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         BigInteger f = 1;
         for (int i = 2; i <= n; i++)
         {
-            f *= i;
+            f = MathValue.Product(f, i);
+            ValidateValue(new MathValue(f));
         }
 
         return new MathValue(f);

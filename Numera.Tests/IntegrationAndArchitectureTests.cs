@@ -54,7 +54,8 @@ public sealed class IntegrationAndArchitectureTests
         // Comparisons.
         Assert.IsTrue(result > 7);
         Assert.IsTrue(result < 8);
-        Assert.IsTrue(result == (71m / 9m));
+        Assert.IsFalse(result == (71m / 9m));
+        Assert.IsTrue(result == MathValue.FromFraction(71, 9));
 
         // Explicit casts.
         double d = (double)result;
@@ -135,11 +136,10 @@ public sealed class IntegrationAndArchitectureTests
         // Round 3: a * 3 => (1/3 * 2) * 3 = 2
         var r3 = engine.Evaluate("a * 3", r2.Context);
 
-        // The result is an exact integer, but the datatype is still Double because the
-        // chain contained division.
-        Assert.AreEqual(MathValue.DataType.Double, r3.Value.Kind);
+        Assert.AreEqual(MathValue.DataType.Integer, r3.Value.Kind);
         Assert.AreEqual("2", r3.PrimaryDisplay);
-        Assert.AreEqual(2.0, r3.Value.DoubleValue);
+        Assert.AreEqual(new BigInteger(2), r3.Value.IntegerValue);
+        Assert.AreEqual(CalculationAccuracy.Exact, r3.Accuracy);
     }
 
     [TestMethod]
@@ -161,13 +161,15 @@ public sealed class IntegrationAndArchitectureTests
     }
 
     [TestMethod]
-    public void DecimalOverflow_FractionalNumbers_FallBackToDouble()
+    public void DecimalOverflow_FractionalNumbers_PreserveRational()
     {
         string maxStr = decimal.MaxValue.ToString(CultureInfo.InvariantCulture);
 
-        // Overflows decimal with fractional component, so must fall back to double.
         var fracSum = Calculator.Evaluate($"{maxStr} + 0.5");
-        Assert.AreEqual(MathValue.DataType.Double, fracSum.Type);
+        Assert.AreEqual(MathValue.DataType.Rational, fracSum.Type);
+        Assert.AreEqual(new BigInteger(decimal.MaxValue) * 2 + 1, fracSum.Value.Numerator);
+        Assert.AreEqual(new BigInteger(2), fracSum.Value.Denominator);
+        Assert.AreEqual(CalculationAccuracy.Exact, fracSum.Accuracy);
         Assert.IsTrue(fracSum.IsFinite);
     }
 
@@ -287,7 +289,7 @@ public sealed class IntegrationAndArchitectureTests
 
         // Direct result inspection.
         Assert.IsTrue(res.HasAssignments);
-        Assert.AreEqual("x = 42 (42)", res.AssignmentSummary);
+        Assert.AreEqual("x = 42", res.AssignmentSummary);
         Assert.AreEqual("42", res.PrimaryDisplay);
 
         // Directly format to presentation card.
@@ -298,6 +300,6 @@ public sealed class IntegrationAndArchitectureTests
         // Card preserves AssignedVariables and AssingmentSummary.
         Assert.IsNotNull(card.AssignedVariables);
         Assert.AreEqual(1, card.AssignedVariables.Count);
-        Assert.AreEqual("x = 42 (42)", card.AssignmentSummary);
+        Assert.AreEqual("x = 42", card.AssignmentSummary);
     }
 }

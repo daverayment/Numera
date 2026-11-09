@@ -53,10 +53,16 @@ var engine = new CalculatorEngine(new CalculatorOptions { CustomFunctions = func
 ## Design Characteristics & Limitations
 
 ### 1. Eager Argument Evaluation
-All arguments passed to custom functions are evaluated **eagerly** before invoking the callback delegate. Short-circuiting or conditional argument evaluation (such as an `if(condition, thenValue, elseValue)` construct) cannot prevent side-effects or limit checks in unselected branches.
+All arguments passed to a reached custom function are evaluated **once, in source order**, before invoking the callback delegate. Logical and comparison short-circuiting can skip an entire function occurrence, but functions themselves have no lazy argument branches.
+
+Two written calls execute twice. Reusing one completed `EvaluationResult`, variable, or `ans` uses its captured value and never invokes its stored expression again.
 
 ### 2. No AST Leakage
 Callbacks receive evaluated `IReadOnlyList<MathValue>` arguments and return a `MathValue`. Syntax tree nodes, token spans, and parser internal states are intentionally kept internal and are never exposed to custom implementations.
+
+Arguments can be Rational. Inspect `Kind` for representation access, or explicitly use `ToDouble()` / `ToDecimal()` when a scalar is required. Exact arithmetic preserves fractions across callbacks.
+
+Values carry `Accuracy` (`Exact` or `Unverified`). Integer, Decimal, and fraction construction describe exact supplied values; ordinary Double construction is Unverified. `WithAccuracy` is a trusted caller assertion, not an independent numerical proof. Unverified inputs conservatively propagate through function evaluation.
 
 ### 3. Arity & Case-Insensitive Matching
 - Function identifiers are matched ordinally and case-insensitively, consistent with all Numera identifiers.
@@ -73,11 +79,10 @@ Conflicts are validated at engine creation and throw `ArgumentException`.
 
 ### 5. Exception Handling & Safety Limits
 - If a custom function throws `DivideByZeroException`, it is mapped to `EvaluationError.DivisionByZero`.
-- If a custom function throws `CalculationLimitException` (or produces an integer exceeding `CalculationLimits.MaxIntegerBits`), the ceiling violation is enforced immediately.
+- If a custom function throws `CalculationLimitException` or returns a value exceeding the engine's configured integer or rational component limits, the ceiling violation is enforced immediately.
 - Any other uncaught exception thrown by a callback is wrapped into an `ExpressionException` with `EvaluationError.EvaluationFailed` preserving the original exception message and source location span.
 
 ### 6. Expression Formatting
 Custom function calls format cleanly across all supported expression rendering styles:
 - **Typographic & ASCII**: Formatted with standard comma-separated arguments, e.g. `myFunc(21)`.
 - **MathJax / LaTeX**: Multi-character custom function identifiers and names containing underscores are automatically escaped and typeset using `\operatorname{...}`, e.g. `custom_fn(10)` becomes `\operatorname{custom\_fn}(10)`.
-

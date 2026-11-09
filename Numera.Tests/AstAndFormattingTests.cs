@@ -506,6 +506,16 @@ public sealed class AstAndFormattingTests
         // Negative power superscript
         string negPow = Calculator.FormatExpression("2^-3");
         Assert.AreEqual("2⁻³", negPow);
+
+        // Extreme exponents format in scientific notation for Typographic and Ascii styles
+        string extremeSmallTypo = Calculator.FormatExpression("1e-4932", ExpressionFormatOptions.Typographic);
+        Assert.AreEqual("1 ×10^-4932", extremeSmallTypo);
+
+        string extremeLargeTypo = Calculator.FormatExpression("1e4932", ExpressionFormatOptions.Typographic);
+        Assert.AreEqual("1 ×10^4932", extremeLargeTypo);
+
+        string extremeSmallAscii = Calculator.FormatExpression("1e-4932", ExpressionFormatOptions.Ascii);
+        Assert.AreEqual("1E-4932", extremeSmallAscii);
     }
 
     [TestMethod]
@@ -554,6 +564,21 @@ public sealed class AstAndFormattingTests
         // Scientific notation double parsed from input
         string sciFormatted = Calculator.FormatExpression("1E-30", ExpressionFormatOptions.LaTeX);
         Assert.AreEqual(@"1 \times 10^{-30}", sciFormatted);
+
+        // Extreme exponents beyond standard float types should format in scientific notation, not massive fractions
+        string extremeSmall = Calculator.FormatExpression("1e-4932", ExpressionFormatOptions.LaTeX);
+        Assert.AreEqual(@"1 \times 10^{-4932}", extremeSmall);
+
+        string extremeLarge = Calculator.FormatExpression("1e4932", ExpressionFormatOptions.LaTeX);
+        Assert.AreEqual(@"1 \times 10^{4932}", extremeLarge);
+
+        // Powers of scientific numbers should wrap base in parentheses
+        string extremePow = Calculator.FormatExpression("(1e-4932)^2", ExpressionFormatOptions.LaTeX);
+        Assert.AreEqual(@"(1 \times 10^{-4932})^{2}", extremePow);
+
+        // Genuine fractions should remain fractions
+        string frac = Calculator.FormatExpression("1/3", ExpressionFormatOptions.LaTeX);
+        Assert.AreEqual(@"\frac{1}{3}", frac);
 
         // Infinities and NaN
         var posInf = new NumberNode(new MathValue(double.PositiveInfinity));
@@ -664,7 +689,7 @@ public sealed class AstAndFormattingTests
 
         // 1e5 vs 100000.0 parsed from text
         Assert.AreEqual("100000", Calculator.FormatExpression("1e5", ExpressionFormatOptions.LaTeX));
-        Assert.AreEqual("100000.0", Calculator.FormatExpression("100000.0", ExpressionFormatOptions.LaTeX));
+        Assert.AreEqual("100000", Calculator.FormatExpression("100000.0", ExpressionFormatOptions.LaTeX));
 
         // Double unary negation prints as -(-x) rather than --x
         Assert.AreEqual("-(-1)", Calculator.FormatExpression("--1", ExpressionFormatOptions.Ascii));
@@ -689,9 +714,9 @@ public sealed class AstAndFormattingTests
         Assert.AreEqual(new BigInteger(1), Calculator.Evaluate("1!").IntegerValue);
 
         // Ambiguity and comparisons
-        Assert.AreEqual(1m, Calculator.Evaluate("5! != 3").DecimalValue);
-        Assert.AreEqual(1m, Calculator.Evaluate("5! == 120").DecimalValue);
-        Assert.AreEqual(1m, Calculator.Evaluate("5!==120").DecimalValue);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("5! != 3").Value);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("5! == 120").Value);
+        Assert.AreEqual(new MathValue(1m), Calculator.Evaluate("5!==120").Value);
 
         // Precedence: postfix factorial binds tighter than prefix negate
         Assert.AreEqual(new BigInteger(-6), Calculator.Evaluate("-3!").IntegerValue);
@@ -756,8 +781,8 @@ public sealed class AstAndFormattingTests
             previousResult: null);
 
         // Juxtaposition with variable and grouping.
-        Assert.AreEqual(6m, Calculator.Evaluate("2x", options).DecimalValue);
-        Assert.AreEqual(12m, Calculator.Evaluate("x y", options).DecimalValue);
+        Assert.AreEqual(new MathValue(6m), Calculator.Evaluate("2x", options).Value);
+        Assert.AreEqual(new MathValue(12m), Calculator.Evaluate("x y", options).Value);
         Assert.AreEqual(new BigInteger(14), Calculator.Evaluate("2(3 + 4)").IntegerValue);
         Assert.AreEqual(new BigInteger(21), Calculator.Evaluate("(1 + 2)(3 + 4)").IntegerValue);
 
@@ -769,10 +794,10 @@ public sealed class AstAndFormattingTests
         Assert.IsTrue(bin.IsImplicit);
 
         // Precedence: 2x^2 parses as 2*(x^2) = 2*9 = 18.
-        Assert.AreEqual(18m, Calculator.Evaluate("2x^2", options).DecimalValue);
+        Assert.AreEqual(new MathValue(18m), Calculator.Evaluate("2x^2", options).Value);
 
         // Greek tokens as standalone symbols.
-        Assert.AreEqual(Calculator.Evaluate("2 * pi").DecimalValue, Calculator.Evaluate("2π").DecimalValue);
+        Assert.AreEqual(Calculator.Evaluate("2 * pi").Value, Calculator.Evaluate("2π").Value);
     }
 
     [TestMethod]
@@ -815,10 +840,10 @@ public sealed class AstAndFormattingTests
             previousResult: null);
 
         // Unicode variables like θ work cleanly.
-        Assert.AreEqual(10m, Calculator.Evaluate("2θ", variablesContext).DecimalValue);
+        Assert.AreEqual(new MathValue(10m), Calculator.Evaluate("2θ", variablesContext).Value);
 
         // Keyword boundary: android is a variable, not the keyword 'and'.
-        Assert.AreEqual(20m, Calculator.Evaluate("2 android", variablesContext).DecimalValue);
+        Assert.AreEqual(new MathValue(20m), Calculator.Evaluate("2 android", variablesContext).Value);
 
         // Function without parentheses reports requires parentheses error.
         var exSin = Assert.Throws<ExpressionException>(() => Calculator.Parse("sin"));
@@ -925,7 +950,7 @@ public sealed class AstAndFormattingTests
         // CalculationLimitException.
         Assert.Throws<CalculationLimitException>(() => Calculator.Parse(sinExpr));
 
-        // 200-deep parenthesised comparisons: (((1 == 1) == 1)...).
+        // 200-deep parenthesized comparisons: (((1 == 1) == 1)...).
         var sbComp = new StringBuilder();
         for (int i = 0; i < depth; i++) sbComp.Append('(');
         sbComp.Append("1 == 1");
@@ -1189,6 +1214,119 @@ public sealed class AstAndFormattingTests
         Assert.AreEqual(MathValue.DataType.Integer, result.Value.Kind);
         Assert.AreEqual(new BigInteger(18), result.Value.IntegerValue);
         Assert.AreEqual("18", result.PrimaryDisplay);
+    }
+
+    [TestMethod]
+    [DataRow("(x=2)+3", "(x = 2) + 3", "(x = 2) + 3", "(x = 2) + 3")]
+    [DataRow("3+(x=2)", "3 + (x = 2)", "3 + (x = 2)", "3 + (x = 2)")]
+    [DataRow("(x=2)+3+4", "(x = 2) + 3 + 4", "(x = 2) + 3 + 4", "(x = 2) + 3 + 4")]
+    [DataRow("(x=2)+(x=3)", "(x = 2) + (x = 3)", "(x = 2) + (x = 3)", "(x = 2) + (x = 3)")]
+    [DataRow("-(x=2)", "-(x = 2)", "−(x = 2)", "-(x = 2)")]
+    [DataRow("(x=2)!", "(x = 2)!", "(x = 2)!", "(x = 2)!")]
+    [DataRow("(x=2)^3", "(x = 2) ^ 3", "(x = 2)³", "(x = 2)^{3}")]
+    [DataRow("(x=2)/3", "(x = 2) / 3", "(x = 2) ÷ 3", @"\frac{x = 2}{3}")]
+    [DataRow("(x=2)<3", "(x = 2) < 3", "(x = 2) < 3", "(x = 2) < 3")]
+    [DataRow("(x=0)||1", "(x = 0) || 1", "(x = 0) || 1", @"(x = 0) \lor 1")]
+    [DataRow("2(x=3)", "2 (x = 3)", "2 (x = 3)", "2 (x = 3)")]
+    [DataRow("max((x=2),3)", "max((x = 2), 3)", "max((x = 2), 3)", @"\max((x = 2), 3)")]
+    [DataRow("sqrt((x=4))", "sqrt((x = 4))", "√((x = 4))", @"\sqrt{x = 4}")]
+    [DataRow("sin((x=0))", "sin((x = 0))", "sin((x = 0))", @"\sin((x = 0))")]
+    [DataRow("root((x=8),3)", "root((x = 8), 3)", "root((x = 8), 3)", @"\operatorname{root}((x = 8), 3)")]
+    [DataRow("a=b=(x=2)+3", "a = b = (x = 2) + 3", "a = b = (x = 2) + 3", "a = b = (x = 2) + 3")]
+    public void NestedAssignmentsRetainTheirGroupingAndEvaluationSemantics(
+        string expression, string ascii, string typographic, string latex)
+    {
+        var expected = Calculator.Evaluate(expression);
+        Assert.AreEqual(latex, Calculator.FormatExpression(expression, ExpressionFormatOptions.LaTeX));
+        Assert.AreEqual(typographic, Calculator.FormatExpression(expression, ExpressionFormatOptions.Typographic));
+
+        string formatted = Calculator.FormatExpression(expression, ExpressionFormatOptions.Ascii);
+        Assert.AreEqual(ascii, formatted);
+        var restored = Calculator.Evaluate(formatted);
+        Assert.AreEqual(expected.Value, restored.Value);
+        Assert.AreEqual(expected.AssignedVariables.Count, restored.AssignedVariables.Count);
+        for (int i = 0; i < expected.AssignedVariables.Count; i++)
+        {
+            Assert.AreEqual(expected.AssignedVariables[i].Name, restored.AssignedVariables[i].Name);
+            Assert.AreEqual(expected.AssignedVariables[i].Value, restored.AssignedVariables[i].Value);
+        }
+        foreach (var variable in expected.Context.Variables)
+        {
+            Assert.AreEqual(variable.Value, restored.Context.Variables[variable.Name].Value);
+        }
+    }
+
+    [TestMethod]
+    [DataRow(ExpressionFormatStyle.NormalizedAscii)]
+    [DataRow(ExpressionFormatStyle.TypographicUnicode)]
+    [DataRow(ExpressionFormatStyle.MathJax)]
+    public void ExpressionFormattingRejectsInvalidFixedThresholdsForEveryInput(ExpressionFormatStyle style)
+    {
+        foreach (int threshold in new[] { int.MinValue, -1, 0, CalculationLimits.MaxSignificantDigits + 1, int.MaxValue })
+        {
+            var options = new ExpressionFormatOptions { Style = style, MaxFixedDigits = threshold };
+            foreach (string expression in new[] { "0", "2", "1e100", "pi" })
+            {
+                var node = Calculator.Parse(expression);
+                var textException = Assert.ThrowsExactly<ArgumentOutOfRangeException>(
+                    () => Calculator.FormatExpression(expression, options));
+                var nodeException = Assert.ThrowsExactly<ArgumentOutOfRangeException>(
+                    () => Calculator.FormatExpression(node, options));
+                Assert.AreEqual(nameof(ExpressionFormatOptions.MaxFixedDigits), textException.ParamName);
+                Assert.AreEqual(nameof(ExpressionFormatOptions.MaxFixedDigits), nodeException.ParamName);
+            }
+
+            Assert.ThrowsExactly<ArgumentOutOfRangeException>(
+                () => Calculator.FormatExpression(new NumberNode(new MathValue(double.NaN)), options));
+        }
+    }
+
+    [TestMethod]
+    public void ExpressionFormattingRejectsUndefinedStylesAndSymbols()
+    {
+        (ExpressionFormatOptions Options, string Parameter)[] cases =
+        [
+            (new() { Style = (ExpressionFormatStyle)99 }, nameof(ExpressionFormatOptions.Style)),
+            (new() { Multiplication = (MultiplicationSymbol)99 }, nameof(ExpressionFormatOptions.Multiplication)),
+            (new() { Division = (DivisionSymbol)99 }, nameof(ExpressionFormatOptions.Division))
+        ];
+
+        foreach (var (options, parameter) in cases)
+        {
+            var exception = Assert.ThrowsExactly<ArgumentOutOfRangeException>(
+                () => Calculator.FormatExpression("2", options));
+            Assert.AreEqual(parameter, exception.ParamName);
+        }
+    }
+
+    [TestMethod]
+    [DataRow(ExpressionFormatStyle.NormalizedAscii, "1.2345E4", "1.2345E-4")]
+    [DataRow(ExpressionFormatStyle.TypographicUnicode, "1.2345 ×10^4", "1.2345 ×10^-4")]
+    [DataRow(ExpressionFormatStyle.MathJax, @"1.2345 \times 10^{4}", @"1.2345 \times 10^{-4}")]
+    public void ExpressionNotationThresholdDoesNotReduceScientificPrecision(
+        ExpressionFormatStyle style, string large, string small)
+    {
+        var options = new ExpressionFormatOptions { Style = style, MaxFixedDigits = 2 };
+
+        Assert.AreEqual(large, Calculator.FormatExpression("12345", options));
+        Assert.AreEqual(small, Calculator.FormatExpression("0.00012345", options));
+    }
+
+    [TestMethod]
+    [DataRow(ExpressionFormatStyle.NormalizedAscii, "1E1", "1E1000")]
+    [DataRow(ExpressionFormatStyle.TypographicUnicode, "1 ×10^1", "1 ×10^1000")]
+    [DataRow(ExpressionFormatStyle.MathJax, @"1 \times 10^{1}", @"1 \times 10^{1000}")]
+    public void ExpressionFixedThresholdSupportsBothValidatedBoundaries(
+        ExpressionFormatStyle style, string smallScientific, string largeScientific)
+    {
+        var minimum = new ExpressionFormatOptions { Style = style, MaxFixedDigits = 1 };
+        Assert.AreEqual("1", Calculator.FormatExpression("1", minimum));
+        Assert.AreEqual("0.1", Calculator.FormatExpression("0.1", minimum));
+        Assert.AreEqual(smallScientific, Calculator.FormatExpression("10", minimum));
+
+        var maximum = minimum with { MaxFixedDigits = CalculationLimits.MaxSignificantDigits };
+        Assert.AreEqual("1" + new string('0', 999), Calculator.FormatExpression("1e999", maximum));
+        Assert.AreEqual(largeScientific, Calculator.FormatExpression("1e1000", maximum));
     }
 
     private sealed record DummyTestNode() : ExpressionNode(Span: default)

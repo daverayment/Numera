@@ -11,12 +11,27 @@ namespace Numera;
 public sealed record CalculatorOptions
 {
     /// <summary>
+    /// Default options: culture-invariant, radians, with standard human-input
+    /// normalization enabled. The instance is immutable and shared.
+    /// </summary>
+    public static CalculatorOptions Default { get; } = new();
+
+    // Culture and Environment.
+
+    /// <summary>
     /// The culture used both to interpret typed input (decimal and grouping separators,
     /// argument delimiters) and to format results. Sharing one culture for both
     /// directions is what keeps a displayed result re-parseable. Defaults to
     /// <see cref="CultureInfo.InvariantCulture"/>.
     /// </summary>
     public CultureInfo Culture { get; init; } = CultureInfo.InvariantCulture;
+
+    /// <summary>
+    /// The angular measurement unit applied to trigonometric functions. Defaults to
+    /// <see cref="AngleUnit.Radians"/> and is never changed implicitly, because pasted
+    /// formulae assume radians.
+    /// </summary>
+    public AngleUnit AngleUnit { get; init; } = AngleUnit.Radians;
 
     /// <summary>
     /// Configuration for human-input normalization (launcher equals, Unicode operators,
@@ -28,28 +43,19 @@ public sealed record CalculatorOptions
     /// </summary>
     public NormalizationOptions? Normalization { get; init; } = NormalizationOptions.Default;
 
-    /// <summary>
-    /// Maximum input length in UTF-16 code units, including whitespace. Must be between 1
-    /// and <see cref="CalculationLimits.MaxInputLength"/>; callers can lower the ceiling
-    /// but not raise it. Out-of-range values cause <see cref="CalculatorEngine"/>
-    /// construction to throw.
-    /// </summary>
-    public int MaxInputLength { get; init; } = CalculationLimits.MaxInputLength;
+    // Language and grammar switches.
 
     /// <summary>
-    /// Maximum active unary-parser depth, including recursion through grouping, function
-    /// arguments, unary signs, and powers; not just bracket nesting. Must be between 1
-    /// and <see cref="CalculationLimits.MaxNestingDepth"/>; out-of-range values cause
-    /// <see cref="CalculatorEngine"/> construction to throw.
+    /// When enabled, permits implicit juxtaposition multiplication (<c>2pi</c>,
+    /// <c>2(3)</c>). Defaults to <c>true</c>.
     /// </summary>
-    public int MaxNestingDepth { get; init; } = CalculationLimits.MaxNestingDepth;
+    public bool AllowImplicitMultiplication { get; init; } = true;
 
     /// <summary>
-    /// The angular measurement unit applied to trigonometric functions. Defaults to
-    /// <see cref="AngleUnit.Radians"/> and is never changed implicitly, because pasted
-    /// formulae assume radians.
+    /// When enabled, permits postfix factorial notation (<c>5!</c>).
+    /// Defaults to <c>true</c>.
     /// </summary>
-    public AngleUnit AngleUnit { get; init; } = AngleUnit.Radians;
+    public bool AllowPostfixFactorial { get; init; } = true;
 
     /// <summary>
     /// When enabled, requires explicit parentheses when logical NOT (<c>!</c> or
@@ -59,28 +65,94 @@ public sealed record CalculatorOptions
     public bool RequireExplicitLogicalNegation { get; init; }
 
     /// <summary>
-    /// When enabled, permits postfix factorial notation (<c>5!</c>).
-    /// Defaults to <c>true</c>.
-    /// </summary>
-    public bool AllowPostfixFactorial { get; init; } = true;
-
-    /// <summary>
-    /// When enabled, permits implicit juxtaposition multiplication (<c>2pi</c>,
-    /// <c>2(3)</c>). Defaults to <c>true</c>.
-    /// </summary>
-    public bool AllowImplicitMultiplication { get; init; } = true;
-
-    /// <summary>
     /// Custom functions available to expressions evaluated with this options instance.
     /// Defaults to an empty collection.
     /// </summary>
     public CustomFunctionCollection CustomFunctions { get; init; } = CustomFunctionCollection.Empty;
 
+    // Tunable safety limits.
+
     /// <summary>
-    /// Default options: culture-invariant, radians, with standard human-input
-    /// normalization enabled. The instance is immutable and shared.
+    /// Maximum input length in UTF-16 code units, including whitespace. Must be between 1
+    /// and <see cref="CalculationLimits.MaxInputLength"/>; callers can lower the ceiling
+    /// but not raise it.
     /// </summary>
-    public static CalculatorOptions Default { get; } = new();
+    public int MaxInputLength { get; init; } = CalculationLimits.MaxInputLength;
+
+    /// <summary>
+    /// Maximum active unary-parser depth, including recursion through grouping, function
+    /// arguments, unary signs, and powers; not just bracket nesting. Must be between 1
+    /// and <see cref="CalculationLimits.MaxNestingDepth"/>.
+    /// </summary>
+    public int MaxNestingDepth { get; init; } = CalculationLimits.MaxNestingDepth;
+
+    /// <summary>
+    /// Maximum stored integer magnitude in bits, including sign. Must be between 1 and
+    /// <see cref="CalculationLimits.MaxIntegerBits"/>.
+    /// </summary>
+    public int MaxIntegerBits { get; init; } = CalculationLimits.MaxIntegerBits;
+
+    /// <summary>
+    /// Maximum absolute integer exponent, including sign. Must be between 1 and
+    /// <see cref="CalculationLimits.MaxExponentMagnitude"/>.
+    /// </summary>
+    public int MaxExponentMagnitude { get; init; } = CalculationLimits.MaxExponentMagnitude;
+
+    // Formatting defaults for the engine.
+
+    /// <summary>
+    /// Default formatting options applied when formatting results with this engine.
+    /// Defaults to <see cref="ResultFormatOptions.Default"/>.
+    /// </summary>
+    public ResultFormatOptions ResultFormat { get; init; } = ResultFormatOptions.Default;
+
+    /// <summary>
+    /// Validates the options against hard safety ceilings and enum ranges.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">Thrown if <see cref="Culture"/> or
+    /// <see cref="CustomFunctions"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if any limit or setting is
+    /// outside its valid range.</exception>
+    public void Validate()
+    {
+        ArgumentNullException.ThrowIfNull(Culture);
+        ArgumentNullException.ThrowIfNull(CustomFunctions);
+
+        if (!Enum.IsDefined(AngleUnit))
+        {
+            throw new ArgumentOutOfRangeException(nameof(AngleUnit), "Invalid angle unit.");
+        }
+
+        if (MaxInputLength < 1 || MaxInputLength > CalculationLimits.MaxInputLength)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxInputLength),
+                $"Maximum input length must be between 1 and {CalculationLimits.MaxInputLength}.");
+        }
+
+        if (MaxNestingDepth < 1 || MaxNestingDepth > CalculationLimits.MaxNestingDepth)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxNestingDepth),
+                $"Maximum nesting depth must be between 1 and {CalculationLimits.MaxNestingDepth}.");
+        }
+
+        if (MaxIntegerBits < 1 || MaxIntegerBits > CalculationLimits.MaxIntegerBits)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxIntegerBits),
+                $"Maximum integer bits must be between 1 and {CalculationLimits.MaxIntegerBits}.");
+        }
+
+        if (MaxExponentMagnitude < 1 || MaxExponentMagnitude > CalculationLimits.MaxExponentMagnitude)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxExponentMagnitude),
+                $"Maximum exponent magnitude must be between 1 and {CalculationLimits.MaxExponentMagnitude}.");
+        }
+
+        ResultFormat?.Validate();
+    }
 
     /// <summary>
     /// Creates default options for the specified culture, so numbers typed and displayed
@@ -108,31 +180,4 @@ public sealed record CalculatorOptions
     /// <see cref="Culture"/>.</returns>
     public static CalculatorOptions ForCurrentCulture() =>
         ForCulture(CultureInfo.CurrentCulture);
-
-    // Called once by CalculatorEngine's constructor so evaluation calls need not re-check
-    // immutable options.
-    internal void Validate()
-    {
-        if (!Enum.IsDefined(AngleUnit))
-        {
-            throw new ArgumentOutOfRangeException(nameof(AngleUnit));
-        }
-
-        ArgumentNullException.ThrowIfNull(Culture);
-
-        // Options may reduce work for a caller, but cannot bypass the engine's ceilings.
-        if (MaxInputLength is < 1 or > CalculationLimits.MaxInputLength)
-        {
-            throw new ArgumentOutOfRangeException(nameof(MaxInputLength));
-        }
-
-        if (MaxNestingDepth is < 1 or > CalculationLimits.MaxNestingDepth)
-        {
-            throw new ArgumentOutOfRangeException(nameof(MaxNestingDepth));
-        }
-
-        // Custom functions are validated on construction, but the collection itself must
-        // be non-null.
-        ArgumentNullException.ThrowIfNull(CustomFunctions);
-    }
 }

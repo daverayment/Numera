@@ -54,12 +54,14 @@ public sealed class FromRationalTests
     [DataRow(-1, 8, "-0.125")]
     [DataRow(1, -8, "-0.125")]
     [DataRow(-1, -8, "0.125")]
-    public void FromRational_TerminatingFractions_ReturnExactDecimal(long n, long d, string expected)
+    public void FromRational_TerminatingFractions_RemainExactRational(long n, long d, string expected)
     {
-        var result = MathValue.FromRational(n, d); ;
+        var result = MathValue.FromRational(n, d);
 
-        Assert.AreEqual(MathValue.DataType.Decimal, result.Kind);
-        Assert.AreEqual(decimal.Parse(expected, CultureInfo.InvariantCulture), result.DecimalValue);
+        Assert.AreEqual(MathValue.DataType.Rational, result.Kind);
+        Assert.AreEqual(new MathValue(decimal.Parse(expected, CultureInfo.InvariantCulture)).GetExactFraction(),
+            result.GetExactFraction());
+        Assert.AreEqual(decimal.Parse(expected, CultureInfo.InvariantCulture), result.ToDecimal());
     }
 
     [TestMethod]
@@ -81,62 +83,68 @@ public sealed class FromRationalTests
     // Scale boundaries.
 
     [TestMethod]
-    public void FromRational_ScaleAt28Places_EvaluatesToExactDecimal()
+    public void FromRational_ScaleAt28Places_PreservesExactRational()
     {
         // 1 / 2^28 = 0.0000000037252902984619140625.
         var den28 = BigInteger.One << 28;
         var result = MathValue.FromRational(BigInteger.One, den28);
 
-        Assert.AreEqual(MathValue.DataType.Decimal, result.Kind);
+        Assert.AreEqual(MathValue.DataType.Rational, result.Kind);
+        Assert.AreEqual((BigInteger.One, den28), result.GetExactFraction());
         // Verify round-trip exactness.
-        Assert.AreEqual(1.0000000000000000000000000000m, result.DecimalValue * (decimal)den28);
+        Assert.AreEqual(1.0000000000000000000000000000m, result.ToDecimal() * (decimal)den28);
 
         // 1 / 5^28 = 0.0000000000000000000268435456, requires scale 28.
         var den5_28 = BigInteger.Pow(5, 28);
         result = MathValue.FromRational(BigInteger.One, den5_28);
 
-        Assert.AreEqual(MathValue.DataType.Decimal, result.Kind);
-        Assert.AreEqual(1.0000000000000000000000000000m, result.DecimalValue * (decimal)den5_28);
+        Assert.AreEqual(MathValue.DataType.Rational, result.Kind);
+        Assert.AreEqual((BigInteger.One, den5_28), result.GetExactFraction());
+        Assert.AreEqual(1.0000000000000000000000000000m, result.ToDecimal() * (decimal)den5_28);
     }
 
     [TestMethod]
-    public void FromRational_ScaleAt29Places_FallsBackToDoubleWithoutRoundingDecimal()
+    public void FromRational_ScaleAt29Places_PreservesRationalWithoutRoundingDecimal()
     {
         // 1 / 2^29 = 0.00000000186264514923095703125, requires scale 29.
         var den29 = BigInteger.One << 29;
         Assert.IsFalse(MathValue.TryExactDecimal(BigInteger.One, den29, out _));
 
         var result = MathValue.FromRational(BigInteger.One, den29);
-        Assert.AreEqual(MathValue.DataType.Double, result.Kind);
-        Assert.AreEqual(Math.ScaleB(1.0, -29), result.DoubleValue);
+        Assert.AreEqual(MathValue.DataType.Rational, result.Kind);
+        Assert.AreEqual(BigInteger.One, result.Numerator);
+        Assert.AreEqual(den29, result.Denominator);
+        Assert.AreEqual(Math.ScaleB(1.0, -29), result.ToDouble());
 
         // 1 / 5^29 = 0.00000000000000000000536870912, requires scale 29.
         var den5_29 = BigInteger.Pow(5, 29);
         Assert.IsFalse(MathValue.TryExactDecimal(BigInteger.One, den5_29, out _));
 
         result = MathValue.FromRational(BigInteger.One, den5_29);
-        Assert.AreEqual(MathValue.DataType.Double, result.Kind);
+        Assert.AreEqual(MathValue.DataType.Rational, result.Kind);
+        Assert.AreEqual(BigInteger.One, result.Numerator);
+        Assert.AreEqual(den5_29, result.Denominator);
     }
 
     [TestMethod]
-    public void FromRational_ExtremeScaleOverflow_1Over2Pow80_ReturnsAccurateDouble()
+    public void FromRational_ExtremeScaleOverflow_1Over2Pow80_PreservesRational()
     {
-        // 1 / 2^80 terminates in R (needs 80 places), but would truncate to 4 digits. It
-        // must not evaluate to decimal; it must evaluate to double with 16 digits of
-        // precision.
+        // This terminating fraction needs 80 places, exceeding Decimal capacity.
         var den80 = BigInteger.One << 80;
 
         Assert.IsFalse(MathValue.TryExactDecimal(BigInteger.One, den80, out _));
 
         var result = MathValue.FromRational(BigInteger.One, den80);
-        Assert.AreEqual(MathValue.DataType.Double, result.Kind);
-        Assert.AreEqual(Math.ScaleB(1.0, -80), result.DoubleValue);
+        Assert.AreEqual(MathValue.DataType.Rational, result.Kind);
+        Assert.AreEqual(BigInteger.One, result.Numerator);
+        Assert.AreEqual(den80, result.Denominator);
+        Assert.AreEqual(Math.ScaleB(1.0, -80), result.ToDouble());
     }
 
     // Mantissa boundaries.
 
     [TestMethod]
-    public void FromRational_MantissaAtMax_PreservesExactDecimal()
+    public void FromRational_MantissaAtMax_PreservesExactRational()
     {
         // Mantissa = 2^96 - 1.
         // If den = 10, scale = 1, factor = 1 (p2 = 0, p5 = 0 because twos=1, fives=1).
@@ -148,12 +156,13 @@ public sealed class FromRationalTests
         Assert.AreEqual(7922816251426433759354395033.5m, decVal);
 
         var result = MathValue.FromRational(num, den);
-        Assert.AreEqual(MathValue.DataType.Decimal, result.Kind);
-        Assert.AreEqual(decVal, result.DecimalValue);
+        Assert.AreEqual(MathValue.DataType.Rational, result.Kind);
+        Assert.AreEqual(new MathValue(decVal).GetExactFraction(), result.GetExactFraction());
+        Assert.AreEqual(decVal, result.ToDecimal());
     }
 
     [TestMethod]
-    public void FromRational_MantissaExceeding96Bits_FallsBackToDouble()
+    public void FromRational_MantissaExceeding96Bits_PreservesRational()
     {
         // num = 2^96, den = 10.
         // scale = 1, mantissa = 2^96 (exceeds 96-bit limit by 1).
@@ -163,11 +172,13 @@ public sealed class FromRationalTests
         Assert.IsFalse(MathValue.TryExactDecimal(num, den, out _));
 
         var result = MathValue.FromRational(num, den);
-        Assert.AreEqual(MathValue.DataType.Double, result.Kind);
+        Assert.AreEqual(MathValue.DataType.Rational, result.Kind);
+        Assert.AreEqual(num / 2, result.Numerator);
+        Assert.AreEqual(new BigInteger(5), result.Denominator);
     }
 
     [TestMethod]
-    public void FromRational_LargeNumberDividedBy2_MantissaOverflow_FallsBackToDouble()
+    public void FromRational_LargeNumberDividedBy2_MantissaOverflow_PreservesRational()
     {
         // 29-digit integer where dividing by 2 requires 30 digits:
         // num = 8 * 10^28 (> decimal.MaxValue), den = 2.
@@ -179,32 +190,37 @@ public sealed class FromRationalTests
         Assert.IsFalse(MathValue.TryExactDecimal(oddNum, den, out _));
 
         var result = MathValue.FromRational(oddNum, den);
-        Assert.AreEqual(MathValue.DataType.Double, result.Kind);
-        Assert.AreEqual(4e28, result.DoubleValue, 1e20);
+        Assert.AreEqual(MathValue.DataType.Rational, result.Kind);
+        Assert.AreEqual(oddNum, result.Numerator);
+        Assert.AreEqual(den, result.Denominator);
+        Assert.AreEqual(4e28, result.ToDouble(), 1e20);
     }
 
     // GCD factor cancellation and non-terminating fractions.
 
     [TestMethod]
-    public void FromRational_GCDPreReduction_AllowsTerminatingDecimalAfterCancellation()
+    public void FromRational_GCDPreReduction_PreservesTerminatingRationalAfterCancellation()
     {
         // 7 / 14: denominator 14 has factor 7 (non-terminating). But GCD cancels 7,
         // leaving 1 / 2, which is terminating.
         var result = MathValue.FromRational(7, 14);
-        Assert.AreEqual(MathValue.DataType.Decimal, result.Kind);
-        Assert.AreEqual(0.5m, result.DecimalValue);
+        Assert.AreEqual(MathValue.DataType.Rational, result.Kind);
+        Assert.AreEqual((BigInteger.One, new BigInteger(2)), result.GetExactFraction());
+        Assert.AreEqual(0.5m, result.ToDecimal());
 
         // 9 / 12: denominator 12 has factor 3 (non-terminating). But GCD cancels 3,
         // leaving 3 / 4, which is terminating.
         result = MathValue.FromRational(9, 12);
-        Assert.AreEqual(MathValue.DataType.Decimal, result.Kind);
-        Assert.AreEqual(0.75m, result.DecimalValue);
+        Assert.AreEqual(MathValue.DataType.Rational, result.Kind);
+        Assert.AreEqual((new BigInteger(3), new BigInteger(4)), result.GetExactFraction());
+        Assert.AreEqual(0.75m, result.ToDecimal());
 
         // 39 / 65: denominator 65 has factor 13 (non-terminating). But GCD cancels 13,
         // leaving 3 / 5, which is terminating.
         result = MathValue.FromRational(39, 65);
-        Assert.AreEqual(MathValue.DataType.Decimal, result.Kind);
-        Assert.AreEqual(0.6m, result.DecimalValue);
+        Assert.AreEqual(MathValue.DataType.Rational, result.Kind);
+        Assert.AreEqual((new BigInteger(3), new BigInteger(5)), result.GetExactFraction());
+        Assert.AreEqual(0.6m, result.ToDecimal());
     }
 
     [TestMethod]
@@ -215,13 +231,15 @@ public sealed class FromRationalTests
     [DataRow(1, 11)]
     [DataRow(1, 13)]
     [DataRow(5, 12)]
-    public void FromRational_NonTerminatingFractions_FailExactDecimalAndProduceDouble(long n, long d)
+    public void FromRational_NonTerminatingFractions_FailExactDecimalAndProduceRational(long n, long d)
     {
         Assert.IsFalse(MathValue.TryExactDecimal(n, d, out _));
 
         var result = MathValue.FromRational(n, d);
-        Assert.AreEqual(MathValue.DataType.Double, result.Kind);
-        Assert.AreEqual((double)n / d, result.DoubleValue, 1e-15);
+        Assert.AreEqual(MathValue.DataType.Rational, result.Kind);
+        Assert.AreEqual(new BigInteger(n), result.Numerator);
+        Assert.AreEqual(new BigInteger(d), result.Denominator);
+        Assert.AreEqual((double)n / d, result.ToDouble(), 1e-15);
     }
 
     [TestMethod]

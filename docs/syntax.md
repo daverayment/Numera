@@ -13,7 +13,7 @@ Numera's grammar is deliberately small and unambiguous: a recursive-descent pars
 - **Scientific Notation:** e.g., `1e6`, `2.5e-3`, `1.23E+10`.
 
   > [!NOTE]
-  > A scientific literal with a whole-number value too large for a `double` is promoted to an exact integer, up to the 16,384-bit ceiling (about `1e4932`). Beyond that it fails with `NumericOverflow`.
+  > Finite literals are parsed exactly. A decimal point selects Decimal when exactly representable, even for `1.00`; fractional scientific notation such as `1e-2` also selects Decimal. Integers such as `42` and `1e6` stay Integer. Values beyond Decimal capacity remain exact as Rational or Integer. Integer division such as `1/2` produces Rational, not Decimal, unless it divides evenly. Reduced integer/fraction components are bounded by the configured numeric limits; exceeding them reports `LimitExceeded`, not a silent floating-point fallback.
 - **Radix Literals (Exact Arbitrary-Precision Integers):**
   - Hexadecimal: `0x...` (e.g. `0xFF`, `0xDEADBEEF`)
   - Binary: `0b...` (e.g. `0b10101011`)
@@ -23,13 +23,16 @@ Numera's grammar is deliberately small and unambiguous: a recursive-descent pars
 
 ## Constants
 
-Numera provides transcendental constants (case-insensitive):
+Numera provides these constants (case-insensitive). The transcendental constants
+are Decimal approximations with Unverified accuracy, not exact symbolic values:
 
 | Constant | Aliases | Description | Underlying Type |
 | :--- | :--- | :--- | :--- |
-| `pi` | `π`, `Π` | Ratio of circle circumference to diameter ($\approx 3.141592653589793$) | `double` |
-| `tau` | `τ`, `Τ` | Full circle angle constant in radians, $2\pi$ ($\approx 6.283185307179586$) | `double` |
-| `e` | | Base of the natural logarithm, Euler's number ($\approx 2.718281828459045$) | `double` |
+| `pi` | `π`, `Π` | Ratio of circle circumference to diameter ($\approx 3.141592653589793$) | `decimal` |
+| `tau` | `τ`, `Τ` | Full circle angle constant in radians, $2\pi$ ($\approx 6.283185307179586$) | `decimal` |
+| `e` | | Base of the natural logarithm, Euler's number ($\approx 2.718281828459045$) | `decimal` |
+| `phi` | `φ`, `Φ` | Golden ratio ($\approx 1.618033988749895$) | `decimal` |
+| `true`, `false` | | Exact truth values `1` and `0` | `BigInteger` |
 
 ---
 
@@ -70,7 +73,7 @@ Evaluation follows standard mathematical and scientific computing precedence (hi
 Function names are case-insensitive.
 
 ### Trigonometric Functions
-Trigonometric routines operate in radians by default, or in degrees/gradians when configured via `CalculatorOptions.AngleUnit` on a `CalculatorEngine`. In degree mode, cardinal angles (multiples of 90°/180°) evaluate to exact results without floating-point drift.
+Trigonometric routines operate in radians by default, or in degrees/gradians when configured via `CalculatorOptions.AngleUnit` on a `CalculatorEngine`. Cardinal-angle special cases can give clean numeric results, but ordinary floating-point function results remain Unverified; a whole-number display is not an exactness guarantee.
 
 | Function | Aliases | Description |
 | :--- | :--- | :--- |
@@ -120,7 +123,7 @@ Trigonometric routines operate in radians by default, or in degrees/gradians whe
 
 | Function | Description |
 | :--- | :--- |
-| `sqrt(x)` | Square root. Evaluates exact `BigInteger` for perfect integer squares, exact `decimal` where exact, double otherwise |
+| `sqrt(x)` | Square root. Recognized perfect integer squares return exact `BigInteger` roots; other inputs generally use Double |
 | `cbrt(x)` | Cube root |
 | `root(x, n)` | $n$-th root of $x$ |
 | `ln(x)` | Natural logarithm (base $e$) |
@@ -128,8 +131,8 @@ Trigonometric routines operate in radians by default, or in degrees/gradians whe
 | `log10(x)` | Base-10 logarithm |
 | `log2(x)` | Base-2 logarithm |
 | `logn(x, base)` | Logarithm of $x$ to an arbitrary base |
-| `log1p(x)` | $\ln(1 + x)$, accurate for small $|x|$ |
-| `expm1(x)` | $e^x - 1$, accurate for small $|x|$ |
+| `log1p(x)` | $\ln(1 + x)$, evaluated through the runtime's Double implementation; accuracy is Unverified |
+| `expm1(x)` | $e^x - 1$, evaluated through the runtime's Double implementation; accuracy is Unverified |
 
 ### Combinatorics & Number Theory
 *(These functions require exact integer arguments and evaluate via arbitrary-precision integers)*
@@ -141,7 +144,7 @@ Trigonometric routines operate in radians by default, or in degrees/gradians whe
 | `lcm(...values)` | | Least common multiple across one or more integers (variadic) |
 | `comb(n, k)` | `nCr`, `choose`, `binomial` | Binomial coefficient $\binom{n}{k}$ |
 | `perm(n, k)` | `nPr` | Permutations $P(n, k) = \frac{n!}{(n-k)!}$ |
-| `isprime(n)` | | Primality test (1 if prime, 0 otherwise; bounded by `MaxPrimalityBits = 2048`) |
+| `isprime(n)` | | Primality test (deterministic through unsigned 64-bit inputs; larger positive results are probable-prime results with Unverified accuracy; bounded by `MaxPrimalityBits = 2048`) |
 | `divcount(n)` | `divisorcount` | Number of positive divisors $d(n)$ |
 | `sigma(n[, k])` | `divsum` | Divisor sum $\sigma(n)$ or sum of $k$-th powers $\sigma_k(n)$ |
 | `totient(n)` | `phi`, `eulerphi` | Euler's totient function $\phi(n)$ |

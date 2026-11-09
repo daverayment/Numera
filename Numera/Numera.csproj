@@ -9,7 +9,7 @@
     <Version>1.0.0</Version>
     <Authors>Dave Rayment</Authors>
     <Copyright>Copyright (c) 2026 Dave Rayment</Copyright>
-    <Description>Lightweight mathematical expression evaluator for .NET with exact integer arithmetic, base-10 decimal preservation, and double fallback.</Description>
+    <Description>Lightweight mathematical expression evaluator for .NET with exact integer, decimal and rational arithmetic, captured-value evaluation, and explicit accuracy metadata.</Description>
     <PackageTags>calculator expression evaluator engine arithmetic math mathematics parser biginteger</PackageTags>
     <PackageProjectUrl>https://github.com/daverayment/Numera</PackageProjectUrl>
     <RepositoryUrl>https://github.com/daverayment/Numera</RepositoryUrl>

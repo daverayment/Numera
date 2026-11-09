@@ -81,6 +81,16 @@ public sealed record ExpressionFormatOptions
     public ExpressionFormatStyle Style { get; init; } = ExpressionFormatStyle.TypographicUnicode;
 
     /// <summary>
+    /// Gets the magnitude threshold for scientific notation in Integer, Decimal, and Rational nodes.
+    /// Fixed notation applies when the base-10 exponent is at least -MaxFixedDigits
+    /// and less than MaxFixedDigits. Defaults to 24; must be between 1 and
+    /// <see cref="CalculationLimits.MaxSignificantDigits"/> (1,000).
+    /// This threshold does not change scientific display precision, which uses the default
+    /// result precision of 24 significant digits. Double nodes use native general-format notation.
+    /// </summary>
+    public int MaxFixedDigits { get; init; } = 24;
+
+    /// <summary>
     /// Gets the multiplication symbol to render. Defaults to <see cref="MultiplicationSymbol.Cross"/>.
     /// </summary>
     public MultiplicationSymbol Multiplication { get; init; } = MultiplicationSymbol.Cross;
@@ -135,4 +145,33 @@ public sealed record ExpressionFormatOptions
         UseGreekSymbols = false,
         UseSuperscriptPowers = false,
     };
+
+    /// <summary>
+    /// Validates the rendering options against supported ranges and symbols.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if a setting is outside its supported range.</exception>
+    public void Validate()
+    {
+        if (MaxFixedDigits < 1 || MaxFixedDigits > CalculationLimits.MaxSignificantDigits)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxFixedDigits),
+                $"Maximum fixed digits must be between 1 and {CalculationLimits.MaxSignificantDigits}.");
+        }
+
+        if (!Enum.IsDefined(Style))
+        {
+            throw new ArgumentOutOfRangeException(nameof(Style));
+        }
+
+        if (!Enum.IsDefined(Multiplication))
+        {
+            throw new ArgumentOutOfRangeException(nameof(Multiplication));
+        }
+
+        if (!Enum.IsDefined(Division))
+        {
+            throw new ArgumentOutOfRangeException(nameof(Division));
+        }
+    }
 }

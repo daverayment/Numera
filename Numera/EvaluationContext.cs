@@ -63,8 +63,8 @@ public sealed record EvaluationContext
 
     /// <summary>
     /// The canonical AST expression corresponding to <see cref="PreviousResult"/>, if
-    /// available. Preserved so <c>ans</c> retains exact symbolic and rational definitions
-    /// across evaluations.
+    /// available. Preserved as expression metadata for formatting and inspection;
+    /// resolving <c>ans</c> uses its captured value, not this expression.
     /// </summary>
     public ExpressionNode? PreviousExpression { get; init; }
 

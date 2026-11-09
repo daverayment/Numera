@@ -401,7 +401,9 @@ public sealed class VariableCollection : IReadOnlyList<Variable>
         }
 
         static string GetDefinition(Variable v) =>
-            v.Definition != null ? $" ({v.Definition})" : "";
+            (v.Definition != null && v.Definition != v.Value.ToString()) ?
+                $" ({v.Definition})" :
+                "";
 
         return string.Join(", ", this.Select(v => $"{v.Name} = {v.Value}{GetDefinition(v)}"));
     }

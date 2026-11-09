@@ -11,7 +11,8 @@ namespace Numera;
 /// </summary>
 /// <remarks>
 /// Use <see cref="Expression"/> to preserve the parsed syntax tree across calculations,
-/// allowing exact algebraic and rational simplification through variable substitutions.
+/// for formatting and dependency inspection. Evaluation uses the captured
+/// <see cref="Value"/>, never a replay of the defining expression.
 /// Use <see cref="Definition"/> to preserve the original expression text when the
 /// variable is created or updated from parsed input.
 /// </remarks>

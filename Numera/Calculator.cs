@@ -161,6 +161,7 @@ public static class Calculator
     /// <returns>The rendered expression text.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
     /// null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if the rendering options are invalid.</exception>
     /// <exception cref="NumeraException">Thrown if the expression cannot be normalized or
     /// parsed.</exception>
     public static string FormatExpression(string expression, ExpressionFormatOptions? options = null) =>
@@ -176,6 +177,7 @@ public static class Calculator
     /// <returns>The rendered expression text.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="node"/> is null.
     /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if the rendering options are invalid.</exception>
     /// <exception cref="NumeraException">Thrown if the tree breaches nesting or length
     /// limits.</exception>
     public static string FormatExpression(ExpressionNode node, ExpressionFormatOptions? options = null) =>
@@ -195,7 +197,18 @@ public static class Calculator
     /// culture-specific display text, an invariant-culture string safe for machine use,
     /// and prefixed hex, binary and octal forms.</returns>
     public static FormattedCalculation FormatResult(MathValue value, CultureInfo? culture = null) =>
-        CalculatorEngine.Default.FormatResult(value, culture ?? CultureInfo.CurrentCulture);
+        ResultFormatter.Format(value, options: null, culture: culture ?? CultureInfo.CurrentCulture);
+
+    /// <summary>
+    /// Formats a calculated <see cref="MathValue"/> into a structured
+    /// <see cref="FormattedCalculation"/> with specified format options and optional culture.
+    /// </summary>
+    /// <param name="value">The evaluated calculation value.</param>
+    /// <param name="options">The formatting options.</param>
+    /// <param name="culture">Culture used for formatting, or current culture if null.</param>
+    /// <returns>A formatted calculation result.</returns>
+    public static FormattedCalculation FormatResult(MathValue value, ResultFormatOptions options, CultureInfo? culture = null) =>
+        ResultFormatter.Format(value, options, culture: culture ?? CultureInfo.CurrentCulture);
 
     /// <summary>
     /// Formats an evaluation result for display using the specified culture, and
@@ -208,5 +221,15 @@ public static class Calculator
     /// <returns>A formatted calculation that contains the formatted value and any
     /// assigned variables from the evaluation result.</returns>
     public static FormattedCalculation FormatResult(EvaluationResult result, CultureInfo? culture = null) =>
-        CalculatorEngine.Default.FormatResult(result, culture ?? CultureInfo.CurrentCulture);
+        ResultFormatter.Format(result, options: null, culture: culture ?? CultureInfo.CurrentCulture);
+
+    /// <summary>
+    /// Formats an evaluation result for display using the specified format options and optional culture.
+    /// </summary>
+    /// <param name="result">Evaluation output to format.</param>
+    /// <param name="options">The formatting options.</param>
+    /// <param name="culture">Culture used for formatting, or current culture if null.</param>
+    /// <returns>A formatted calculation result.</returns>
+    public static FormattedCalculation FormatResult(EvaluationResult result, ResultFormatOptions options, CultureInfo? culture = null) =>
+        ResultFormatter.Format(result, options, culture: culture ?? CultureInfo.CurrentCulture);
 }

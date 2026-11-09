@@ -1,1946 +1,228 @@
+using System.Buffers;
+using System.Globalization;
 using System.Numerics;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Numera;
 
 /// <summary>
-/// A calculator value stored as an integer, decimal, or double. Operations select their
-/// result representation eagerly, preserving integer arithmetic where supported and
-/// falling back to double when decimal arithmetic overflows.
+/// A bounded calculator value. Exact-domain arithmetic uses reduced fractions, while
+/// calculation accuracy is tracked independently of the active representation.
 /// </summary>
 /// <remarks>
-/// Only the property selected by <see cref="Kind"/> carries the value; the other value
-/// properties are zero. The default instance is integer zero. Representation alone does
-/// not establish the accuracy of a calculation: decimal arithmetic can round, and double
-/// operations can approximate. Integer results exceeding the safety ceiling throw
-/// <see cref="CalculationLimitException"/> rather than falling back to double.
-/// <para>
-/// Division and modulo by zero throw <see cref="DivideByZeroException"/> rather than
-/// producing infinity or NaN. Comparison and logical operations return decimal <c>1m</c>
-/// (true) or <c>0m</c> (false). Converting an integer beyond the double range yields
-/// +/-infinity. Radix formatting (<see cref="ToHexString(bool)"/>) is sign-magnitude,
-/// whereas bitwise operators use two's-complement semantics for negative operands.
-/// </para>
-/// <para>
-/// Object equality (<see cref="Equals(MathValue)"/>, <see cref="operator =="/>) treats
-/// <c>NaN</c> as equal to <c>NaN</c> and <c>+0.0</c> as equal to <c>-0.0</c> to maintain
-/// reflexive hashing and dictionary lookup semantics. This contrasts with expression
-/// evaluation (<see cref="AreEqual(MathValue, MathValue)"/>), which follows IEEE 754
-/// relational semantics where comparisons involving <c>NaN</c> always evaluate to false.
-/// </para>
+/// The default value is integer zero with unverified provenance. Object equality treats
+/// NaNs as equal; expression comparisons retain IEEE NaN semantics. Representation getters
+/// do not convert values. Use explicit conversion methods when a different representation
+/// is needed.
 /// </remarks>
-public readonly struct MathValue :
-    IEquatable<MathValue>,
-    IComparable<MathValue>,
-    IComparable,
-    IFormattable,
-    ISpanFormattable,
-    IUtf8SpanFormattable
+public readonly partial struct MathValue :
+    IEquatable<MathValue>, IComparable<MathValue>, IComparable,
+    IFormattable, ISpanFormattable, IUtf8SpanFormattable
 {
     /// <summary>
-    /// Identifies the underlying active representation stored in a
-    /// <see cref="MathValue"/>.
+    /// Identifies the active numerical representation.
     /// </summary>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1720:Identifier contains type name", Justification = "The enum names are descriptive of their usage, which does not conflict with type names.")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1720:Identifier contains type name", Justification = "Descriptive representation names.")]
     public enum DataType
     {
         /// <summary>
-        /// Exact integer, bounded by the calculator's integer-size ceiling.
+        /// A bounded arbitrary-precision integer.
         /// </summary>
         Integer,
 
         /// <summary>
-        /// A base-10 value stored with a 96-bit coefficient and a scale from 0 to 28.
-        /// The stored value is exact, but parsing and arithmetic may round to fit it.
+        /// An exactly stored base-ten decimal.
         /// </summary>
         Decimal,
 
         /// <summary>
-        /// Approximate double-precision floating-point value. 64-bit binary
-        /// representation with roughly 15-17 significant decimal digits. Also permits
-        /// NaN and infinities; used for Math-based functions and decimal overflow fallback.
+        /// A binary floating-point value, including infinities and NaN.
         /// </summary>
         Double,
+
+        /// <summary>
+        /// A reduced fraction with a positive denominator.
+        /// </summary>
+        Rational
     }
 
+    private readonly BigInteger numerator;
+
+    private readonly BigInteger denominator;
+
+    // 29 marks a scale beyond Decimal's capacity; it never requests display padding.
+    internal const int MaxDecimalDisplayScale = 29;
+
+    internal int DecimalDisplayScale { get; }
+
+    private static readonly BigInteger MaxDecimalMantissa = (BigInteger.One << 96) - 1;
+
     /// <summary>
-    /// Gets which value property is active; this is not a numerical accuracy guarantee.
+    /// The active representation.
     /// </summary>
     public DataType Kind { get; }
 
     /// <summary>
-    /// Gets the stored <see cref="BigInteger"/> value when <see cref="Kind"/> is
-    /// <see cref="DataType.Integer"/>; otherwise zero.
+    /// The provenance of the calculation, not a guarantee inferred from representation.
+    /// </summary>
+    public CalculationAccuracy Accuracy { get; }
+
+    /// <summary>
+    /// The stored integer, or zero when another representation is active.
     /// </summary>
     public BigInteger IntegerValue { get; }
 
     /// <summary>
-    /// Gets the stored <see cref="decimal"/> value when <see cref="Kind"/> is
-    /// <see cref="DataType.Decimal"/>; otherwise zero.
+    /// The stored decimal, or zero when another representation is active.
     /// </summary>
     public decimal DecimalValue { get; }
 
     /// <summary>
-    /// Gets the stored <see cref="double"/> value when <see cref="Kind"/> is
-    /// <see cref="DataType.Double"/>; otherwise zero.
+    /// The stored double, or zero when another representation is active.
     /// </summary>
     public double DoubleValue { get; }
 
-    private static readonly BigInteger MaxDecimalMantissa = (BigInteger.One << 96) - BigInteger.One;
+    /// <summary>
+    /// The stored reduced numerator. Throws unless this is a rational representation.
+    /// </summary>
+    public BigInteger Numerator => Kind == DataType.Rational ?
+        numerator :
+        throw new InvalidOperationException("Value is not stored as a rational.");
 
     /// <summary>
-    /// Initializes a new instance of <see cref="MathValue"/> holding an exact
-    /// arbitrary-precision integer.
+    /// The stored positive denominator. Throws unless this is a rational representation.
     /// </summary>
-    /// <param name="value">The integer value to store.</param>
-    /// <exception cref="CalculationLimitException">Thrown if the magnitude exceeds the
-    /// configured bit ceiling.</exception>
+    public BigInteger Denominator => Kind == DataType.Rational ?
+        denominator :
+        throw new InvalidOperationException("Value is not stored as a rational.");
+
+    /// <summary>
+    /// Creates a precise integer, enforcing the default safety ceiling.
+    /// </summary>
     public MathValue(BigInteger value)
     {
-        if (BigInteger.Abs(value).GetBitLength() > CalculationLimits.MaxIntegerBits)
-        {
-            throw new CalculationLimitException();
-        }
-
+        this = default;
+        CheckBits(value, CalculationLimits.MaxIntegerBits);
         Kind = DataType.Integer;
         IntegerValue = value;
-        DecimalValue = default;
-        DoubleValue = default;
+        Accuracy = CalculationAccuracy.Exact;
     }
 
     /// <summary>
-    /// Initializes a new instance of <see cref="MathValue"/> holding an exact integer.
+    /// Creates a precise integer.
     /// </summary>
-    /// <param name="value">The integer value to store.</param>
-    public MathValue(int value)
-    {
-        Kind = DataType.Integer;
-        IntegerValue = new BigInteger(value);
-        DecimalValue = default;
-        DoubleValue = default;
-    }
+    public MathValue(int value) : this(new BigInteger(value)) { }
 
     /// <summary>
-    /// Initializes a new instance of <see cref="MathValue"/> holding an exact unsigned integer.
+    /// Creates a precise unsigned integer.
     /// </summary>
-    /// <param name="value">The unsigned integer value to store.</param>
-    public MathValue(uint value)
-    {
-        Kind = DataType.Integer;
-        IntegerValue = new BigInteger(value);
-        DecimalValue = default;
-        DoubleValue = default;
-    }
+    public MathValue(uint value) : this(new BigInteger(value)) { }
 
     /// <summary>
-    /// Initializes a new instance of <see cref="MathValue"/> holding an exact 64-bit integer.
+    /// Creates a precise 64-bit integer.
     /// </summary>
-    /// <param name="value">The 64-bit integer value to store.</param>
-    public MathValue(long value)
-    {
-        Kind = DataType.Integer;
-        IntegerValue = new BigInteger(value);
-        DecimalValue = default;
-        DoubleValue = default;
-    }
+    public MathValue(long value) : this(new BigInteger(value)) { }
 
     /// <summary>
-    /// Initializes a new instance of <see cref="MathValue"/> holding an exact unsigned 64-bit integer.
+    /// Creates a precise unsigned 64-bit integer.
     /// </summary>
-    /// <param name="value">The unsigned 64-bit integer value to store.</param>
-    public MathValue(ulong value)
-    {
-        Kind = DataType.Integer;
-        IntegerValue = new BigInteger(value);
-        DecimalValue = default;
-        DoubleValue = default;
-    }
+    public MathValue(ulong value) : this(new BigInteger(value)) { }
 
     /// <summary>
-    /// Initializes a new instance of <see cref="MathValue"/> holding a fixed-precision
-    /// decimal value.
+    /// Creates a precisely stored decimal.
     /// </summary>
-    /// <param name="value">The decimal fraction or integer to store.</param>
     public MathValue(decimal value)
     {
+        this = default;
         Kind = DataType.Decimal;
-        IntegerValue = default;
         DecimalValue = value;
-        DoubleValue = default;
+        DecimalDisplayScale = DecomposeDecimal(value).Scale;
+        Accuracy = CalculationAccuracy.Exact;
     }
 
     /// <summary>
-    /// Initializes a new instance of <see cref="MathValue"/> holding a double-precision
-    /// floating-point value.
+    /// Creates a double with unverified calculation provenance.
     /// </summary>
-    /// <param name="value">The 64-bit binary floating-point value to store.</param>
     public MathValue(double value)
     {
+        this = default;
         Kind = DataType.Double;
-        IntegerValue = default;
-        DecimalValue = default;
         DoubleValue = value;
     }
 
-    /// <summary>
-    /// Converts the value to a 64-bit floating-point number. Integers and decimals may
-    /// lose precision, and integers beyond the double range become +/-infinity.
-    /// </summary>
-    /// <returns>The value as a <see cref="double"/>.</returns>
-    public double AsDouble() => Kind switch
+    private MathValue(MathValue value, CalculationAccuracy accuracy)
     {
-        DataType.Integer => DivideIntegersAsDouble(IntegerValue, BigInteger.One),
-        DataType.Decimal => (double)DecimalValue,
-        _ => DoubleValue,
-    };
+        this = value;
+        Accuracy = accuracy;
+    }
 
-    /// <summary>
-    /// Gets a value indicating whether the value is finite. Integer and decimal values
-    /// are always finite; a double is not finite if it is NaN or +/-infinity.
-    /// </summary>
-    public bool IsFinite => Kind switch
+    private MathValue(MathValue value, int decimalDisplayScale)
     {
-        DataType.Double => double.IsFinite(DoubleValue),
-        _ => true,
-    };
+        this = value;
+        DecimalDisplayScale = decimalDisplayScale;
+    }
 
-    /// <summary>
-    /// Gets a value indicating whether the value is Not-a-Number. Only a double can be a
-    /// NaN.
-    /// </summary>
-    public bool IsNaN => Kind switch
+    internal MathValue WithDecimalDisplayScale(long scale)
     {
-        DataType.Double => double.IsNaN(DoubleValue),
-        _ => false,
-    };
+        ArgumentOutOfRangeException.ThrowIfNegative(scale);
+        return new MathValue(this, (int)Math.Min(scale, MaxDecimalDisplayScale));
+    }
 
-    /// <summary>
-    /// Formats the value using the current culture and the default format.
-    /// </summary>
-    /// <returns>The formatted string representation of the value.</returns>
-    public override string ToString() => ToString(null, null);
-
-    /// <summary>
-    /// Formats the value using the specified format string and the current culture.
-    /// </summary>
-    /// <param name="format">A format string valid for the active representation, or
-    /// <see langword="null"/> for the default.</param>
-    /// <returns>The formatted string representation of the value.</returns>
-    public string ToString(string? format) => ToString(format, null);
-
-    /// <summary>
-    /// Formats the value using the specified format provider and no format string.
-    /// </summary>
-    /// <param name="formatProvider">The format provider to use.</param>
-    /// <returns>The formatted string representation of the value.</returns>
-    public string ToString(IFormatProvider? formatProvider) => ToString(null, formatProvider);
-
-    /// <summary>
-    /// Formats the value using the specified format and format provider. A double with no
-    /// format uses the shortest string that round-trips.
-    /// </summary>
-    /// <param name="format">A format string valid for the active representation, or
-    /// <see langword="null"/> for the default.</param>
-    /// <param name="formatProvider">The format provider to use, or <see langword="null"/>
-    /// for the current culture.</param>
-    /// <returns>The formatted string representation of the value.</returns>
-    public string ToString(string? format, IFormatProvider? formatProvider) => Kind switch
+    private MathValue(BigInteger num, BigInteger den)
     {
-        DataType.Integer => IntegerValue.ToString(format, formatProvider),
-        DataType.Decimal => DecimalValue.ToString(format, formatProvider),
-        DataType.Double => DoubleValue.ToString(format, formatProvider),
-        _ => throw new InvalidOperationException($"Unexpected data type: {Kind}"),
-    };
-
-    /// <summary>
-    /// Tries to format the value into a character span.
-    /// </summary>
-    /// <param name="destination">The span to write the formatted value into.</param>
-    /// <param name="charsWritten">When this method returns, the number of characters
-    /// written.</param>
-    /// <param name="format">A format string valid for the active representation, or
-    /// empty for the default.</param>
-    /// <param name="provider">The format provider, or <see langword="null"/> for the
-    /// current culture.</param>
-    /// <returns><see langword="true"/> if the value was formatted;
-    /// <see langword="false"/> if <paramref name="destination"/> was too small.</returns>
-    public bool TryFormat(
-        Span<char> destination,
-        out int charsWritten,
-        ReadOnlySpan<char> format = default,
-        IFormatProvider? provider = null)
-    {
-        return Kind switch
-        {
-            DataType.Integer => IntegerValue.TryFormat(destination, out charsWritten, format, provider),
-            DataType.Decimal => DecimalValue.TryFormat(destination, out charsWritten, format, provider),
-            DataType.Double => DoubleValue.TryFormat(destination, out charsWritten, format, provider),
-            _ => throw new InvalidOperationException($"Unexpected data type: {Kind}"),
-        };
+        this = default;
+        Kind = DataType.Rational;
+        numerator = num;
+        denominator = den;
+        Accuracy = CalculationAccuracy.Exact;
     }
 
     /// <summary>
-    /// Tries to format the value into a UTF-8 byte span.
+    /// Explicitly assigns trusted calculation provenance without changing representation.
     /// </summary>
-    /// <param name="utf8Destination">The span to write to.</param>
-    /// <param name="bytesWritten">When this method returns, the number of bytes written.
-    /// </param>
-    /// <param name="format">A format string valid for the active representation, or
-    /// empty for the default.</param>
-    /// <param name="provider">The format provider, or <see langword="null"/> for the
-    /// current culture.</param>
-    /// <returns><see langword="true"/> if the value was formatted;
-    /// <see langword="false"/> if <paramref name="utf8Destination"/> was too small.
-    /// </returns>
-    public bool TryFormat(
-        Span<byte> utf8Destination,
-        out int bytesWritten,
-        ReadOnlySpan<char> format = default,
-        IFormatProvider? provider = null)
+    public MathValue WithAccuracy(CalculationAccuracy accuracy)
     {
-        switch (Kind)
+        if (accuracy is not CalculationAccuracy.Exact and not CalculationAccuracy.Unverified)
         {
-            case DataType.Integer:
-            {
-                // BigInteger implements ISpanFormattable (chars). Format to a stack buffer and encode to UTF-8.
-                Span<char> charBuffer = stackalloc char[256];
-                if (IntegerValue.TryFormat(charBuffer, out int charsWritten, format, provider))
-                {
-                    return System.Text.Encoding.UTF8.TryGetBytes(charBuffer[..charsWritten], utf8Destination, out bytesWritten);
-                }
+            throw new ArgumentOutOfRangeException(nameof(accuracy));
+        }
+        return new MathValue(this, accuracy);
+    }
 
-                // If the integer exceeds 256 characters, allocate a temporary string
-                string formatted = IntegerValue.ToString(format.IsEmpty ? null : format.ToString(), provider);
-                return System.Text.Encoding.UTF8.TryGetBytes(formatted, utf8Destination, out bytesWritten);
-            }
-            case DataType.Decimal:
-                return DecimalValue.TryFormat(utf8Destination, out bytesWritten, format, provider);
-            case DataType.Double:
-                return DoubleValue.TryFormat(
-                    utf8Destination,
-                    out bytesWritten,
-                    format,
-                    provider);
-            default:
-                throw new InvalidOperationException($"Unexpected data type: {Kind}");
+    /// <summary>
+    /// Checks a stored value against an integer bit limit.
+    /// </summary>
+    public void ValidateLimits(int maxIntegerBits = CalculationLimits.MaxIntegerBits)
+    {
+        if (Kind == DataType.Integer)
+        {
+            CheckBits(IntegerValue, maxIntegerBits);
+        }
+        else if (TryToRational(this, out var n, out var d))
+        {
+            CheckBits(n, maxIntegerBits);
+            CheckBits(d, maxIntegerBits);
         }
     }
 
     /// <summary>
-    /// Returns the hexadecimal representation of the value if it is integer-valued;
-    /// otherwise, <see langword="null"/>.
+    /// Creates a reduced Rational, or an Integer when the reduced denominator is one.
     /// </summary>
-    /// <param name="prefix">Whether to prefix the result with "0x" (or "-0x" if
-    /// negative).</param>
-    /// <returns>The hexadecimal string, or <see langword="null"/> if
-    /// <see cref="TryGetInteger(out BigInteger)"/> fails. Negative values are written as
-    /// minus sign followed by the magnitude, not in two's-complement.</returns>
-    public string? ToHexString(bool prefix = true)
+    public static MathValue FromFraction(BigInteger numerator, BigInteger denominator) =>
+        FromRational(numerator, denominator);
+
+    /// <summary>
+    /// Creates a reduced Rational, or an Integer when the reduced denominator is one.
+    /// </summary>
+    public static MathValue FromRational(BigInteger num, BigInteger den) =>
+        FromExactFraction(num, den, false);
+
+    internal static MathValue FromExactFraction(BigInteger num, BigInteger den, bool decimalDomain)
     {
-        if (!TryGetInteger(out var intValue))
-        {
-            return null;
-        }
-
-        if (intValue.IsZero)
-        {
-            return prefix ? "0x0" : "0";
-        }
-
-        bool isNegative = intValue < BigInteger.Zero;
-        BigInteger absVal = BigInteger.Abs(intValue);
-
-        // BigInteger's "X" format pads with a leading zero when the top bit is set so the
-        // value cannot be misread as negative; that padding is noise here because the
-        // sign is added explicitly.
-        string hex = absVal.ToString("X").TrimStart('0');
-        if (hex.Length == 0)
-        {
-            hex = "0";
-        }
-
-        if (!prefix)
-        {
-            return isNegative ? "-" + hex : hex;
-        }
-
-        return isNegative ? "-0x" + hex : "0x" + hex;
-    }
-
-    /// <summary>
-    /// Returns the binary representation of the value if it is integer-valued;
-    /// otherwise, <see langword="null"/>.
-    /// </summary>
-    /// <param name="prefix">Whether to prefix the result with "0b" (or "-0b" if
-    /// negative).</param>
-    /// <returns>The binary string, or <see langword="null"/> if
-    /// <see cref="TryGetInteger(out BigInteger)"/> fails. Negative values are written as
-    /// minus sign followed by the magnitude, not in two's-complement.</returns>
-    public string? ToBinaryString(bool prefix = true)
-    {
-        if (!TryGetInteger(out var intValue))
-        {
-            return null;
-        }
-
-        if (intValue.IsZero)
-        {
-            return prefix ? "0b0" : "0";
-        }
-
-        bool isNegative = intValue < BigInteger.Zero;
-        BigInteger absVal = BigInteger.Abs(intValue);
-        string binary = absVal.ToString("B").TrimStart('0');
-        if (binary.Length == 0)
-        {
-            binary = "0";
-        }
-
-        if (!prefix)
-        {
-            return isNegative ? "-" + binary : binary;
-        }
-
-        return isNegative ? "-0b" + binary : "0b" + binary;
-    }
-
-    /// <summary>
-    /// Returns the octal representation of the value if it is integer-valued; otherwise
-    /// <see langword="null"/>.
-    /// </summary>
-    /// <param name="prefix">Whether to prefix the result with "0o" (or "-0o" if
-    /// negative).</param>
-    /// <returns>The octal string, or <see langword="null"/> if
-    /// <see cref="TryGetInteger(out BigInteger)"/> fails. Negative values are written as
-    /// minus sign followed by the magnitude, not in two's-complement.</returns>
-    public string? ToOctalString(bool prefix = true)
-    {
-        if (!TryGetInteger(out var intValue))
-        {
-            return null;
-        }
-
-        if (intValue.IsZero)
-        {
-            return prefix ? "0o0" : "0";
-        }
-
-        bool isNegative = intValue < BigInteger.Zero;
-        BigInteger absVal = BigInteger.Abs(intValue);
-
-        // Convert absVal to octal by converting binary representation in 3-bit groups
-        string binary = absVal.ToString("B").TrimStart('0');
-        if (binary.Length == 0)
-        {
-            binary = "0";
-        }
-
-        int rem = binary.Length % 3;
-        int pad = rem == 0 ? 0 : 3 - rem;
-        int totalLen = binary.Length + pad;
-
-        var sb = new System.Text.StringBuilder(totalLen / 3);
-        int i = 0;
-        if (pad > 0)
-        {
-            int firstOctal = 0;
-            for (int k = 0; k < rem; k++)
-            {
-                firstOctal = (firstOctal << 1) | (binary[k] - '0');
-            }
-
-            sb.Append((char)('0' + firstOctal));
-            i = rem;
-        }
-
-        while (i < binary.Length)
-        {
-            int val = ((binary[i] - '0') << 2) | ((binary[i + 1] - '0') << 1) | (binary[i + 2] - '0');
-            sb.Append((char)('0' + val));
-            i += 3;
-        }
-
-        string octal = sb.ToString();
-        if (!prefix)
-        {
-            return isNegative ? "-" + octal : octal;
-        }
-
-        return isNegative ? "-0o" + octal : "0o" + octal;
-    }
-
-    /// <summary>
-    /// Gets a value indicating whether the current <see cref="MathValue"/> is zero.
-    /// </summary>
-    public bool IsZero => Kind switch
-    {
-        DataType.Integer => IntegerValue.IsZero,
-        DataType.Decimal => DecimalValue == 0m,
-        _ => DoubleValue == 0.0,
-    };
-
-    /// <summary>
-    /// Extracts an integer when the stored value is finite and has no fractional part.
-    /// Success does not recover digits lost in an earlier approximate calculation.
-    /// </summary>
-    /// <param name="value">When this method returns <see langword="true"/>, the integer
-    /// value; otherwise zero.</param>
-    /// <returns><see langword="true"/> if the value is integer-valued; otherwise
-    /// <see langword="false"/>.</returns>
-    public bool TryGetInteger(out BigInteger value)
-    {
-        switch (Kind)
-        {
-            case DataType.Integer:
-                value = IntegerValue;
-                return true;
-            case DataType.Decimal when decimal.Truncate(DecimalValue) == DecimalValue:
-                value = new BigInteger(DecimalValue);
-                return true;
-            case DataType.Double when double.IsFinite(DoubleValue) && Math.Truncate(DoubleValue) == DoubleValue:
-                value = new BigInteger(DoubleValue);
-                return true;
-            default:
-                value = default;
-                return false;
-        }
-    }
-
-    /// <summary>
-    /// Negates the value, preserving the active numerical representation.
-    /// </summary>
-    /// <param name="value">The value to negate.</param>
-    /// <returns>A new <see cref="MathValue"/> with the sign inverted.</returns>
-    public static MathValue operator -(MathValue value) => value.Kind switch
-    {
-        DataType.Integer => new MathValue(-value.IntegerValue),
-        DataType.Decimal => new MathValue(-value.DecimalValue),
-        _ => new MathValue(-value.DoubleValue),
-    };
-
-    /// <summary>
-    /// Orders two values. Integer and decimal operands, and any mix of them with a double
-    /// are compared exactly without conversion. Two doubles are ordered with
-    /// <see cref="double.CompareTo(double)"/>, except that +0.0 and -0.0 compare equal.
-    /// NaN orders below every other value, including -Infinity.
-    /// </summary>
-    /// <param name="a">The left operand.</param>
-    /// <param name="b">The right operand.</param>
-    /// <returns>A negative value, zero, or a positive value when <paramref name="a"/> is
-    /// less than, equal to, or greater than <paramref name="b"/>.</returns>
-    public static int Compare(MathValue a, MathValue b)
-    {
-        // If both values are integers, compare them as big integers to avoid precision
-        // and magnitude loss from double conversion.
-        if (a.Kind is DataType.Integer && b.Kind is DataType.Integer)
-        {
-            return a.IntegerValue.CompareTo(b.IntegerValue);
-        }
-
-        if (a.Kind is not DataType.Double && b.Kind is not DataType.Double)
-        {
-            if (a.Kind is DataType.Integer)
-            {
-                return CompareIntegerAndDecimal(a.IntegerValue, b.DecimalValue);
-            }
-
-            if (b.Kind is DataType.Integer)
-            {
-                return -CompareIntegerAndDecimal(b.IntegerValue, a.DecimalValue);
-            }
-
-            return a.DecimalValue.CompareTo(b.DecimalValue);
-        }
-
-        // Handle mixed Double and exact Integer/Decimal without overflow-to-infinity
-        // false matches.
-        if (a.Kind is DataType.Double && b.Kind is not DataType.Double)
-        {
-            return -CompareDoubleAndExact(b, a.DoubleValue);
-        }
-
-        if (b.Kind is DataType.Double && a.Kind is not DataType.Double)
-        {
-            return CompareDoubleAndExact(a, b.DoubleValue);
-        }
-
-        double dblA = a.AsDouble();
-        double dblB = b.AsDouble();
-
-        // In IEEE 754 arithmetic, +0.0 == -0.0 is true. Double.CompareTo introduces
-        // a total order where -0.0 < +0.0, which causes 0.0 > -0.0 to evaluate to true.
-        // We ensure standard equality before falling back to CompareTo (for NaN ordering).
-        if (dblA == dblB)
-        {
-            return 0;
-        }
-
-        return dblA.CompareTo(dblB);
-    }
-
-    /// <inheritdoc />
-    public int CompareTo(MathValue other) => Compare(this, other);
-
-    /// <inheritdoc />
-    int IComparable.CompareTo(object? obj)
-    {
-        if (obj is null)
-        {
-            return 1;
-        }
-
-        if (obj is MathValue other)
-        {
-            return Compare(this, other);
-        }
-
-        throw new ArgumentException($"Object must be of type {nameof(MathValue)}.", nameof(obj));
-    }
-
-    /// <summary>
-    /// Indicates whether the current value is equal to another <see cref="MathValue"/>,
-    /// comparing numerical values across representations. Unlike IEEE 754 relational
-    /// operations, two NaN values compare equal here so that hashing and dictionary lookups
-    /// remain reflexive.
-    /// </summary>
-    /// <param name="other">The value to compare with this instance.</param>
-    /// <returns><see langword="true"/> if the current value is numerically equal to
-    /// <paramref name="other"/>; otherwise <see langword="false"/>.</returns>
-    public bool Equals(MathValue other) => Compare(this, other) == 0;
-
-    /// <inheritdoc />
-    public override bool Equals(object? obj) => obj is MathValue other && Equals(other);
-
-    /// <inheritdoc />
-    public override int GetHashCode()
-    {
-        // Consistent hash code across representations for equal values.
-        if (IsNaN)
-        {
-            return typeof(MathValue).GetHashCode();
-        }
-
-        if (TryGetInteger(out var intVal))
-        {
-            return intVal.GetHashCode();
-        }
-
-        // For non-integer values, reduce to canonical rational representation (num / den)
-        // so that mathematically equal values in Decimal and Double (e.g., 0.5m and 0.5)
-        // produce identical hash codes.
-        if (Kind is DataType.Decimal)
-        {
-            var (num, den) = ToReducedFraction(DecimalValue);
-            return HashCode.Combine(num, den);
-        }
-
-        if (Kind is DataType.Double && double.IsFinite(DoubleValue))
-        {
-            var (num, den) = ToReducedFraction(DoubleValue);
-            return HashCode.Combine(num, den);
-        }
-
-        return DoubleValue.GetHashCode();
-    }
-
-    private static (BigInteger numerator, BigInteger denominator) ToReducedFraction(decimal d)
-    {
-        var (c, s) = DecomposeDecimal(d);
-        BigInteger den = BigInteger.Pow(10, s);
-        BigInteger gcd = BigInteger.GreatestCommonDivisor(BigInteger.Abs(c), den);
-        return (c / gcd, den / gcd);
-    }
-
-    /// <summary>
-    /// Decomposes a finite <see cref="double"/> into its signed integer mantissa and
-    /// power-of-two exponent. The exact value is <c>mantissa * 2^powerOfTwo</c>.
-    /// </summary>
-    private static (BigInteger Mantissa, int PowerOfTwo) DecomposeDouble(double d)
-    {
-        long dblBits = BitConverter.DoubleToInt64Bits(d);
-        bool isNegative = dblBits < 0;
-        int exp = (int)((dblBits >> 52) & 0x7FFL);
-        long mantissa = dblBits & 0x000F_FFFF_FFFF_FFFFL;
-
-        BigInteger m;
-        int shift;
-
-        if (exp == 0)
-        {
-            m = mantissa;
-            shift = -1074;
-        }
-        else
-        {
-            m = mantissa | (1L << 52);
-            shift = exp - 1075;
-        }
-
-        if (isNegative)
-        {
-            m = -m;
-        }
-
-        return (m, shift);
-    }
-
-    private static (BigInteger numerator, BigInteger denominator) ToReducedFraction(double d)
-    {
-        var (m, shift) = DecomposeDouble(d);
-
-        BigInteger num;
-        BigInteger den;
-
-        if (shift >= 0)
-        {
-            num = m << shift;
-            den = BigInteger.One;
-        }
-        else
-        {
-            num = m;
-            den = BigInteger.One << (-shift);
-            BigInteger gcd = BigInteger.GreatestCommonDivisor(BigInteger.Abs(num), den);
-            num /= gcd;
-            den /= gcd;
-        }
-
-        return (num, den);
-    }
-
-    /// <summary>
-    /// Determines whether two <see cref="MathValue"/> instances are equal.
-    /// </summary>
-    /// <param name="left">The first value to compare.</param>
-    /// <param name="right">The second value to compare.</param>
-    /// <returns><see langword="true"/> if the values are equal; otherwise <see langword="false"/>.</returns>
-    public static bool operator ==(MathValue left, MathValue right) => left.Equals(right);
-
-    /// <summary>
-    /// Determines whether two <see cref="MathValue"/> instances are not equal.
-    /// </summary>
-    /// <param name="left">The first value to compare.</param>
-    /// <param name="right">The second value to compare.</param>
-    /// <returns><see langword="true"/> if the values are not equal; otherwise <see langword="false"/>.</returns>
-    public static bool operator !=(MathValue left, MathValue right) => !left.Equals(right);
-
-    /// <summary>
-    /// Compares two <see cref="MathValue"/> instances to determine whether the first is less than the second.
-    /// </summary>
-    /// <param name="left">The first value to compare.</param>
-    /// <param name="right">The second value to compare.</param>
-    /// <returns><see langword="true"/> if <paramref name="left"/> is less than <paramref name="right"/>; otherwise <see langword="false"/>.</returns>
-    public static bool operator <(MathValue left, MathValue right) => Compare(left, right) < 0;
-
-    /// <summary>
-    /// Compares two <see cref="MathValue"/> instances to determine whether the first is less than or equal to the second.
-    /// </summary>
-    /// <param name="left">The first value to compare.</param>
-    /// <param name="right">The second value to compare.</param>
-    /// <returns><see langword="true"/> if <paramref name="left"/> is less than or equal to <paramref name="right"/>; otherwise <see langword="false"/>.</returns>
-    public static bool operator <=(MathValue left, MathValue right) => Compare(left, right) <= 0;
-
-    /// <summary>
-    /// Compares two <see cref="MathValue"/> instances to determine whether the first is greater than the second.
-    /// </summary>
-    /// <param name="left">The first value to compare.</param>
-    /// <param name="right">The second value to compare.</param>
-    /// <returns><see langword="true"/> if <paramref name="left"/> is greater than <paramref name="right"/>; otherwise <see langword="false"/>.</returns>
-    public static bool operator >(MathValue left, MathValue right) => Compare(left, right) > 0;
-
-    /// <summary>
-    /// Compares two <see cref="MathValue"/> instances to determine whether the first is greater than or equal to the second.
-    /// </summary>
-    /// <param name="left">The first value to compare.</param>
-    /// <param name="right">The second value to compare.</param>
-    /// <returns><see langword="true"/> if <paramref name="left"/> is greater than or equal to <paramref name="right"/>; otherwise <see langword="false"/>.</returns>
-    public static bool operator >=(MathValue left, MathValue right) => Compare(left, right) >= 0;
-
-    // Logical results use decimal zero/one. Only zero is false, so NaN is truthy here.
-    // These helpers receive both values; short-circuiting belongs to the parser.
-    /// <summary>
-    /// Performs a logical AND on two values, treating zero as false and all other values
-    /// (including NaN) as true.
-    /// </summary>
-    /// <param name="a">The left operand.</param>
-    /// <param name="b">The right operand.</param>
-    /// <returns><c>1m</c> if the condition holds; otherwise <c>0m</c>.</returns>
-    public static MathValue LogicalAnd(MathValue a, MathValue b) =>
-        (!a.IsZero && !b.IsZero) ? new MathValue(1m) : new MathValue(0m);
-
-    /// <summary>
-    /// Performs a logical OR on two values, treating zero as false and all other values
-    /// (including NaN) as true.
-    /// </summary>
-    /// <param name="a">The left operand.</param>
-    /// <param name="b">The right operand.</param>
-    /// <returns><c>1m</c> if the condition holds; otherwise <c>0m</c>.</returns>
-    public static MathValue LogicalOr(MathValue a, MathValue b) =>
-        (!a.IsZero || !b.IsZero) ? new MathValue(1m) : new MathValue(0m);
-
-    /// <summary>
-    /// Performs a logical XOR on two values, treating zero as false and all other values
-    /// (including NaN) as true.
-    /// </summary>
-    /// <param name="a">The left operand.</param>
-    /// <param name="b">The right operand.</param>
-    /// <returns><c>1m</c> if the condition holds; otherwise <c>0m</c>.</returns>
-    public static MathValue LogicalXor(MathValue a, MathValue b) =>
-        (!a.IsZero ^ !b.IsZero) ? new MathValue(1m) : new MathValue(0m);
-
-    /// <summary>
-    /// Performs a logical NOT on a value, treating zero as false and all other values
-    /// (including NaN) as true.
-    /// </summary>
-    /// <param name="a">The operand.</param>
-    /// <returns><c>1m</c> if <paramref name="a"/> is zero; otherwise <c>0m</c>.</returns>
-    public static MathValue LogicalNot(MathValue a) =>
-        a.IsZero ? new MathValue(1m) : new MathValue(0m);
-
-    /// <summary>
-    /// Performs a bitwise shift-left on integer operands, enforcing the maximum bit
-    /// ceiling.
-    /// </summary>
-    /// <param name="a">The value to shift.</param>
-    /// <param name="b">The shift count.</param>
-    /// <returns>The result of the shift operation.</returns>
-    /// <exception cref="ExpressionException">Thrown if an operand is not an integer or
-    /// the shift count is negative.</exception>
-    /// <exception cref="CalculationLimitException">Thrown if the shift count, or the
-    /// shifted result, would exceed the configured bit ceiling. A zero value shifted
-    /// by any count is always zero and does not throw.</exception>
-    public static MathValue ShiftLeft(MathValue a, MathValue b)
-    {
-        if (!a.TryGetInteger(out var val) || !b.TryGetInteger(out var count))
-        {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.IntegerRequired, "Bitwise shift requires integer operands."));
-        }
-
-        if (count < BigInteger.Zero)
-        {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.ArgumentOutOfRange, "Shift count cannot be negative."));
-        }
-
-        if (val.IsZero)
-        {
-            return new MathValue(BigInteger.Zero);
-        }
-
-        if (count > CalculationLimits.MaxIntegerBits)
-        {
-            throw new CalculationLimitException();
-        }
-
-        int shift = (int)count;
-        if (BigInteger.Abs(val).GetBitLength() + shift > CalculationLimits.MaxIntegerBits)
-        {
-            throw new CalculationLimitException();
-        }
-
-        return new MathValue(val << shift);
-    }
-
-    /// <summary>
-    /// Performs an arithmetic bitwise shift-right on integer operands, sign-extending negative values.
-    /// </summary>
-    /// <param name="a">The value to shift.</param>
-    /// <param name="b">The shift count.</param>
-    /// <returns>The result of the shift operation.</returns>
-    /// <exception cref="ExpressionException">Thrown if an operand is not an integer or
-    /// the shift count is negative.</exception>
-    public static MathValue ShiftRight(MathValue a, MathValue b)
-    {
-        if (!a.TryGetInteger(out var val) || !b.TryGetInteger(out var count))
-        {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.IntegerRequired, "Bitwise shift requires integer operands."));
-        }
-
-        if (count < BigInteger.Zero)
-        {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.ArgumentOutOfRange, "Shift count cannot be negative."));
-        }
-
-        // Clamp the shift count to the bit length of the value.
-        long bitLength = val.GetBitLength();
-        int shift = count > bitLength ? (int)bitLength : (int)count;
-
-        return new MathValue(val >> shift);
-    }
-
-    /// <summary>
-    /// Performs a bitwise AND on integer operands.
-    /// </summary>
-    /// <param name="a">The left integer operand.</param>
-    /// <param name="b">The right integer operand.</param>
-    /// <returns>The result of the bitwise AND operation.</returns>
-    /// <exception cref="ExpressionException">Thrown if either operand is not an integer.
-    /// </exception>
-    public static MathValue BitwiseAnd(MathValue a, MathValue b)
-    {
-        if (!a.TryGetInteger(out var intA) || !b.TryGetInteger(out var intB))
-        {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.IntegerRequired, "Bitwise AND requires integer operands."));
-        }
-
-        return new MathValue(intA & intB);
-    }
-
-    /// <summary>
-    /// Performs a bitwise OR on integer operands.
-    /// </summary>
-    /// <param name="a">The left integer operand.</param>
-    /// <param name="b">The right integer operand.</param>
-    /// <returns>The result of the bitwise OR operation.</returns>
-    /// <exception cref="ExpressionException">Thrown if either operand is not an integer.
-    /// </exception>
-    public static MathValue BitwiseOr(MathValue a, MathValue b)
-    {
-        if (!a.TryGetInteger(out var intA) || !b.TryGetInteger(out var intB))
-        {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.IntegerRequired, "Bitwise OR requires integer operands."));
-        }
-
-        return new MathValue(intA | intB);
-    }
-
-    /// <summary>
-    /// Performs a bitwise XOR on integer operands.
-    /// </summary>
-    /// <param name="a">The left integer operand.</param>
-    /// <param name="b">The right integer operand.</param>
-    /// <returns>The result of the bitwise XOR operation.</returns>
-    /// <exception cref="ExpressionException">Thrown if either operand is not an integer.
-    /// </exception>
-    public static MathValue BitwiseXor(MathValue a, MathValue b)
-    {
-        if (!a.TryGetInteger(out var intA) || !b.TryGetInteger(out var intB))
-        {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.IntegerRequired, "Bitwise XOR requires integer operands."));
-        }
-
-        return new MathValue(intA ^ intB);
-    }
-
-    /// <summary>
-    /// Performs a bitwise one's complement (NOT) on an integer operand.
-    /// </summary>
-    /// <param name="a">The integer operand to invert.</param>
-    /// <returns>The result of the bitwise NOT operation.</returns>
-    /// <exception cref="ExpressionException">Thrown if the operand is not an integer.
-    /// </exception>
-    public static MathValue BitwiseNot(MathValue a)
-    {
-        if (!a.TryGetInteger(out var val))
-        {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.IntegerRequired, "Bitwise NOT requires an integer operand."));
-        }
-
-        return new MathValue(~val);
-    }
-
-    /// <summary>
-    /// Compares two values for equality using
-    /// <see cref="Compare(MathValue, MathValue)"/>.
-    /// </summary>
-    /// <param name="a">The left operand.</param>
-    /// <param name="b">The right operand.</param>
-    /// <returns><c>1m</c> if the operands are equal; otherwise <c>0m</c>. If either
-    /// operand is NaN, returns <c>0m</c>, as NaN is not equal to anything else.</returns>
-    public static MathValue AreEqual(MathValue a, MathValue b)
-    {
-        // IEEE 754: if either value is NaN, the comparison is false.
-        if (a.IsNaN || b.IsNaN)
-        {
-            return new MathValue(0m);
-        }
-
-        return Compare(a, b) == 0 ? new MathValue(1m) : new MathValue(0m);
-    }
-
-    /// <summary>
-    /// Compares two values for inequality using
-    /// <see cref="Compare(MathValue, MathValue)"/>.
-    /// </summary>
-    /// <param name="a">The left operand.</param>
-    /// <param name="b">The right operand.</param>
-    /// <returns><c>1m</c> if the operands are not equal; otherwise <c>0m</c>. If either
-    /// operand is NaN, returns <c>1m</c>, as NaN is not equal to anything else.</returns>
-    public static MathValue AreNotEqual(MathValue a, MathValue b)
-    {
-        // IEEE 754: if either value is NaN, the comparison is true.
-        if (a.IsNaN || b.IsNaN)
-        {
-            return new MathValue(1m);
-        }
-
-        return Compare(a, b) != 0 ? new MathValue(1m) : new MathValue(0m);
-    }
-
-    /// <summary>
-    /// Compares if the left operand is strictly less than the right operand using
-    /// <see cref="Compare(MathValue, MathValue)"/>.
-    /// </summary>
-    /// <param name="a">The left operand.</param>
-    /// <param name="b">The right operand.</param>
-    /// <returns><c>1m</c> if the comparison holds; otherwise <c>0m</c>.</returns>
-    public static MathValue LessThan(MathValue a, MathValue b)
-    {
-        if (a.IsNaN || b.IsNaN)
-        {
-            return new MathValue(0m);
-        }
-
-        return Compare(a, b) < 0 ? new MathValue(1m) : new MathValue(0m);
-    }
-
-    /// <summary>
-    /// Compares if the left operand is less than or equal to the right operand using
-    /// <see cref="Compare(MathValue, MathValue)"/>.
-    /// </summary>
-    /// <param name="a">The left operand.</param>
-    /// <param name="b">The right operand.</param>
-    /// <returns><c>1m</c> if the comparison holds; otherwise <c>0m</c>.</returns>
-    public static MathValue LessThanOrEqual(MathValue a, MathValue b)
-    {
-        if (a.IsNaN || b.IsNaN)
-        {
-            return new MathValue(0m);
-        }
-
-        return Compare(a, b) <= 0 ? new MathValue(1m) : new MathValue(0m);
-    }
-
-    /// <summary>
-    /// Compares if the left operand is strictly greater than the right operand using
-    /// <see cref="Compare(MathValue, MathValue)"/>.
-    /// </summary>
-    /// <param name="a">The left operand.</param>
-    /// <param name="b">The right operand.</param>
-    /// <returns><c>1m</c> if the comparison holds; otherwise <c>0m</c>.</returns>
-    public static MathValue GreaterThan(MathValue a, MathValue b)
-    {
-        if (a.IsNaN || b.IsNaN)
-        {
-            return new MathValue(0m);
-        }
-
-        return Compare(a, b) > 0 ? new MathValue(1m) : new MathValue(0m);
-    }
-
-    /// <summary>
-    /// Compares if the left operand is greater than or equal to the right operand using
-    /// <see cref="Compare(MathValue, MathValue)"/>.
-    /// </summary>
-    /// <param name="a">The left operand.</param>
-    /// <param name="b">The right operand.</param>
-    /// <returns><c>1m</c> if the comparison holds; otherwise <c>0m</c>.</returns>
-    public static MathValue GreaterThanOrEqual(MathValue a, MathValue b)
-    {
-        if (a.IsNaN || b.IsNaN)
-        {
-            return new MathValue(0m);
-        }
-
-        return Compare(a, b) >= 0 ? new MathValue(1m) : new MathValue(0m);
-    }
-
-    /// <summary>
-    /// Adds two values. Integers add exactly. If either operand is a double, the result
-    /// is a double. Otherwise, decimal arithmetic is used, which can round; on decimal
-    /// overflow, whole-number operands are added exactly as integers and anything else
-    /// falls back to double.
-    /// </summary>
-    /// <param name="a">The left operand.</param>
-    /// <param name="b">The right operand.</param>
-    /// <returns>The sum.</returns>
-    /// <exception cref="CalculationLimitException">Thrown if an integer result exceeds
-    /// the configured bit ceiling.</exception>
-    public static MathValue operator +(MathValue a, MathValue b)
-    {
-        // If either value is a double, the entire operation is promoted to double.
-        if (a.Kind is DataType.Double || b.Kind is DataType.Double)
-        {
-            return new MathValue(a.AsDouble() + b.AsDouble());
-        }
-
-        // If both values are integers, perform exact integer addition.
-        if (a.Kind is DataType.Integer && b.Kind is DataType.Integer)
-        {
-            return new MathValue(a.IntegerValue + b.IntegerValue);
-        }
-
-        // Prefer decimal for mixed integer/decimal or pure decimal arithmetic. This can
-        // round to fit decimal precision; conversion or arithmetic overflow uses double.
-        // However, if the decimal operand represents a whole number, promote to exact
-        // BigInteger rather than losing precision in double.
-        try
-        {
-            decimal decA = a.Kind is DataType.Integer ? (decimal)a.IntegerValue : a.DecimalValue;
-            decimal decB = b.Kind is DataType.Integer ? (decimal)b.IntegerValue : b.DecimalValue;
-            return new MathValue(decA + decB);
-        }
-        catch (OverflowException)
-        {
-            if (TryEvaluateMixedIntegerAndWholeDecimal(a, b, static (x, y) => x + y, out var intResult))
-            {
-                return intResult;
-            }
-
-            return new MathValue(a.AsDouble() + b.AsDouble());
-        }
-    }
-
-    /// <summary>
-    /// Subtracts the right operand from the left. If either operand is a double, the
-    /// result is a double. Otherwise, decimal arithmetic is used, which can round; on
-    /// decimal overflow, whole-number operands are subtracted exactly as integers and
-    /// anything else falls back to double.
-    /// </summary>
-    /// <param name="a">The left operand.</param>
-    /// <param name="b">The right operand.</param>
-    /// <returns>The difference.</returns>
-    /// <exception cref="CalculationLimitException">Thrown if an integer result exceeds
-    /// the configured bit ceiling.</exception>
-    public static MathValue operator -(MathValue a, MathValue b)
-    {
-        if (a.Kind is DataType.Double || b.Kind is DataType.Double)
-        {
-            return new MathValue(a.AsDouble() - b.AsDouble());
-        }
-
-        if (a.Kind is DataType.Integer && b.Kind is DataType.Integer)
-        {
-            return new MathValue(a.IntegerValue - b.IntegerValue);
-        }
-
-        try
-        {
-            decimal decA = a.Kind is DataType.Integer ? (decimal)a.IntegerValue : a.DecimalValue;
-            decimal decB = b.Kind is DataType.Integer ? (decimal)b.IntegerValue : b.DecimalValue;
-            return new MathValue(decA - decB);
-        }
-        catch (OverflowException)
-        {
-            if (TryEvaluateMixedIntegerAndWholeDecimal(a, b, static (x, y) => x - y, out var intResult))
-            {
-                return intResult;
-            }
-
-            return new MathValue(a.AsDouble() - b.AsDouble());
-        }
-    }
-
-    /// <summary>
-    /// Multiplies two values. Integers multiply exactly. If either operand is a double,
-    /// the result is a double. Otherwise, decimal arithmetic is used, which can round; on
-    /// decimal overflow, whole-number operands are multiplied exactly as integers and
-    /// anything else falls back to double.
-    /// </summary>
-    /// <param name="a">The left operand.</param>
-    /// <param name="b">The right operand.</param>
-    /// <returns>The product.</returns>
-    /// <exception cref="CalculationLimitException">Thrown if an integer result exceeds
-    /// the configured bit ceiling.</exception>
-    public static MathValue operator *(MathValue a, MathValue b)
-    {
-        if (a.Kind is DataType.Double || b.Kind is DataType.Double)
-        {
-            return new MathValue(a.AsDouble() * b.AsDouble());
-        }
-
-        if (a.Kind is DataType.Integer && b.Kind is DataType.Integer)
-        {
-            return new MathValue(a.IntegerValue * b.IntegerValue);
-        }
-
-        try
-        {
-            decimal decA = a.Kind is DataType.Integer ? (decimal)a.IntegerValue : a.DecimalValue;
-            decimal decB = b.Kind is DataType.Integer ? (decimal)b.IntegerValue : b.DecimalValue;
-            decimal product = decA * decB;
-            if (product == 0m && !a.IsZero && !b.IsZero)
-            {
-                return MultiplyExactOrToDouble(a, b);
-            }
-
-            return new MathValue(product);
-        }
-        catch (OverflowException)
-        {
-            return MultiplyExactOrToDouble(a, b);
-        }
-    }
-
-    /// <summary>
-    /// Divides two values. Integers divide exactly when the quotient is whole. Otherwise,
-    /// decimal arithmetic is used, which can round. On decimal overflow, whole-number
-    /// operands with a whole quotient give an exact integer and anything else falls back
-    /// to double.
-    /// </summary>
-    /// <param name="a">The dividend.</param>
-    /// <param name="b">The divisor.</param>
-    /// <returns>The quotient.</returns>
-    /// <exception cref="DivideByZeroException">Thrown when <paramref name="b"/> is zero.
-    /// </exception>
-    /// <exception cref="CalculationLimitException">Thrown if an integer result exceeds
-    /// the configured bit ceiling.</exception>
-    public static MathValue operator /(MathValue a, MathValue b)
-    {
-        if (b.IsZero)
-        {
-            throw new DivideByZeroException();
-        }
-
-        if (a.Kind is DataType.Double || b.Kind is DataType.Double)
-        {
-            return new MathValue(DivideAsDouble(a, b));
-        }
-
-        if (a.Kind is DataType.Integer &&
-            b.Kind is DataType.Integer &&
-            BigInteger.Remainder(a.IntegerValue, b.IntegerValue) == BigInteger.Zero)
-        {
-            // Preserve an exact integer quotient; fractional quotients use the decimal
-            // path below, which can round even when it does not overflow.
-            return new MathValue(a.IntegerValue / b.IntegerValue);
-        }
-
-        try
-        {
-            decimal decA = a.Kind is DataType.Integer ? (decimal)a.IntegerValue : a.DecimalValue;
-            decimal decB = b.Kind is DataType.Integer ? (decimal)b.IntegerValue : b.DecimalValue;
-            decimal quotient = decA / decB;
-            if (quotient == 0m && !a.IsZero)
-            {
-                return new MathValue(DivideAsDouble(a, b));
-            }
-
-            return new MathValue(quotient);
-        }
-        catch (OverflowException)
-        {
-            // If both operands represent whole numbers and divide evenly, promote to
-            // exact BigInteger rather than losing precision in double. If there is a
-            // fractional remainder that cannot fit in decimal, fall back to double to
-            // avoid truncating integer division.
-            if (a.TryGetInteger(out var intA) &&
-                b.TryGetInteger(out var intB) &&
-                BigInteger.Remainder(intA, intB).IsZero)
-            {
-                return new MathValue(intA / intB);
-            }
-
-            return new MathValue(DivideAsDouble(a, b));
-        }
-    }
-
-    /// <summary>
-    /// Computes the remainder of dividing two values. Integer remainders are exact;
-    /// otherwise decimal arithmetic is used, falling back to an exact integer remainder
-    /// for whole numbers on decimal overflow, and double for all other cases. If either
-    /// operand is a double, the result is a double.
-    /// </summary>
-    /// <param name="a">The dividend.</param>
-    /// <param name="b">The divisor.</param>
-    /// <returns>The remainder, with the sign of <paramref name="a"/>.</returns>
-    /// <exception cref="DivideByZeroException">Thrown when <paramref name="b"/> is zero.
-    /// </exception>
-    public static MathValue operator %(MathValue a, MathValue b)
-    {
-        if (b.IsZero)
-        {
-            throw new DivideByZeroException();
-        }
-
-        if (a.Kind is DataType.Double || b.Kind is DataType.Double)
-        {
-            return new MathValue(a.AsDouble() % b.AsDouble());
-        }
-
-        if (a.Kind is DataType.Integer && b.Kind is DataType.Integer)
-        {
-            return new MathValue(a.IntegerValue % b.IntegerValue);
-        }
-
-        try
-        {
-            decimal decA = a.Kind is DataType.Integer ? (decimal)a.IntegerValue : a.DecimalValue;
-            decimal decB = b.Kind is DataType.Integer ? (decimal)b.IntegerValue : b.DecimalValue;
-            return new MathValue(decA % decB);
-        }
-        catch (OverflowException)
-        {
-            // If both operands represent whole numbers, promote to exact BigInteger remainder
-            // rather than losing precision in double.
-            if (a.TryGetInteger(out var intA) && b.TryGetInteger(out var intB))
-            {
-                return new MathValue(intA % intB);
-            }
-
-            return new MathValue(a.AsDouble() % b.AsDouble());
-        }
-    }
-
-    // Bitwise operators.
-
-    /// <summary>
-    /// Performs a bitwise one's complement (NOT) on an integer operand.
-    /// </summary>
-    /// <param name="value">The value to negate.</param>
-    /// <returns>The bitwise negation of <paramref name="value"/>.</returns>
-    public static MathValue operator ~(MathValue value) => BitwiseNot(value);
-
-    /// <summary>
-    /// Performs a bitwise AND on integer operands.
-    /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The result of the bitwise AND operation.</returns>
-    public static MathValue operator &(MathValue left, MathValue right) => BitwiseAnd(left, right);
-
-    /// <summary>
-    /// Performs a bitwise OR on integer operands.
-    /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The result of the bitwise OR operation.</returns>
-    public static MathValue operator |(MathValue left, MathValue right) => BitwiseOr(left, right);
-
-    /// <summary>
-    /// Performs a bitwise XOR on integer operands.
-    /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The result of the bitwise XOR operation.</returns>
-    public static MathValue operator ^(MathValue left, MathValue right) => BitwiseXor(left, right);
-
-    /// <summary>
-    /// Performs a bitwise shift-left on an integer operand, enforcing the maximum bit
-    /// ceiling.
-    /// </summary>
-    /// <param name="left">The value to shift.</param>
-    /// <param name="right">The shift count.</param>
-    /// <returns>The result of the bitshift operation.</returns>
-    public static MathValue operator <<(MathValue left, int right) => ShiftLeft(left, new MathValue(right));
-
-    /// <summary>
-    /// Performs an arithmetic shift-right on an integer operand, sign-extending a
-    /// negative value.
-    /// </summary>
-    /// <param name="left">The value to shift.</param>
-    /// <param name="right">The shift count.</param>
-    /// <returns>The result of the bitshift operation.</returns>
-    public static MathValue operator >>(MathValue left, int right) => ShiftRight(left, new MathValue(right));
-
-    // Implicit type conversion.
-
-    /// <summary>
-    /// Implicitly converts a <see cref="decimal"/> to a <see cref="DataType.Decimal"/>
-    /// <see cref="MathValue"/>.
-    /// </summary>
-    /// <param name="value">The decimal fraction or integer to store.</param>
-    /// <returns>A <see cref="MathValue"/> holding <paramref name="value"/>.</returns>
-    public static implicit operator MathValue(decimal value) => new(value);
-
-    /// <summary>
-    /// Implicitly converts a <see cref="BigInteger"/> to a <see cref="DataType.Integer"/>
-    /// <see cref="MathValue"/>.
-    /// </summary>
-    /// <param name="value">The integer value to store.</param>
-    /// <returns>A <see cref="MathValue"/> holding <paramref name="value"/> exactly.</returns>
-    /// <exception cref="CalculationLimitException">Thrown if the magnitude exceeds the
-    /// configured bit ceiling.</exception>
-    public static implicit operator MathValue(BigInteger value) => new(value);
-
-    /// <summary>
-    /// Implicitly converts a <see cref="double"/> to a <see cref="DataType.Double"/>
-    /// <see cref="MathValue"/>. No normalisation or promotion is applied.
-    /// </summary>
-    /// <param name="value">The 64-bit binary floating-point value to store.</param>
-    /// <returns>A <see cref="MathValue"/> holding <paramref name="value"/>.</returns>
-    public static implicit operator MathValue(double value) => new(value);
-
-    /// <summary>
-    /// Implicitly converts an <see cref="int"/> to a <see cref="DataType.Integer"/>
-    /// <see cref="MathValue"/>.
-    /// </summary>
-    /// <param name="value">The integer value to store.</param>
-    /// <returns>A <see cref="MathValue"/> holding <paramref name="value"/> exactly.</returns>
-    public static implicit operator MathValue(int value) => new(value);
-
-    /// <summary>
-    /// Implicitly converts a <see cref="uint"/> to a <see cref="DataType.Integer"/>
-    /// <see cref="MathValue"/>.
-    /// </summary>
-    /// <param name="value">The integer value to store.</param>
-    /// <returns>A <see cref="MathValue"/> holding <paramref name="value"/> exactly.</returns>
-    public static implicit operator MathValue(uint value) => new(value);
-
-    /// <summary>
-    /// Implicitly converts a <see cref="long"/> to a <see cref="DataType.Integer"/>
-    /// <see cref="MathValue"/>.
-    /// </summary>
-    /// <param name="value">The integer value to store.</param>
-    /// <returns>A <see cref="MathValue"/> holding <paramref name="value"/> exactly.</returns>
-    public static implicit operator MathValue(long value) => new(value);
-
-    /// <summary>
-    /// Implicitly converts a <see cref="ulong"/> to a <see cref="DataType.Integer"/>
-    /// <see cref="MathValue"/>.
-    /// </summary>
-    /// <param name="value">The integer value to store.</param>
-    /// <returns>A <see cref="MathValue"/> holding <paramref name="value"/> exactly.</returns>
-    public static implicit operator MathValue(ulong value) => new(value);
-
-    /// <summary>
-    /// Raises a value to a power. An integer base with a nonnegative integer-valued
-    /// exponent is computed exactly. A decimal base with such an exponent uses
-    /// exponentiation by squaring in decimal, which can round; on overflow, a whole-
-    /// number base is promoted to an exact integer calculation; otherwise, the
-    /// calculation falls back to double. Negative integer-valued exponents compute the
-    /// reciprocal of the positive power (<c>1 / a^n</c>) via division, falling back to
-    /// double when decimal precision would lose significant digits or when the positive
-    /// power exceeds calculation limits. All other cases, including fractional exponents,
-    /// use <see cref="Math.Pow(double, double)"/>.
-    /// </summary>
-    /// <param name="baseVal">The base value.</param>
-    /// <param name="expVal">The exponent value.</param>
-    /// <returns>The base raised to the exponent.</returns>
-    /// <exception cref="DivideByZeroException">Thrown if zero is raised to a finite 
-    /// negative power.</exception>
-    /// <exception cref="ExpressionException">Thrown if a negative base is raised to a
-    /// fractional power.</exception>
-    /// <exception cref="CalculationLimitException">Thrown if an integer-valued exponent
-    /// exceeds the configured magnitude limit, whatever the base type, or if an exact
-    /// positive integer result would exceed the bit ceiling.</exception>
-    public static MathValue Pow(MathValue baseVal, MathValue expVal)
-    {
-        var hasIntExp = expVal.TryGetInteger(out var exponent);
-        if (hasIntExp)
-        {
-            if (BigInteger.Abs(exponent) > CalculationLimits.MaxExponentMagnitude)
-            {
-                throw new CalculationLimitException();
-            }
-
-            // Zero raised to a finite negative power is a division by zero.
-            if (baseVal.IsZero && exponent < BigInteger.Zero)
-            {
-                throw new DivideByZeroException("Cannot raise zero to a negative power.");
-            }
-
-            if (exponent < BigInteger.Zero)
-            {
-                // The reciprocal rule is for exact kinds only; doubles keep Math.Pow semantics
-                // (overflow to Infinity, underflow to zero) rather than throwing on 1 / 0.
-                if (baseVal.Kind is DataType.Double)
-                {
-                    return new MathValue(Math.Pow(baseVal.AsDouble(), expVal.AsDouble()));
-                }
-
-                // If the base is decimal, has absolute value less than 1, and has an exact
-                // decimal reciprocal (e.g., 0.5m -> 2m, 0.25m -> 4m, 0.1m -> 10m), invert the
-                // base first and raise that to the positive power. Guarding with |base| < 1 ensures
-                // we only invert when it turns a shrinking fractional power into an expanding
-                // whole-number power that can fit in decimal or promote to BigInteger.
-                if (baseVal.Kind is DataType.Decimal && !baseVal.IsZero && Math.Abs(baseVal.DecimalValue) < 1m)
-                {
-                    try
-                    {
-                        decimal inverse = 1m / baseVal.DecimalValue;
-                        if (AreExactReciprocals(inverse, baseVal.DecimalValue))
-                        {
-                            return Pow(new MathValue(inverse), new MathValue(-exponent));
-                        }
-                    }
-                    catch (OverflowException)
-                    {
-                        // Infinitesimal decimal bases (e.g., 1e-28m) whose inverse overflows decimal.
-                    }
-                }
-
-                // Negative integer exponent: defined as reciprocal 1 / a^n.
-                MathValue denominator;
-                try
-                {
-                    denominator = Pow(baseVal, new MathValue(-exponent));
-                }
-                catch (CalculationLimitException)
-                {
-                    // The positive power exceeded the bit ceiling (e.g. 10^-5000), but the
-                    // reciprocal is a tiny number representable in double.
-                    return new MathValue(Math.Pow(baseVal.AsDouble(), expVal.AsDouble()));
-                }
-
-                // If the denominator represents an integer power of 2 beyond decimal's 28-digit
-                // capacity (k > 28), decimal arithmetic cannot represent 1 / 2^k without rounding,
-                // but IEEE 754 binary double represents it with zero roundoff error down to 2^-1074.
-                // Whole-number decimals (e.g. from 2.0m^30) are checked as well so they do not slip past.
-                BigInteger? intDenominator = denominator.Kind switch
-                {
-                    DataType.Integer => denominator.IntegerValue,
-                    DataType.Decimal when decimal.Truncate(denominator.DecimalValue) == denominator.DecimalValue
-                        => (BigInteger)denominator.DecimalValue,
-                    _ => null,
-                };
-
-                if (intDenominator.HasValue)
-                {
-                    BigInteger magnitude = BigInteger.Abs(intDenominator.Value);
-                    if (BigInteger.IsPow2(magnitude))
-                    {
-                        long k = magnitude.GetBitLength() - 1;
-                        if (k > 28 && k <= 1074)
-                        {
-                            return new MathValue(intDenominator.Value.Sign * Math.ScaleB(1.0, (int)-k));
-                        }
-                    }
-                }
-
-                // A rounded decimal power has lost digits (or become zero) once it is small, so
-                // reciprocating it would amplify the error. With exponent -1 the denominator is
-                // the base itself and is exact, so it needs no guard.
-                if (exponent < -BigInteger.One &&
-                    denominator.Kind is DataType.Decimal &&
-                    Math.Abs(denominator.DecimalValue) < 1e-11m)
-                {
-                    return new MathValue(Math.Pow(baseVal.AsDouble(), expVal.AsDouble()));
-                }
-
-                var quotient = new MathValue(BigInteger.One) / denominator;
-
-                // Decimal has a fixed scale (at most 28 fractional digits). Guard against
-                // losing significant digits on small quotients: require at least ~17 significant
-                // digits (>= 1e-11m) or an exact decimal fraction (quotient * denominator == 1m).
-                if (quotient.Kind is not DataType.Decimal || IsDecimalQuotientSignificant(quotient.DecimalValue, denominator))
-                {
-                    return quotient;
-                }
-
-                // If the denominator is exact, compute the correctly rounded reciprocal double
-                // directly using exact integer arithmetic, avoiding intermediate truncation.
-                if (denominator.Kind is DataType.Integer && !denominator.IntegerValue.IsZero)
-                {
-                    return new MathValue(DivideIntegersAsDouble(BigInteger.One, denominator.IntegerValue));
-                }
-
-                if (denominator.Kind is DataType.Decimal && denominator.DecimalValue != 0m)
-                {
-                    var (coeff, scale) = DecomposeDecimal(denominator.DecimalValue);
-                    if (!coeff.IsZero)
-                    {
-                        return new MathValue(DivideIntegersAsDouble(BigInteger.Pow(10, scale), coeff));
-                    }
-                }
-
-                return new MathValue(Math.Pow(baseVal.AsDouble(), expVal.AsDouble()));
-            }
-
-            if (baseVal.Kind is DataType.Integer && exponent >= BigInteger.Zero)
-            {
-                var magnitude = BigInteger.Abs(baseVal.IntegerValue);
-
-                // This lower bound rejects powers that must exceed the bit ceiling
-                // before allocating them. The result constructor enforces the final size.
-                if (magnitude > BigInteger.One &&
-                    ((magnitude.GetBitLength() - 1) * (int)exponent) + 1 > CalculationLimits.MaxIntegerBits)
-                {
-                    throw new CalculationLimitException();
-                }
-
-                return new MathValue(BigInteger.Pow(baseVal.IntegerValue, (int)exponent));
-            }
-
-            if (baseVal.Kind is DataType.Decimal && exponent >= BigInteger.Zero)
-            {
-                decimal dec = baseVal.DecimalValue;
-                try
-                {
-                    decimal r = DecimalPow(dec, (int)exponent);
-                    if (dec != 0m && Math.Abs(dec) < 1m)
-                    {
-                        var (_, scale) = DecomposeDecimal(dec);
-                        bool exact = (long)scale * (int)exponent <= 28;
-                        if (!exact && Math.Abs(r) < 1e-11m)
-                        {
-                            return new MathValue(Math.Pow(baseVal.AsDouble(), expVal.AsDouble()));
-                        }
-                    }
-
-                    return new MathValue(r);
-                }
-                catch (OverflowException)
-                {
-                    // If the decimal base has no fractional part, promote to BigInteger
-                    // rather than losing precision in double.
-                    if (decimal.Truncate(baseVal.DecimalValue) == baseVal.DecimalValue)
-                    {
-                        var intBase = new BigInteger(baseVal.DecimalValue);
-                        var magnitude = BigInteger.Abs(intBase);
-                        if (magnitude > BigInteger.One &&
-                            ((magnitude.GetBitLength() - 1) * (int)exponent) + 1 > CalculationLimits.MaxIntegerBits)
-                        {
-                            throw new CalculationLimitException();
-                        }
-
-                        return new MathValue(BigInteger.Pow(intBase, (int)exponent));
-                    }
-
-                    // Fall through to double calculation on decimal overflow.
-                }
-            }
-        }
-
-        double b = baseVal.AsDouble();
-        double e = expVal.AsDouble();
-
-        // 0 raised to a finite negative power represents division by zero:
-        // 0^-n = 1 / 0^n. A -Infinity exponent is a defined IEEE 754 limit (+Infinity),
-        // so it falls through to Math.Pow.
-        if (baseVal.IsZero && double.IsFinite(e) && e < 0.0)
-        {
-            throw new DivideByZeroException("Cannot raise zero to a negative power.");
-        }
-
-        // Negative base raised to a non-integer power yields a complex result without a
-        // real value.
-        if (b < 0.0 && double.IsFinite(e) && !hasIntExp)
-        {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.UndefinedMathResult, "Negative base with a fractional exponent has no real solution."));
-        }
-
-        return new MathValue(Math.Pow(b, e));
-    }
-
-    private static bool IsDecimalQuotientSignificant(decimal quotient, MathValue denominator)
-    {
-        if (quotient == 0m)
-        {
-            return false;
-        }
-
-        if (Math.Abs(quotient) >= 1e-11m)
-        {
-            return true;
-        }
-
-        // Check whether the division was exact using integer arithmetic so decimal
-        // multiplication rounding does not produce false positives (e.g. 1/0.3).
-        if (denominator.Kind is DataType.Decimal)
-        {
-            return AreExactReciprocals(quotient, denominator.DecimalValue);
-        }
-
-        if (denominator.Kind is DataType.Integer && denominator.IntegerValue <= (BigInteger)decimal.MaxValue)
-        {
-            return AreExactReciprocals(quotient, (decimal)denominator.IntegerValue);
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Decomposes a <see cref="decimal"/> into its signed integer coefficient and scale.
-    /// </summary>
-    private static (BigInteger Coefficient, int Scale) DecomposeDecimal(decimal value)
-    {
-        Span<int> bits = stackalloc int[4];
-        decimal.GetBits(value, bits);
-        var coefficient = (BigInteger)(uint)bits[0]
-            + ((BigInteger)(uint)bits[1] << 32)
-            + ((BigInteger)(uint)bits[2] << 64);
-        if (bits[3] < 0)
-        {
-            coefficient = -coefficient;
-        }
-
-        int scale = (bits[3] >> 16) & 0x7f;
-        return (coefficient, scale);
-    }
-
-    /// <summary>
-    /// Checks whether two decimal values multiply to exactly 1 without rounding,
-    /// evaluated in exact integer arithmetic: c_a * c_b == 10^(scale_a + scale_b).
-    /// </summary>
-    private static bool AreExactReciprocals(decimal a, decimal b)
-    {
-        var (ca, sa) = DecomposeDecimal(a);
-        var (cb, sb) = DecomposeDecimal(b);
-        return ca * cb == BigInteger.Pow(10, sa + sb);
-    }
-
-    private static decimal DecimalPow(decimal baseVal, int exponent)
-    {
-        // Exponentiation by squaring. checked() surfaces overflow, but intermediate
-        // products can still round to decimal's 28-29 significant digits.
-        decimal result = 1m;
-        decimal b = baseVal;
-        int e = exponent;
-
-        while (e > 0)
-        {
-            if ((e & 1) != 0)
-            {
-                result = checked(result * b);
-            }
-
-            e >>= 1;
-            if (e > 0)
-            {
-                b = checked(b * b);
-            }
-        }
-
-        return result;
-    }
-
-    private static int CompareIntegerAndDecimal(BigInteger integer, decimal value)
-    {
-        // Scale the integer rather than narrowing it, so comparison remains exact even
-        // when the integer cannot be represented by a decimal.
-        var (coefficient, scale) = DecomposeDecimal(value);
-
-        // A decimal is coefficient / 10^scale. Multiplying the integer by 10^scale
-        // puts both sides on the same exact integer scale without division or rounding.
-        return (integer * BigInteger.Pow(10, scale)).CompareTo(coefficient);
-    }
-
-    private static int CompareDoubleAndExact(MathValue exact, double dbl)
-    {
-        // Handle non-finite doubles first.
-        if (double.IsNaN(dbl))
-        {
-            // Consistent with double.CompareTo: non-NaN is greater than NaN.
-            return 1;
-        }
-
-        if (double.IsPositiveInfinity(dbl))
-        {
-            // Any finite integer or decimal is strictly less than +Infinity.
-            return -1;
-        }
-
-        if (double.IsNegativeInfinity(dbl))
-        {
-            // Any finite integer or decimal is strictly greater than -Infinity.
-            return 1;
-        }
-
-        // Handle exact BigInteger vs finite double.
-        if (exact.Kind is DataType.Integer)
-        {
-            var integer = exact.IntegerValue;
-
-            // Double.MaxValue has a 1024-bit binary exponent (~1.79e308). Any integer
-            // with 1025+ bits strictly exceeds Double.MaxValue in magnitude and cannot
-            // be equal.
-            if (integer.GetBitLength() > 1024)
-            {
-                return integer.Sign > 0 ? 1 : -1;
-            }
-
-            // Every finite double without a fractional part converts to a BigInteger
-            // without precision loss, so we can convert and compare without narrowing.
-            if (double.IsInteger(dbl))
-            {
-                var dblAsBigInt = new BigInteger(dbl);
-                return integer.CompareTo(dblAsBigInt);
-            }
-
-            // An exact integer can never equal a floating-point value with a fractional
-            // part. A non-integer double strictly sits in the open interval
-            // (floor, floor + 1). Because floor(dbl) is an integer, it converts
-            // exactly to a BigInteger.
-            var floor = new BigInteger(Math.Floor(dbl));
-            return (integer <= floor) ? -1 : 1;
-        }
-
-        // Exact decimal vs finite double.
-        // If the double exceeds the decimal range, the comparison is trivial.
-        if (Math.Abs(dbl) > (double)decimal.MaxValue)
-        {
-            return dbl > 0.0 ? -1 : 1;
-        }
-
-        // Whole doubles within decimal range convert to BigInteger and can be compared
-        // via scaled integer arithmetic without division or rounding.
-        if (double.IsInteger(dbl))
-        {
-            var dblAsBigInt = new BigInteger(dbl);
-            return -CompareIntegerAndDecimal(dblAsBigInt, exact.DecimalValue);
-        }
-
-        // The double has a fractional part. Every finite double is an exact dyadic
-        // rational (m * 2^e), and every decimal is an exact base-10 fraction (c * 10^-s).
-        // Since double.IsInteger was false, the exponent is guaranteed to be negative
-        // (k = -e > 0):
-        //     exact  = c * 10^-s (or c / 10^s)
-        //     double = m / 2^k
-        // Cross-multiplying by positive denominators yields an exact integer comparison:
-        //     exact <=> dbl === (c * 2^k) <=> (m * 10^s)
-        var (c, s) = DecomposeDecimal(exact.DecimalValue);
-        var (m, powerOfTwo) = DecomposeDouble(dbl);
-        int k = -powerOfTwo;
-
-        // c * 2^k is a fast binary bit-shift; m * 10^s is a small BigInteger
-        // multiplication (s <= 28). The result is exact.
-        BigInteger decScaled = c << k;
-        BigInteger dblScaled = m * BigInteger.Pow(10, s);
-
-        return decScaled.CompareTo(dblScaled);
-    }
-
-    private static double DivideAsDouble(MathValue a, MathValue b)
-    {
-        // When neither operand is a double, both operands represent exact rational
-        // numbers: integers have denominator 1, and decimals have denominator 10^scale.
-        // Converting to exact rationals (numA / denA) / (numB / denB) ==
-        // (numA * denB) / (denA * numB) allows computing the quotient with provable
-        // round-half-even accuracy (<= 0.5 ULP) in a single rounding step via exact
-        // integer arithmetic, avoiding premature 53-bit mantissa truncation or double-
-        // rounding artifacts.
-        if (a.Kind is not DataType.Double && b.Kind is not DataType.Double)
-        {
-            var (numA, denA) = ToRational(a);
-            var (numB, denB) = ToRational(b);
-            return DivideIntegersAsDouble(numA * denB, denA * numB);
-        }
-
-        // Convert bounded mantissas instead of entire integers to avoid infinity/infinity
-        // when a very large numerator and denominator have a finite quotient.
-        double numerator = a.AsDoubleMantissa(out int numeratorExponent);
-        double denominator = b.AsDoubleMantissa(out int denominatorExponent);
-
-        return Math.ScaleB(
-            numerator / denominator, numeratorExponent - denominatorExponent);
-    }
-
-    private static MathValue MultiplyExactOrToDouble(MathValue a, MathValue b)
-    {
-        var (numA, denA) = ToRational(a);
-        var (numB, denB) = ToRational(b);
-
-        BigInteger num = numA * numB;
-        BigInteger den = denA * denB;
-
-        // Check if the product divides evenly into an exact arbitrary-precision integer.
-        BigInteger q = BigInteger.DivRem(num, den, out BigInteger rem);
-        if (rem.IsZero)
-        {
-            return new MathValue(q);
-        }
-
-        // If it cannot be an exact integer, compute the correctly rounded (<= 0.5 ULP)
-        // double.
-        return new MathValue(DivideIntegersAsDouble(num, den));
-    }
-
-    internal static bool TryToRational(MathValue v, out BigInteger num, out BigInteger den)
-    {
-        switch (v.Kind)
-        {
-            case DataType.Integer:
-                num = v.IntegerValue;
-                den = BigInteger.One;
-                return true;
-            case DataType.Decimal:
-                (num, den) = ToReducedFraction(v.DecimalValue);
-                return true;
-            default:
-                num = default;
-                den = default;
-                return false;
-        }
-    }
-
-    /// <summary>
-    /// Attempts to convert a rational number to a decimal fraction without rounding.
-    /// </summary>
-    /// <param name="num">The numerator of the rational number.</param>
-    /// <param name="den">The denominator of the rational number.</param>
-    /// <param name="result">Set to the exact decimal representation if it exists;
-    /// otherwise, set to 0.</param>
-    /// <returns><see langword="true"/> if the rational number can be exactly represented
-    /// as a decimal; otherwise, <see langword="false"/>.</returns>
-    internal static bool TryExactDecimal(BigInteger num, BigInteger den, out decimal result)
-    {
-        result = 0m;
-
-        int twos = 0;
-        int fives = 0;
-        BigInteger d = den;
-
-        while ((d & 1) == 0)
-        {
-            twos++;
-            d >>= 1;
-        }
-
-        while (BigInteger.Remainder(d, 5).IsZero)
-        {
-            fives++;
-            d /= 5;
-        }
-
-        // If any prime factors other than 2 or 5 remain, it is not representable as a
-        // terminating decimal.
-        if (!d.IsOne)
-        {
-            return false;
-        }
-
-        // Scale the numerator by 10^max(twos, fives) to convert to a decimal fraction.
-        int scale = Math.Max(twos, fives);
-        if (scale > 28)
-        {
-            return false; // Scale overflow. Decimal has a maximum of 28 fractional digits.
-        }
-
-        // Exactly one of (scale - twos) or (scale - fives) is nonzero (or both are zero if twos == fives).
-        // 10^scale / den = 2^(scale - twos) * 5^(scale - fives).
-        int p2 = scale - twos;
-        int p5 = scale - fives;
-
-        BigInteger factor = BigInteger.One;
-        if (p2 > 0)
-        {
-            factor <<= p2;
-        }
-        else if (p5 > 0)
-        {
-            factor *= BigInteger.Pow(5, p5);
-        }
-
-        BigInteger mantissa = num * factor;
-        BigInteger abs = BigInteger.Abs(mantissa);
-
-        if (abs > MaxDecimalMantissa)
-        {
-            return false; // Mantissa overflow (> 96 bits).
-        }
-
-        uint lo = (uint)(abs & uint.MaxValue);
-        uint mid = (uint)((abs >> 32) & uint.MaxValue);
-        uint hi = (uint)((abs >> 64) & uint.MaxValue);
-
-        result = new decimal((int)lo, (int)mid, (int)hi, mantissa.Sign < 0, (byte)scale);
-        return true;
-    }
-
-    /// <summary>
-    /// Reduces a rational numerator and denominator by their GCD and constructs the most
-    /// precise representable <see cref="MathValue"/> (Integer, Decimal, or Double).
-    /// </summary>
-    internal static MathValue FromRational(BigInteger num, BigInteger den)
-    {
+        CheckBits(num, CalculationLimits.MaxIntermediateBits);
+        CheckBits(den, CalculationLimits.MaxIntermediateBits);
         if (den.IsZero)
         {
             throw new DivideByZeroException();
@@ -1952,133 +234,1467 @@ public readonly struct MathValue :
             den = -den;
         }
 
-        if (num.IsZero)
+        var gcd = BigInteger.GreatestCommonDivisor(BigInteger.Abs(num), den);
+        num /= gcd;
+        den /= gcd;
+        if (decimalDomain && TryExactDecimal(num, den, out var dec))
         {
-            return new MathValue(BigInteger.Zero);
+            var value = new MathValue(dec).WithDecimalDisplayScale(0);
+            value.ValidateLimits(CalculationLimits.MaxIntegerBits);
+            return value;
         }
 
-        BigInteger gcd = BigInteger.GreatestCommonDivisor(BigInteger.Abs(num), den);
-        if (gcd > BigInteger.One)
-        {
-            num /= gcd;
-            den /= gcd;
-        }
-
-        // Exact integer?
         if (den.IsOne)
         {
+            CheckBits(num, CalculationLimits.MaxIntegerBits);
             return new MathValue(num);
         }
 
-        // Exact decimal (provably zero roundoff error).
-        if (TryExactDecimal(num, den, out decimal exactDecimal))
-        {
-            return new MathValue(exactDecimal);
-        }
+        CheckBits(num, CalculationLimits.MaxIntegerBits);
+        CheckBits(den, CalculationLimits.MaxIntegerBits);
 
-        // Inexact. Fall back to double (single-step round half-even).
-        return new MathValue(DivideIntegersAsDouble(num, den));
+        return new MathValue(num, den);
     }
 
-    private static (BigInteger Num, BigInteger Den) ToRational(MathValue v) =>
-        v.Kind switch
-        {
-            DataType.Integer => (v.IntegerValue, BigInteger.One),
-            // ToReducedFraction pre-reduces decimal coefficients via GCD to keep
-            // BigInteger multiplication terms compact.
-            DataType.Decimal => ToReducedFraction(v.DecimalValue),
-            _ => throw new InvalidOperationException(
-                    "Value must be an exact numeric representation.")
-        };
+    /// <summary>
+    /// Gets the reduced verified exact fraction, or null when finite Exact provenance is
+    /// unavailable.
+    /// </summary>
+    public (BigInteger Numerator, BigInteger Denominator)? ExactFraction =>
+        TryGetExactFraction(out var num, out var den) ? (num, den) : null;
 
     /// <summary>
-    /// Correctly rounded (round-half-even) <paramref name="numerator"/> /
-    /// <paramref name="denominator"/> for nonzero denominator, using exact integer
-    /// arithmetic with a single rounding step.
+    /// Gets the reduced fraction when the finite value has Exact calculation provenance.
+    /// </summary>
+    /// <returns>The verified exact numerator and positive denominator in lowest terms.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">The value has no verified exact
+    /// fractional representation.</exception>
+    public (BigInteger Numerator, BigInteger Denominator) GetExactFraction() =>
+        ExactFraction ?? throw new InvalidOperationException(
+            "The value does not have a verified exact fractional representation.");
+
+    /// <summary>
+    /// Returns an exact stored fraction only when finite calculation provenance is
+    /// explicitly trusted.
+    /// </summary>
+    public bool TryGetExactFraction(out BigInteger num, out BigInteger den)
+    {
+        if (Accuracy == CalculationAccuracy.Exact && IsFinite)
+        {
+            NumericFraction(this, out num, out den);
+            return true;
+        }
+
+        num = default;
+        den = default;
+
+        return false;
+    }
+
+    internal static bool TryToRational(
+        MathValue value, out BigInteger num, out BigInteger den)
+    {
+        switch (value.Kind)
+        {
+            case DataType.Integer:
+                num = value.IntegerValue;
+                den = BigInteger.One;
+                return true;
+
+            case DataType.Decimal:
+                (num, den) = ToReducedFraction(value.DecimalValue);
+                return true;
+
+            case DataType.Rational:
+                num = value.numerator;
+                den = value.denominator;
+                return true;
+
+            default:
+                num = default;
+                den = default;
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Explicitly converts to a double, rounding once from exact fractions.
+    /// </summary>
+    public double ToDouble() =>
+        TryToRational(this, out var n, out var d) ? DivideIntegersAsDouble(n, d) : DoubleValue;
+
+    /// <summary>
+    /// Compatibility alias for explicit double conversion.
+    /// </summary>
+    public double AsDouble() => ToDouble();
+
+    /// <summary>
+    /// Explicitly converts to decimal, rounding midpoint-to-even or throwing on overflow.
+    /// </summary>
+    public decimal ToDecimal()
+    {
+        if (Kind == DataType.Decimal)
+        {
+            return DecimalValue;
+        }
+
+        if (Kind == DataType.Double)
+        {
+            return checked((decimal)DoubleValue);
+        }
+
+        TryToRational(this, out var n, out var d);
+        if (TryExactDecimal(n, d, out var exact))
+        {
+            return exact;
+        }
+
+        var abs = BigInteger.Abs(n);
+        var scaled = abs * BigInteger.Pow(10, 28);
+        for (int scale = 28; scale >= 0; scale--)
+        {
+            var q = BigInteger.DivRem(scaled, d, out var remainder);
+            int comparison = (remainder * 2).CompareTo(d);
+            if (comparison > 0 || (comparison == 0 && !q.IsEven))
+            {
+                q++;
+            }
+
+            if (q <= MaxDecimalMantissa)
+            {
+                return MakeDecimal(q, n.Sign < 0, scale);
+            }
+
+            scaled /= 10;
+        }
+
+        throw new OverflowException("Value exceeds the decimal range.");
+    }
+
+    /// <summary>
+    /// Whether the value is finite.
+    /// </summary>
+    public bool IsFinite => Kind != DataType.Double || double.IsFinite(DoubleValue);
+
+    /// <summary>
+    /// Whether the value is NaN.
+    /// </summary>
+    public bool IsNaN => Kind == DataType.Double && double.IsNaN(DoubleValue);
+
+    /// <summary>
+    /// Whether the value is numerically zero.
+    /// </summary>
+    public bool IsZero => Kind switch
+    {
+        DataType.Integer => IntegerValue.IsZero,
+        DataType.Decimal => DecimalValue == 0,
+        DataType.Rational => numerator.IsZero,
+        _ => DoubleValue == 0,
+    };
+
+    private bool IsNegative => Kind switch
+    {
+        DataType.Integer => IntegerValue.Sign < 0,
+        DataType.Decimal => DecimalValue < 0,
+        DataType.Rational => numerator.Sign < 0,
+        _ => DoubleValue < 0,
+    };
+
+    /// <summary>
+    /// Extracts a finite integral value without inferring exact provenance.
+    /// </summary>
+    public bool TryGetInteger(out BigInteger value)
+    {
+        if (TryToRational(this, out var n, out var d))
+        {
+            value = BigInteger.DivRem(n, d, out var remainder);
+            if (remainder.IsZero) return true;
+        }
+        else if (double.IsFinite(DoubleValue) && double.IsInteger(DoubleValue))
+        {
+            value = new BigInteger(DoubleValue);
+            return true;
+        }
+
+        value = default;
+
+        return false;
+    }
+
+    /// <summary>
+    /// Formats the active representation without silent double conversion.
+    /// </summary>
+    public override string ToString() => ToString(null, null);
+
+    /// <summary>
+    /// Formats with the current culture.
+    /// </summary>
+    public string ToString(string? format) => ToString(format, null);
+
+    /// <summary>
+    /// Formats with the specified provider.
+    /// </summary>
+    public string ToString(IFormatProvider? formatProvider) => ToString(null, formatProvider);
+
+    /// <summary>
+    /// Formats the value. Rationals support general numeric, fixed/grouped decimal, and
+    /// exact fraction ("R") formats.
+    /// </summary>
+    public string ToString(string? format, IFormatProvider? formatProvider) => Kind switch
+    {
+        DataType.Integer => IntegerValue.ToString(format, formatProvider),
+        DataType.Decimal => DecimalValue.ToString(format, formatProvider),
+        DataType.Double => DoubleValue.ToString(format, formatProvider),
+        DataType.Rational => FormatRational(format, formatProvider),
+        _ => throw new InvalidOperationException("Unknown representation."),
+    };
+
+    /// <summary>
+    /// Writes formatted characters when the destination is large enough.
+    /// </summary>
+    public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider? provider = null)
+    {
+        bool success;
+        switch (Kind)
+        {
+            case DataType.Integer:
+                success = IntegerValue.TryFormat(destination, out charsWritten, format, provider);
+                break;
+
+            case DataType.Decimal:
+                success = DecimalValue.TryFormat(destination, out charsWritten, format, provider);
+                break;
+
+            case DataType.Double:
+                success = DoubleValue.TryFormat(destination, out charsWritten, format, provider);
+                break;
+
+            case DataType.Rational:
+                string text = ToString(format.IsEmpty ? null : format.ToString(), provider);
+                success = text.AsSpan().TryCopyTo(destination);
+                charsWritten = success ? text.Length : 0;
+                break;
+
+            default:
+                throw new InvalidOperationException("Unknown representation.");
+        }
+
+        if (!success)
+        {
+            charsWritten = 0;
+        }
+
+        return success;
+    }
+
+    /// <summary>
+    /// Writes formatted UTF-8 when the destination is large enough.
+    /// </summary>
+    public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format = default, IFormatProvider? provider = null)
+    {
+        bool success = Kind switch
+        {
+            DataType.Integer => TryFormatIntegerUtf8(utf8Destination, out bytesWritten, format, provider),
+            DataType.Decimal => DecimalValue.TryFormat(utf8Destination, out bytesWritten, format, provider),
+            DataType.Double => DoubleValue.TryFormat(utf8Destination, out bytesWritten, format, provider),
+            DataType.Rational => Encoding.UTF8.TryGetBytes(ToString(format.IsEmpty ? null : format.ToString(), provider), utf8Destination, out bytesWritten),
+            _ => throw new InvalidOperationException("Unknown representation."),
+        };
+
+        if (!success)
+        {
+            bytesWritten = 0;
+        }
+
+        return success;
+    }
+
+    private bool TryFormatIntegerUtf8(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format, IFormatProvider? provider)
+    {
+        // BigInteger has no native UTF-8 formatter. Its character formatter keeps
+        // common values allocation-free; larger outputs use pooled storage, not strings.
+        Span<char> buffer = stackalloc char[256];
+        if (IntegerValue.TryFormat(buffer, out int charsWritten, format, provider))
+        {
+            return Encoding.UTF8.TryGetBytes(buffer[..charsWritten], destination, out bytesWritten);
+        }
+
+        int size = Math.Min(512, destination.Length);
+        while (size > buffer.Length)
+        {
+            char[] rented = ArrayPool<char>.Shared.Rent(size);
+            try
+            {
+                if (IntegerValue.TryFormat(rented.AsSpan(0, size), out charsWritten, format, provider))
+                {
+                    return Encoding.UTF8.TryGetBytes(rented.AsSpan(0, charsWritten), destination, out bytesWritten);
+                }
+            }
+            finally
+            {
+                ArrayPool<char>.Shared.Return(rented);
+            }
+
+            if (size == destination.Length)
+            {
+                break;
+            }
+
+            size = size <= destination.Length / 2 ? size * 2 : destination.Length;
+        }
+
+        // UTF-8 always needs at least as many bytes as UTF-16 code units.
+        bytesWritten = 0;
+
+        return false;
+    }
+
+    /// <summary>
+    /// A lossless invariant numeric expression for finite values, including the exact
+    /// stored binary value of doubles.
     /// </summary>
     /// <remarks>
-    /// Distinguishes normal floating-point numbers from the subnormal range using a
-    /// fixed-grid model:
-    /// <para>
-    /// Normal IEEE 754 numbers sit in octaves [2^e, 2^e+1) where each binade has 53
-    /// bits of floating significand and relative spacing Delta = 2^e-52.
-    /// </para>
-    /// <para>
-    /// In contrast, subnormal IEEE 754 numbers (|x| &lt; 2^-1022) do not have a
-    /// normalized 53-bit mantissa; they sit on a uniform, linear fixed-point lattice with
-    /// constant absolute spacing Delta = 2^-1074 = double.Epsilon. Rounding
-    /// to 53 floating bits first and then scaling introduces double-rounding artifacts.
-    /// The subnormal branch avoids this by projecting directly onto this fixed
-    /// 2^-1074 grid in a single round-half-even operation.
-    /// </para>
+    /// Decimal display scale is retained where an invariant decimal literal can express
+    /// it. No display rounding is applied. NaN and infinities use diagnostic tokens, not
+    /// re-evaluable expressions. Use <see cref="Serialize"/> to preserve representation,
+    /// provenance, and all display metadata.
     /// </remarks>
-    internal static double DivideIntegersAsDouble(
-        BigInteger numerator, BigInteger denominator)
+    public string ToInvariantExpression()
     {
-        bool negative = (numerator.Sign < 0) != (denominator.Sign < 0);
-        BigInteger n = BigInteger.Abs(numerator);
-        BigInteger d = BigInteger.Abs(denominator);
+        // Doubles: maintain the exact dyadic fraction/integer representation.
+        if (Kind is DataType.Double)
+        {
+            if (!IsFinite)
+            {
+                return DoubleValue.ToString(CultureInfo.InvariantCulture);
+            }
 
+            NumericFraction(this, out var num, out var den);
+            return den.IsOne ?
+                num.ToString(CultureInfo.InvariantCulture) :
+                num.ToString(CultureInfo.InvariantCulture) + "/" + den.ToString(CultureInfo.InvariantCulture);
+        }
+
+        int scale = DecimalDisplayScale < MaxDecimalDisplayScale ? DecimalDisplayScale : 0;
+
+        // Fixed fraction formatting only applies when explicit decimal scale was
+        // requested (e.g. from 1.00/3*3).
+        if (Kind is DataType.Rational &&
+            scale > 0 &&
+            BigInteger.Pow(10, scale) % denominator == 0)
+        {
+            return FormatFixedRational("F" + scale.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+        }
+
+        if (Kind is DataType.Integer && scale > 0)
+        {
+            return IntegerValue.ToString("F" + scale.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+        }
+
+        // Stored decimal: format directly (padding if scale > stored scale).
+        if (Kind is DataType.Decimal && scale > DecomposeDecimal(DecimalValue).Scale)
+        {
+            return DecimalValue.ToString("F" + scale.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+        }
+
+        // Lossless stored representation:
+        // Rationals emit "numerator/denominator" with no rounding (e.g. "1/2", "7/8", "1/3").
+        // Decimals emit standard invariant decimal (e.g. "1.25", "0.125", "0.3333333333333333").
+        // Integers emit integer string (e.g. "42", "1000", "-12345678901234567890").
+        return InvariantStoredValue();
+    }
+
+    private string InvariantStoredValue() => Kind == DataType.Rational ?
+        numerator.ToString(CultureInfo.InvariantCulture) + "/" + denominator.ToString(CultureInfo.InvariantCulture) :
+        ToString(Kind == DataType.Double ? "R" : null, CultureInfo.InvariantCulture);
+
+    private string FormatRational(string? format, IFormatProvider? provider)
+    {
+        if (string.Equals(format, "R", StringComparison.OrdinalIgnoreCase))
+        {
+            return numerator.ToString(provider) + "/" + denominator.ToString(provider);
+        }
+
+        if (!string.IsNullOrEmpty(format) && char.ToUpperInvariant(format[0]) is 'F' or 'N')
+        {
+            return FormatFixedRational(format, provider);
+        }
+
+        if (!string.IsNullOrEmpty(format) &&
+            !string.Equals(format, "G", StringComparison.OrdinalIgnoreCase))
+        {
+            if (char.ToUpperInvariant(format[0]) != 'G' || !int.TryParse(format.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out int digits))
+            {
+                throw new FormatException("Rational values support general numeric (G), fixed (F), grouped (N), or exact fraction (R) formatting.");
+            }
+
+            return ResultValueFormatter.Format(this, new ResultFormatOptions { SignificantDigits = digits }, provider).Text;
+        }
+
+        return ResultValueFormatter.Format(this, new ResultFormatOptions(), provider).Text;
+    }
+
+    private string FormatFixedRational(string format, IFormatProvider? provider)
+    {
+        var culture = NumberFormatInfo.GetInstance(provider);
+        int digits = culture.NumberDecimalDigits;
+        if (format.Length > 1 && !int.TryParse(format.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out digits))
+        {
+            throw new FormatException("Invalid decimal precision.");
+        }
+
+        if (digits < 0 || digits > 1000)
+        {
+            throw new CalculationLimitException();
+        }
+
+        var scale = BigInteger.Pow(10, digits);
+        var scaled = Product(BigInteger.Abs(numerator), scale);
+        var coefficient = BigInteger.DivRem(scaled, denominator, out var remainder);
+        int midpoint = (remainder << 1).CompareTo(denominator);
+
+        if (midpoint > 0 || (midpoint == 0 && !coefficient.IsEven))
+        {
+            coefficient++;
+        }
+
+        var integer = BigInteger.DivRem(coefficient, scale, out var fraction);
+        string whole = integer.ToString(CultureInfo.InvariantCulture);
+        string sign = numerator.Sign < 0 ? culture.NegativeSign : "";
+        bool grouped = char.ToUpperInvariant(format[0]) == 'N';
+        int groups = grouped ? ResultValueFormatter.GetGroupSeparatorCount(whole.Length, culture) : 0;
+
+        long outputLength = (long)sign.Length + whole.Length + (long)groups * culture.NumberGroupSeparator.Length
+            + (digits > 0 ? (long)culture.NumberDecimalSeparator.Length + digits : 0);
+        if (outputLength > CalculationLimits.MaxOutputCharacters)
+        {
+            throw new CalculationLimitException();
+        }
+
+        if (grouped)
+        {
+            whole = integer.ToString("N0", culture);
+        }
+
+        string result = digits == 0
+            ? sign + whole
+            : sign + whole + culture.NumberDecimalSeparator + fraction.ToString("D" + digits.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+        ResultValueFormatter.CheckOutputLength(result, CalculationLimits.MaxOutputCharacters);
+
+        return result;
+    }
+
+    /// <summary>
+    /// A sign-magnitude hexadecimal integer, or null for nonintegral values.
+    /// </summary>
+    public string? ToHexString(bool prefix = true) => RadixString("X", "0x", prefix);
+
+    /// <summary>
+    /// A sign-magnitude binary integer, or null for nonintegral values.
+    /// </summary>
+    public string? ToBinaryString(bool prefix = true) => RadixString("B", "0b", prefix);
+
+    /// <summary>
+    /// A sign-magnitude octal integer, or null for nonintegral values.
+    /// </summary>
+    public string? ToOctalString(bool prefix = true) => RadixString(null, "0o", prefix);
+
+    private string? RadixString(string? format, string prefixText, bool prefix)
+    {
+        if (!TryGetInteger(out var n))
+        {
+            return null;
+        }
+
+        string digits;
+        if (format is not null)
+        {
+            digits = BigInteger.Abs(n).ToString(format, CultureInfo.InvariantCulture).TrimStart('0');
+            if (digits.Length == 0)
+            {
+                digits = "0";
+            }
+        }
+        else
+        {
+            var value = BigInteger.Abs(n);
+            var builder = new StringBuilder();
+            do
+            {
+                value = BigInteger.DivRem(value, 8, out var remainder);
+                builder.Append((char)('0' + (int)remainder));
+            } while (!value.IsZero);
+            char[] chars = builder.ToString().ToCharArray();
+            Array.Reverse(chars);
+            digits = new string(chars);
+        }
+
+        return (n.Sign < 0 ? "-" : "") + (prefix ? prefixText : "") + digits;
+    }
+
+    /// <summary>
+    /// Serializes representation, value, provenance, and decimal display scale without
+    /// precision loss.
+    /// </summary>
+    public string Serialize() => JsonSerializer.Serialize(new SerializedValue(
+        Kind, Accuracy, InvariantStoredValue(),
+        Kind == DataType.Rational ? numerator.ToString(CultureInfo.InvariantCulture) : null,
+        Kind == DataType.Rational ? denominator.ToString(CultureInfo.InvariantCulture) : null,
+        DecimalDisplayScale),
+        SerializationContext.Default.SerializedValue);
+
+    /// <summary>
+    /// Deserializes and validates representation, value, provenance, and numeric limits.
+    /// </summary>
+    public static MathValue Deserialize(string json, int maxIntegerBits = CalculationLimits.MaxIntegerBits)
+    {
+        ArgumentNullException.ThrowIfNull(json);
+        if (json.Length > 25000)
+        {
+            throw new CalculationLimitException();
+        }
+
+        var dto = JsonSerializer.Deserialize(json, SerializationContext.Default.SerializedValue) ??
+            throw new FormatException("Missing numeric value.");
+        if (dto.Value is null)
+        {
+            throw new FormatException("Missing numeric value.");
+        }
+
+        var culture = CultureInfo.InvariantCulture;
+        MathValue value = dto.Kind switch
+        {
+            DataType.Integer => new MathValue(ParseBoundedInteger(dto.Value, maxIntegerBits)),
+            DataType.Decimal => new MathValue(decimal.Parse(dto.Value, NumberStyles.Float, culture)),
+            DataType.Double => new MathValue(double.Parse(dto.Value, NumberStyles.Float, culture)),
+            DataType.Rational => FromFraction(
+                ParseBoundedInteger(dto.Numerator ?? throw new FormatException("Missing numerator."), CalculationLimits.MaxIntermediateBits),
+                ParseBoundedInteger(dto.Denominator ?? throw new FormatException("Missing denominator."), CalculationLimits.MaxIntermediateBits)),
+            _ => throw new FormatException("Unknown numeric representation."),
+        };
+
+        if (value.Kind != dto.Kind || value.InvariantStoredValue() != dto.Value)
+        {
+            throw new FormatException("Noncanonical numeric representation.");
+        }
+
+        if (dto.DecimalDisplayScale is int displayScale)
+        {
+            if (displayScale < 0 || displayScale > MaxDecimalDisplayScale ||
+                (value.Kind == DataType.Double && displayScale != 0))
+            {
+                throw new FormatException("Invalid decimal display scale.");
+            }
+
+            value = value.WithDecimalDisplayScale(displayScale);
+        }
+
+        value = value.WithAccuracy(dto.Accuracy);
+        value.ValidateLimits(maxIntegerBits);
+        return value;
+    }
+
+    private sealed record SerializedValue(
+        [property: JsonRequired] DataType Kind,
+        [property: JsonRequired] CalculationAccuracy Accuracy,
+        [property: JsonRequired] string Value,
+        string? Numerator,
+        string? Denominator,
+        int? DecimalDisplayScale = null);
+
+    [JsonSerializable(typeof(SerializedValue))]
+    private sealed partial class SerializationContext : JsonSerializerContext;
+
+    private static BigInteger ParseBoundedInteger(string text, int bits)
+    {
+        if (text.Length > (int)(bits * 0.30103) + 3)
+        {
+            throw new CalculationLimitException();
+        }
+
+        var result = BigInteger.Parse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture);
+        CheckBits(result, bits);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Negates a value, preserving provenance.
+    /// </summary>
+    public static MathValue operator -(MathValue value) => Negate(value);
+
+    /// <summary>
+    /// Negates a value after validating limits, preserving provenance.
+    /// </summary>
+    public static MathValue Negate(MathValue value)
+    {
+        value.ValidateLimits();
+        if (TryToRational(value, out var n, out _))
+        {
+            CheckBits(n, CalculationLimits.MaxIntermediateBits);
+        }
+
+        var result = (value.Kind switch
+        {
+            DataType.Integer => new MathValue(-value.IntegerValue),
+            DataType.Decimal => new MathValue(-value.DecimalValue),
+            DataType.Rational => new MathValue(-value.numerator, value.denominator),
+            _ => new MathValue(-value.DoubleValue),
+        }).WithAccuracy(value.Accuracy).WithDecimalDisplayScale(value.DecimalDisplayScale);
+
+        result.ValidateLimits();
+
+        return result;
+    }
+
+    /// <summary>
+    /// Adds values under default limits.
+    /// </summary>
+    public static MathValue operator +(MathValue a, MathValue b) => Add(a, b);
+
+    /// <summary>
+    /// Subtracts values under default limits.
+    /// </summary>
+    public static MathValue operator -(MathValue a, MathValue b) => Subtract(a, b);
+
+    /// <summary>
+    /// Multiplies values under default limits.
+    /// </summary>
+    public static MathValue operator *(MathValue a, MathValue b) => Multiply(a, b);
+
+    /// <summary>
+    /// Divides values under default limits.
+    /// </summary>
+    public static MathValue operator /(MathValue a, MathValue b) => Divide(a, b);
+
+    /// <summary>
+    /// Computes a truncation-based remainder under default limits.
+    /// </summary>
+    public static MathValue operator %(MathValue a, MathValue b) => Modulo(a, b);
+
+    /// <summary>
+    /// Adds values using exact fractions unless a double is involved.
+    /// </summary>
+    public static MathValue Add(MathValue a, MathValue b) => Arithmetic(a, b, '+');
+
+    /// <summary>
+    /// Subtracts values using exact fractions unless a double is involved.
+    /// </summary>
+    public static MathValue Subtract(MathValue a, MathValue b) => Arithmetic(a, b, '-');
+
+    /// <summary>
+    /// Multiplies values with cancellation before bounded intermediate products.
+    /// </summary>
+    public static MathValue Multiply(MathValue a, MathValue b) => Arithmetic(a, b, '*');
+
+    /// <summary>
+    /// Divides values with cancellation before bounded intermediate products.
+    /// </summary>
+    public static MathValue Divide(MathValue a, MathValue b) => Arithmetic(a, b, '/');
+
+    /// <summary>
+    /// Computes the exact remainder with the sign of the dividend.
+    /// </summary>
+    public static MathValue Modulo(MathValue a, MathValue b) => Arithmetic(a, b, '%');
+
+    private static MathValue Arithmetic(MathValue a, MathValue b, char operation)
+    {
+        a.ValidateLimits();
+        b.ValidateLimits();
+        if ((operation is '/' or '%') && b.IsZero)
+        {
+            throw new DivideByZeroException();
+        }
+
+        if (a.Kind == DataType.Double || b.Kind == DataType.Double)
+        {
+            double x = a.ToDouble(), y = b.ToDouble();
+            return new MathValue(operation switch
+            {
+                '+' => x + y, '-' => x - y, '*' => x * y,
+                '/' => DivideMixedAsDouble(a, b), '%' => x % y,
+                _ => throw new InvalidOperationException(),
+            });
+        }
+
+        TryToRational(a, out var an, out var ad);
+        TryToRational(b, out var bn, out var bd);
+        BigInteger n, d;
+        if (operation is '+' or '-' or '%')
+        {
+            var gcd = BigInteger.GreatestCommonDivisor(ad, bd);
+            var left = Product(an, bd / gcd);
+            var right = Product(bn, ad / gcd);
+            d = Product(ad, bd / gcd);
+            n = operation == '%' ? left % right : operation == '+' ? left + right : left - right;
+            CheckBits(n, CalculationLimits.MaxIntermediateBits);
+        }
+        else
+        {
+            if (operation == '/')
+            {
+                (bn, bd) = (bd, bn);
+            }
+
+            var first = BigInteger.GreatestCommonDivisor(BigInteger.Abs(an), BigInteger.Abs(bd));
+            var second = BigInteger.GreatestCommonDivisor(BigInteger.Abs(bn), ad);
+            n = Product(an / first, bn / second);
+            d = Product(ad / second, bd / first);
+        }
+
+        bool decimalDomain = (a.Kind == DataType.Decimal || b.Kind == DataType.Decimal) &&
+            a.Kind != DataType.Rational && b.Kind != DataType.Rational;
+        var result = FromExactFraction(n, d, decimalDomain);
+        int scale = operation switch
+        {
+            '*' => a.DecimalDisplayScale + b.DecimalDisplayScale,
+            '/' => a.DecimalDisplayScale == MaxDecimalDisplayScale ? MaxDecimalDisplayScale
+                : Math.Max(0, a.DecimalDisplayScale - b.DecimalDisplayScale),
+            _ => Math.Max(a.DecimalDisplayScale, b.DecimalDisplayScale),
+        };
+
+        return result.WithAccuracy(InheritedAccuracy(a, b))
+            .WithDecimalDisplayScale(Math.Max(result.DecimalDisplayScale, scale));
+    }
+
+    internal static BigInteger Product(BigInteger a, BigInteger b, int maxIntermediateBits = CalculationLimits.MaxIntermediateBits)
+    {
+        if (a.IsZero || b.IsZero)
+        {
+            return BigInteger.Zero;
+        }
+
+        // The lower bound is checked before allocation; the product can exceed it by at most one bit.
+        if (BigInteger.Abs(a).GetBitLength() + BigInteger.Abs(b).GetBitLength() - 1 > maxIntermediateBits)
+        {
+            throw new CalculationLimitException();
+        }
+
+        var result = a * b;
+        CheckBits(result, maxIntermediateBits);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Computes integer powers exactly; fractional powers are an unverified double
+    /// boundary.
+    /// </summary>
+    public static MathValue Pow(
+        MathValue baseVal, MathValue expVal, int maxExponentMagnitude = CalculationLimits.MaxExponentMagnitude)
+    {
+        baseVal.ValidateLimits();
+        expVal.ValidateLimits();
+
+        bool integral = expVal.TryGetInteger(out var exponent);
+        if (integral && BigInteger.Abs(exponent) > maxExponentMagnitude)
+        {
+            throw new CalculationLimitException();
+        }
+
+        if (baseVal.IsZero && expVal.IsFinite && expVal.IsNegative)
+        {
+            throw new DivideByZeroException("Cannot raise zero to a negative power.");
+        }
+
+        if (integral && baseVal.Kind != DataType.Double && expVal.Kind != DataType.Double)
+        {
+            TryToRational(baseVal, out var n, out var d);
+            if (exponent.Sign < 0)
+            {
+                (n, d) = (d, n);
+            }
+
+            int e = (int)BigInteger.Abs(exponent);
+            bool decimalDomain = baseVal.Kind != DataType.Rational
+                && (baseVal.Kind == DataType.Decimal || expVal.Kind == DataType.Decimal);
+
+            CheckPower(n, e, CalculationLimits.MaxIntegerBits);
+            CheckPower(d, e, CalculationLimits.MaxIntegerBits);
+
+            var result = FromExactFraction(BoundedPower(n, e), BoundedPower(d, e), decimalDomain);
+            long scale = exponent.Sign > 0 ? (long)baseVal.DecimalDisplayScale * e : 0;
+
+            return result
+                .WithAccuracy(InheritedAccuracy(baseVal, expVal))
+                .WithDecimalDisplayScale(Math.Max(result.DecimalDisplayScale, scale));
+        }
+
+        if (baseVal.IsFinite && baseVal.IsNegative && expVal.IsFinite && !integral)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UndefinedMathResult,
+                "Negative base with a fractional exponent has no real solution."));
+        }
+
+        double x = baseVal.ToDouble(), y = expVal.ToDouble();
+        return new MathValue(Math.Pow(x, y));
+    }
+
+    private static void CheckPower(BigInteger value, int exponent, int bits)
+    {
+        var abs = BigInteger.Abs(value);
+        if (abs > BigInteger.One && (abs.GetBitLength() - 1) * exponent + 1 > bits)
+        {
+            throw new CalculationLimitException();
+        }
+    }
+
+    private static BigInteger BoundedPower(BigInteger value, int exponent, int maxIntermediateBits = CalculationLimits.MaxIntermediateBits)
+    {
+        BigInteger result = BigInteger.One;
+        while (exponent > 0)
+        {
+            if ((exponent & 1) != 0)
+            {
+                result = Product(result, value, maxIntermediateBits);
+            }
+
+            exponent >>= 1;
+            if (exponent != 0)
+            {
+                value = Product(value, value, maxIntermediateBits);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Orders numerical values exactly, with NaN below all other values.
+    /// </summary>
+    public static int Compare(MathValue a, MathValue b)
+    {
+        a.ValidateLimits();
+        b.ValidateLimits();
+        if (a.IsNaN)
+        {
+            return b.IsNaN ? 0 : -1;
+        }
+
+        if (b.IsNaN)
+        {
+            return 1;
+        }
+
+        if (!a.IsFinite)
+        {
+            return !b.IsFinite ? a.DoubleValue.CompareTo(b.DoubleValue) : a.DoubleValue > 0 ? 1 : -1;
+        }
+
+        if (!b.IsFinite)
+        {
+            return b.DoubleValue > 0 ? -1 : 1;
+        }
+
+        NumericFraction(a, out var an, out var ad);
+        NumericFraction(b, out var bn, out var bd);
+        var commonDenominator = BigInteger.GreatestCommonDivisor(ad, bd);
+
+        return Product(an, bd / commonDenominator)
+            .CompareTo(Product(bn, ad / commonDenominator));
+    }
+
+    /// <inheritdoc />
+    public int CompareTo(MathValue other) => Compare(this, other);
+
+    /// <inheritdoc />
+    int IComparable.CompareTo(object? obj) => obj is null ?
+        1 :
+        obj is MathValue value ? Compare(this, value) : throw new ArgumentException("Object must be a MathValue.", nameof(obj));
+
+    /// <summary>
+    /// Numerical equality ignoring provenance, including reflexive NaN object equality.
+    /// </summary>
+    public bool Equals(MathValue other) => Compare(this, other) == 0;
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj) => obj is MathValue value && Equals(value);
+
+    /// <inheritdoc />
+    public override int GetHashCode()
+    {
+        if (IsNaN)
+        {
+            return typeof(MathValue).GetHashCode();
+        }
+
+        if (!IsFinite)
+        {
+            return DoubleValue.GetHashCode();
+        }
+
+        NumericFraction(this, out var n, out var d);
+
+        return d.IsOne ? n.GetHashCode() : HashCode.Combine(n, d);
+    }
+
+    /// <summary>
+    /// Tests object equality.
+    /// </summary>
+    public static bool operator ==(MathValue left, MathValue right) => left.Equals(right);
+
+    /// <summary>
+    /// Tests object inequality.
+    /// </summary>
+    public static bool operator !=(MathValue left, MathValue right) => !left.Equals(right);
+
+    /// <summary>
+    /// Tests numerical ordering.
+    /// </summary>
+    public static bool operator <(MathValue left, MathValue right) => Compare(left, right) < 0;
+
+    /// <summary>
+    /// Tests numerical ordering.
+    /// </summary>
+    public static bool operator <=(MathValue left, MathValue right) => Compare(left, right) <= 0;
+
+    /// <summary>
+    /// Tests numerical ordering.
+    /// </summary>
+    public static bool operator >(MathValue left, MathValue right) => Compare(left, right) > 0;
+
+    /// <summary>
+    /// Tests numerical ordering.
+    /// </summary>
+    public static bool operator >=(MathValue left, MathValue right) => Compare(left, right) >= 0;
+
+    /// <summary>
+    /// Expression equality, false for NaN, with inherited provenance.
+    /// </summary>
+    public static MathValue AreEqual(MathValue a, MathValue b) => 
+        Boolean(!a.IsNaN && !b.IsNaN && Compare(a, b) == 0, a, b);
+
+    /// <summary>
+    /// Expression inequality, true for NaN, with inherited provenance.
+    /// </summary>
+    public static MathValue AreNotEqual(MathValue a, MathValue b) => 
+        Boolean(a.IsNaN || b.IsNaN || Compare(a, b) != 0, a, b);
+
+    /// <summary>
+    /// Expression ordering, false for NaN, with inherited provenance.
+    /// </summary>
+    public static MathValue LessThan(MathValue a, MathValue b) =>
+        Boolean(!a.IsNaN && !b.IsNaN && Compare(a, b) < 0, a, b);
+
+    /// <summary>
+    /// Expression ordering, false for NaN, with inherited provenance.
+    /// </summary>
+    public static MathValue LessThanOrEqual(MathValue a, MathValue b) =>
+        Boolean(!a.IsNaN && !b.IsNaN && Compare(a, b) <= 0, a, b);
+
+    /// <summary>
+    /// Expression ordering, false for NaN, with inherited provenance.
+    /// </summary>
+    public static MathValue GreaterThan(MathValue a, MathValue b) =>
+        Boolean(!a.IsNaN && !b.IsNaN && Compare(a, b) > 0, a, b);
+
+    /// <summary>
+    /// Expression ordering, false for NaN, with inherited provenance.
+    /// </summary>
+    public static MathValue GreaterThanOrEqual(MathValue a, MathValue b) =>
+        Boolean(!a.IsNaN && !b.IsNaN && Compare(a, b) >= 0, a, b);
+
+    /// <summary>
+    /// Logical AND; zero is false, including inherited provenance.
+    /// </summary>
+    public static MathValue LogicalAnd(MathValue a, MathValue b) =>
+        Boolean(!a.IsZero && !b.IsZero, a, b);
+
+    /// <summary>
+    /// Logical OR; zero is false, including inherited provenance.
+    /// </summary>
+    public static MathValue LogicalOr(MathValue a, MathValue b) =>
+        Boolean(!a.IsZero || !b.IsZero, a, b);
+
+    /// <summary>
+    /// Logical XOR; zero is false, including inherited provenance.
+    /// </summary>
+    public static MathValue LogicalXor(MathValue a, MathValue b) =>
+        Boolean(!a.IsZero ^ !b.IsZero, a, b);
+
+    /// <summary>
+    /// Logical NOT; zero is false, including inherited provenance.
+    /// </summary>
+    public static MathValue LogicalNot(MathValue a)
+    {
+        a.ValidateLimits();
+        var result = new MathValue(a.IsZero ? 1 : 0).WithAccuracy(a.Accuracy);
+        result.ValidateLimits();
+
+        return result;
+    }
+
+    private static MathValue Boolean(bool value, MathValue a, MathValue b)
+    {
+        a.ValidateLimits();
+        b.ValidateLimits();
+        var result = new MathValue(value ? 1 : 0).WithAccuracy(InheritedAccuracy(a, b));
+        result.ValidateLimits();
+
+        return result;
+    }
+
+    private static CalculationAccuracy InheritedAccuracy(MathValue a, MathValue b) =>
+        a.Accuracy == CalculationAccuracy.Exact && b.Accuracy == CalculationAccuracy.Exact ? CalculationAccuracy.Exact : CalculationAccuracy.Unverified;
+
+    /// <summary>
+    /// Bitwise AND of checked integral operands.
+    /// </summary>
+    public static MathValue BitwiseAnd(MathValue a, MathValue b) =>
+        IntegerOperation(a, b, '&');
+
+    /// <summary>
+    /// Bitwise OR of checked integral operands.
+    /// </summary>
+    public static MathValue BitwiseOr(MathValue a, MathValue b) =>
+        IntegerOperation(a, b, '|');
+
+    /// <summary>
+    /// Bitwise XOR of checked integral operands.
+    /// </summary>
+    public static MathValue BitwiseXor(MathValue a, MathValue b) =>
+        IntegerOperation(a, b, '^');
+
+    /// <summary>
+    /// Bounded left shift of checked integral operands.
+    /// </summary>
+    public static MathValue ShiftLeft(MathValue a, MathValue b) =>
+        IntegerOperation(a, b, '<');
+
+    /// <summary>
+    /// Sign-extending right shift of checked integral operands.
+    /// </summary>
+    public static MathValue ShiftRight(MathValue a, MathValue b) =>
+        IntegerOperation(a, b, '>');
+
+    /// <summary>
+    /// Bitwise complement of a checked integral operand.
+    /// </summary>
+    public static MathValue BitwiseNot(MathValue a)
+    {
+        a.ValidateLimits();
+        if (!a.TryGetInteger(out var n))
+        {
+            throw IntegerRequired();
+        }
+
+        CheckBits(n, CalculationLimits.MaxIntegerBits);
+        var magnitude = BigInteger.Abs(n);
+        long bits = magnitude.GetBitLength();
+        long resultBits = n.Sign >= 0
+            ? bits + (BigInteger.PopCount(n) == bits ? 1 : 0)
+            : bits - (BigInteger.IsPow2(magnitude) ? 1 : 0);
+        CheckIntegerResultBits(resultBits);
+        var result = new MathValue(~n).WithAccuracy(a.Accuracy);
+        result.ValidateLimits();
+
+        return result;
+    }
+
+    private static MathValue IntegerOperation(MathValue a, MathValue b, char operation)
+    {
+        a.ValidateLimits();
+        b.ValidateLimits();
+        if (!a.TryGetInteger(out var n) || !b.TryGetInteger(out var m))
+        {
+            throw IntegerRequired();
+        }
+
+        CheckBits(n, CalculationLimits.MaxIntegerBits);
+        if (operation is '<' or '>')
+        {
+            if (m.Sign < 0)
+            {
+                throw new ExpressionException(new EvaluationDiagnostic(
+                    EvaluationError.ArgumentOutOfRange, "Shift count cannot be negative."));
+            }
+
+            if (n.IsZero)
+            {
+                return new MathValue(0).WithAccuracy(InheritedAccuracy(a, b));
+            }
+
+            long bits = BigInteger.Abs(n).GetBitLength();
+            if (operation == '<')
+            {
+                if (m > Math.Min(CalculationLimits.MaxIntegerBits, CalculationLimits.MaxIntermediateBits))
+                {
+                    throw new CalculationLimitException();
+                }
+
+                CheckIntegerResultBits(bits + (int)m);
+            }
+            else
+            {
+                m = BigInteger.Min(m, bits);
+                long resultBits = Math.Max(n.Sign < 0 ? 1 : 0, bits - (int)m);
+                CheckIntegerResultBits(resultBits);
+                if (n.Sign < 0 && m > 0 && m < bits)
+                {
+                    // A negative arithmetic shift rounds its magnitude upward. Detect
+                    // the extra bit before allocating the final shifted BigInteger.
+                    var magnitude = BigInteger.Abs(n);
+                    if (BigInteger.PopCount(magnitude >> (int)m) == resultBits &&
+                        BigInteger.TrailingZeroCount(magnitude) < m)
+                    {
+                        CheckIntegerResultBits(resultBits + 1);
+                    }
+                }
+            }
+        }
+        else
+        {
+            CheckBits(m, CalculationLimits.MaxIntegerBits);
+            CheckIntegerResultBits(BitwiseResultBits(n, m, operation));
+        }
+
+        var value = operation switch
+        {
+            '&' => n & m, '|' => n | m, '^' => n ^ m,
+            '<' => n << (int)m, '>' => n >> (int)m,
+            _ => throw new InvalidOperationException(),
+        };
+
+        CheckBits(value, CalculationLimits.MaxIntegerBits);
+        CheckBits(value, CalculationLimits.MaxIntermediateBits);
+
+        return new MathValue(value).WithAccuracy(InheritedAccuracy(a, b));
+    }
+
+    private static void CheckIntegerResultBits(long bits)
+    {
+        if (bits > CalculationLimits.MaxIntegerBits || bits > CalculationLimits.MaxIntermediateBits)
+        {
+            throw new CalculationLimitException();
+        }
+    }
+
+    private static int BitwiseResultBits(BigInteger n, BigInteger m, char operation)
+    {
+        int width = Math.Max(n.GetByteCount(), m.GetByteCount());
+        Span<byte> left = stackalloc byte[width];
+        Span<byte> right = stackalloc byte[width];
+        left.Fill(n.Sign < 0 ? byte.MaxValue : (byte)0);
+        right.Fill(m.Sign < 0 ? byte.MaxValue : (byte)0);
+        n.TryWriteBytes(left, out _);
+        m.TryWriteBytes(right, out _);
+
+        bool negative = operation switch
+        {
+            '&' => n.Sign < 0 && m.Sign < 0,
+            '|' => n.Sign < 0 || m.Sign < 0,
+            '^' => (n.Sign < 0) != (m.Sign < 0),
+            _ => throw new InvalidOperationException(),
+        };
+
+        int carry = negative ? 1 : 0, bits = 0;
+        for (int i = 0; i < width; i++)
+        {
+            int raw = operation switch
+            {
+                '&' => left[i] & right[i],
+                '|' => left[i] | right[i],
+                '^' => left[i] ^ right[i],
+                _ => throw new InvalidOperationException(),
+            };
+
+            int magnitude = negative ? ((~raw) & 255) + carry : raw;
+            carry = magnitude >> 8;
+            magnitude &= 255;
+            if (magnitude != 0)
+            {
+                bits = i * 8 + 32 - BitOperations.LeadingZeroCount((uint)magnitude);
+            }
+        }
+
+        return bits;
+    }
+
+    private static ExpressionException IntegerRequired() =>
+        new(new EvaluationDiagnostic(EvaluationError.IntegerRequired, "Operation requires integer operands."));
+
+    /// <summary>
+    /// Bitwise complement.
+    /// </summary>
+    public static MathValue operator ~(MathValue value) => BitwiseNot(value);
+
+    /// <summary>
+    /// Bitwise AND.
+    /// </summary>
+    public static MathValue operator &(MathValue left, MathValue right) => BitwiseAnd(left, right);
+
+    /// <summary>
+    /// Bitwise OR.
+    /// </summary>
+    public static MathValue operator |(MathValue left, MathValue right) => BitwiseOr(left, right);
+
+    /// <summary>
+    /// Bitwise XOR.
+    /// </summary>
+    public static MathValue operator ^(MathValue left, MathValue right) => BitwiseXor(left, right);
+
+    /// <summary>
+    /// Bounded left shift.
+    /// </summary>
+    public static MathValue operator <<(MathValue left, int right) => ShiftLeft(left, new MathValue(right));
+
+    /// <summary>
+    /// Arithmetic right shift.
+    /// </summary>
+    public static MathValue operator >>(MathValue left, int right) => ShiftRight(left, new MathValue(right));
+
+    /// <summary>
+    /// Converts an integer to a precise value.
+    /// </summary>
+    public static implicit operator MathValue(BigInteger value) => new(value);
+
+    /// <summary>
+    /// Converts an integer to a precise value.
+    /// </summary>
+    public static implicit operator MathValue(int value) => new(value);
+
+    /// <summary>
+    /// Converts an integer to a precise value.
+    /// </summary>
+    public static implicit operator MathValue(uint value) => new(value);
+
+    /// <summary>
+    /// Converts an integer to a precise value.
+    /// </summary>
+    public static implicit operator MathValue(long value) => new(value);
+
+    /// <summary>
+    /// Converts an integer to a precise value.
+    /// </summary>
+    public static implicit operator MathValue(ulong value) => new(value);
+
+    /// <summary>
+    /// Converts a decimal to a precise stored value.
+    /// </summary>
+    public static implicit operator MathValue(decimal value) => new(value);
+
+    /// <summary>
+    /// Converts a double to an unverified value.
+    /// </summary>
+    public static implicit operator MathValue(double value) => new(value);
+
+    /// <summary>
+    /// Checks if the value fits within the specified number of bits.
+    /// </summary>
+    private static void CheckBits(BigInteger value, int bits)
+    {
+        if (BigInteger.Abs(value).GetBitLength() > bits)
+        {
+            throw new CalculationLimitException();
+        }
+    }
+
+    private static (BigInteger Coefficient, int Scale) DecomposeDecimal(decimal value)
+    {
+        Span<int> bits = stackalloc int[4];
+        decimal.GetBits(value, bits);
+        var coefficient =
+            (BigInteger)(uint)bits[0] +
+            ((BigInteger)(uint)bits[1] << 32) +
+            ((BigInteger)(uint)bits[2] << 64);
+
+        return (bits[3] < 0 ? -coefficient : coefficient, (bits[3] >> 16) & 0x7f);
+    }
+
+    private static (BigInteger Num, BigInteger Den) ToReducedFraction(decimal value)
+    {
+        var (n, scale) = DecomposeDecimal(value);
+        var d = BigInteger.Pow(10, scale);
+        var gcd = BigInteger.GreatestCommonDivisor(BigInteger.Abs(n), d);
+
+        return (n / gcd, d / gcd);
+    }
+
+    /// <summary>
+    /// Decodes a finite stored value exactly, including binary doubles, independently of
+    /// provenance.
+    /// </summary>
+    /// <exception cref="ArgumentException">The value is not finite.</exception>
+    internal static void NumericFraction(
+        MathValue value, out BigInteger n, out BigInteger d)
+    {
+        if (!value.IsFinite)
+        {
+            throw new ArgumentException(
+                "A stored fraction requires a finite value.", nameof(value));
+        }
+
+        if (TryToRational(value, out n, out d))
+        {
+            return;
+        }
+
+        long bits = BitConverter.DoubleToInt64Bits(value.DoubleValue);
+        int exponent = (int)((bits >> 52) & 0x7ff);
+        long mantissa = bits & 0x000f_ffff_ffff_ffff;
+        n = exponent == 0 ? mantissa : mantissa | (1L << 52);
+        int shift = exponent == 0 ? -1074 : exponent - 1075;
+        if (bits < 0)
+        {
+            n = -n;
+        }
+
+        d = BigInteger.One;
+        if (shift >= 0)
+        {
+            n <<= shift;
+        }
+        else
+        {
+            d <<= -shift;
+        }
+
+        var gcd = BigInteger.GreatestCommonDivisor(BigInteger.Abs(n), d);
+        n /= gcd;
+        d /= gcd;
+    }
+
+    internal static bool TryExactDecimal(
+        BigInteger num, BigInteger den, out decimal result)
+    {
+        result = default;
+        if (den.Sign <= 0)
+        {
+            return false;
+        }
+
+        if (num.IsZero)
+        {
+            return true;
+        }
+
+        var gcd = BigInteger.GreatestCommonDivisor(BigInteger.Abs(num), den);
+        num /= gcd;
+        den /= gcd;
+        if (BigInteger.Abs(num) > MaxDecimalMantissa)
+        {
+            return false;
+        }
+
+        int twos = 0, fives = 0;
+        while (den.IsEven && twos <= 28)
+        {
+            twos++; den >>= 1;
+        }
+
+        while (den % 5 == 0 && fives <= 28)
+        {
+            fives++; den /= 5;
+        }
+
+        int scale = Math.Max(twos, fives);
+        if (!den.IsOne || scale > 28)
+        {
+            return false;
+        }
+
+        var mantissa = Product(
+            Product(BigInteger.Abs(num), BigInteger.One << (scale - twos)),
+            BoundedPower(5, scale - fives));
+        if (mantissa > MaxDecimalMantissa)
+        {
+            return false;
+        }
+
+        result = MakeDecimal(mantissa, num.Sign < 0, scale);
+
+        return true;
+    }
+
+    private static decimal MakeDecimal(BigInteger mantissa, bool negative, int scale) => new(
+        (int)(uint)(mantissa & uint.MaxValue),
+        (int)(uint)((mantissa >> 32) & uint.MaxValue),
+        (int)(uint)((mantissa >> 64) & uint.MaxValue), negative, (byte)scale);
+
+    private static double DivideMixedAsDouble(MathValue a, MathValue b)
+    {
+        if (a.IsNaN || b.IsNaN)
+        {
+            return double.NaN;
+        }
+
+        bool negative = double.IsNegative(a.ToDouble()) ^ double.IsNegative(b.ToDouble());
+        if (!a.IsFinite && !b.IsFinite)
+        {
+            return double.NaN;
+        }
+
+        if (!b.IsFinite)
+        {
+            return negative ? -0.0 : 0.0;
+        }
+
+        if (!a.IsFinite)
+        {
+            return negative ? double.NegativeInfinity : double.PositiveInfinity;
+        }
+
+        NumericFraction(a, out var an, out var ad);
+        NumericFraction(b, out var bn, out var bd);
+        var first = BigInteger.GreatestCommonDivisor(BigInteger.Abs(an), BigInteger.Abs(bn));
+        var second = BigInteger.GreatestCommonDivisor(ad, bd);
+        double result = DivideIntegersAsDouble(
+            Product(an / first, bd / second),
+            Product(ad / second, bn / first));
+
+        // Exact fractions have no signed zero; preserve IEEE signs at the approximate
+        // boundary.
+        if (result == 0 && negative)
+        {
+            return -0.0;
+        }
+
+        return result;
+    }
+
+    internal static double DivideIntegersAsDouble(BigInteger numerator, BigInteger denominator)
+    {
+        if (denominator.IsZero)
+        {
+            throw new DivideByZeroException();
+        }
+
+        bool negative = (numerator.Sign < 0) != (denominator.Sign < 0);
+        BigInteger n = BigInteger.Abs(numerator), d = BigInteger.Abs(denominator);
         if (n.IsZero)
         {
             return negative ? -0.0 : 0.0;
         }
 
-        long diff = (long)n.GetBitLength() - (long)d.GetBitLength();
-
-        // 1. Guaranteed overflow:
-        // double.MaxValue = 2^1024 - 2^971; the halfway threshold to infinity is
-        // 2^1024 - 2^970. For any pair with diff >= 1025, n/d >= 2^(diff - 1) >= 2^1024 >
-        // threshold, so round-half-even provably overflows to infinity for all possible
-        // values.
+        long diff = n.GetBitLength() - d.GetBitLength();
         if (diff >= 1025)
         {
             return negative ? double.NegativeInfinity : double.PositiveInfinity;
         }
 
-        // 2. Guaranteed underflow:
-        // The smallest positive subnormal is 2^-1074; the halfway threshold to zero is
-        // 2^-1075. For any pair with diff <= -1076, n/d < 2^(diff + 1) <= 2^-1075 <=
-        // threshold, so round-half-even provably underflows to zero for all possible
-        // values.
         if (diff <= -1076)
         {
             return negative ? -0.0 : 0.0;
         }
 
-        // 3. Subnormal range (diff <= -1022):
-        // double.MinNormal is 2^-1022. Below this boundary, numbers lose significant bits
-        // down to 1 bit at 2^-1074. If rounded to 53 bits first, subsequent scaling in
-        // Math.ScaleB causes double-rounding errors.
-        // In the subnormal range (and the [2^-1022, 2^-1021) octave), representable IEEE
-        // 754 numbers sit on a uniform grid with fixed spacing of 2^-1074.
-        // Shifting n by 1077 bits (+1074 to reach 2^-1074 scale, +3 for guard/round/
-        // sticky bits) allows rounding directly to the subnormal grid in a single step
-        // with zero double-rounding.
         if (diff <= -1022)
         {
             n <<= 1077;
-            BigInteger q = BigInteger.DivRem(n, d, out BigInteger remainder);
-
-            int dropped = (int)(q & 7); // lowest 3 bits without BigInteger allocation
+            var q = BigInteger.DivRem(n, d, out var remainder);
+            int dropped = (int)(q & 7);
             q >>= 3;
-
-            // Round-half-even against the 3 dropped bits (half = 4).
-            bool roundUp = dropped > 4
-                || (dropped == 4 && (!remainder.IsZero || !q.IsEven));
-            if (roundUp)
+            if (dropped > 4 || (dropped == 4 && (!remainder.IsZero || !q.IsEven)))
             {
-                q += 1; // may become 2^52 (MinNormal), seamlessly transitioning to normal
+                q++;
             }
 
             double result = Math.ScaleB((double)q, -1074);
+
             return negative ? -result : result;
         }
 
-        // 4. Normal range (diff >= -1021):
-        // Since diff >= -1021, n/d >= 2^(diff - 1) >= 2^-1022 = double.MinNormal.
-        // The result is guaranteed to have a full 53-bit floating significand.
-        // Aim for a quotient of 55-56 bits: 53 to keep, plus round and guard bits.
         long shift = 55 - diff;
         if (shift >= 0)
         {
@@ -2089,79 +1705,18 @@ public readonly struct MathValue :
             d <<= (int)-shift;
         }
 
-        BigInteger qNormal = BigInteger.DivRem(n, d, out BigInteger remNormal);
-
-        int extra = (int)qNormal.GetBitLength() - 53; // exactly 2 or 3 bits
-        int droppedNormal = (int)(qNormal & ((BigInteger.One << extra) - 1));
-        qNormal >>= extra;
-
-        int halfNormal = 1 << (extra - 1);
-        bool roundUpNormal = droppedNormal > halfNormal
-            || (droppedNormal == halfNormal && (!remNormal.IsZero || !qNormal.IsEven));
-        if (roundUpNormal)
+        var normal = BigInteger.DivRem(n, d, out var rem);
+        int extra = (int)normal.GetBitLength() - 53;
+        int droppedNormal = (int)(normal & ((BigInteger.One << extra) - 1));
+        normal >>= extra;
+        int half = 1 << (extra - 1);
+        if (droppedNormal > half || (droppedNormal == half && (!rem.IsZero || !normal.IsEven)))
         {
-            qNormal += 1; // may become 2^53, still exact in double
+            normal++;
         }
 
-        double normalResult = Math.ScaleB((double)qNormal, (int)(extra - shift));
-        return negative ? -normalResult : normalResult;
-    }
+        double rounded = Math.ScaleB((double)normal, (int)(extra - shift));
 
-    private double AsDoubleMantissa(out int exponent)
-    {
-        exponent = 0;
-        if (Kind is not DataType.Integer)
-        {
-            return AsDouble();
-        }
-
-        var magnitude = BigInteger.Abs(IntegerValue);
-
-        // Keep at most 53 leading bits, the double significand's capacity, and restore
-        // their scale separately. Discarded low bits are truncated, so this is
-        // approximate.
-        exponent = (int)Math.Max(0, magnitude.GetBitLength() - 53);
-        double mantissa = (double)(magnitude >> exponent);
-
-        return IntegerValue.Sign < 0 ? -mantissa : mantissa;
-    }
-
-    private static bool TryEvaluateMixedIntegerAndWholeDecimal(
-        MathValue a,
-        MathValue b,
-        Func<BigInteger, BigInteger, BigInteger> intOperation,
-        out MathValue result)
-    {
-        if (a.Kind is DataType.Integer && b.Kind is DataType.Decimal)
-        {
-            if (decimal.Truncate(b.DecimalValue) == b.DecimalValue)
-            {
-                result = new MathValue(
-                    intOperation(a.IntegerValue, new BigInteger(b.DecimalValue)));
-                return true;
-            }
-        }
-        else if (a.Kind is DataType.Decimal && b.Kind is DataType.Integer)
-        {
-            if (decimal.Truncate(a.DecimalValue) == a.DecimalValue)
-            {
-                result = new MathValue(
-                    intOperation(new BigInteger(a.DecimalValue), b.IntegerValue));
-                return true;
-            }
-        }
-        else if (a.Kind is DataType.Decimal && b.Kind is DataType.Decimal)
-        {
-            if (decimal.Truncate(a.DecimalValue) == a.DecimalValue &&
-                decimal.Truncate(b.DecimalValue) == b.DecimalValue)
-            {
-                result = new MathValue(
-                    intOperation(new BigInteger(a.DecimalValue), new BigInteger(b.DecimalValue)));
-                return true;
-            }
-        }
-
-        result = default;
-        return false;
+        return negative ? -rounded : rounded;
     }
 }

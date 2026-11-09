@@ -1,5 +1,3 @@
-using System.Numerics;
-
 namespace Numera.Ast;
 
 /// <summary>
@@ -29,8 +27,11 @@ internal static class AstValidator
     /// <param name="allowUnknownFunctions">Formatting intentionally supports custom
     /// function names (rendered escaped), so the formatting path skips the unknown-
     /// function check. Evaluation keeps it, mirroring what the parser enforces.</param>
+    /// <param name="validateNodeInvariants">Whether nodes must be valid executable syntax.
+    /// Captured-result metadata needs structural limits, not evaluation-time literal
+    /// and function-binding rules.</param>
     public static void Validate(ExpressionNode root, CalculatorOptions options,
-        bool allowUnknownFunctions = false)
+        bool allowUnknownFunctions = false, bool validateNodeInvariants = true)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(options);
@@ -57,7 +58,10 @@ internal static class AstValidator
                 }
 
                 // Node-level invariant checks on first visit.
-                ValidateNodeInvariants(node, options, allowUnknownFunctions);
+                if (validateNodeInvariants)
+                {
+                    ValidateNodeInvariants(node, options, allowUnknownFunctions);
+                }
             }
 
             if (frame.ChildIndex < ChildCount(node))
@@ -110,12 +114,18 @@ internal static class AstValidator
         switch (node)
         {
             case NumberNode numberNode:
+                try
+                {
+                    numberNode.Value.ValidateLimits(options.MaxIntegerBits);
+                }
+                catch (CalculationLimitException ex)
+                {
+                    throw new CalculationLimitException(ex.Diagnostic.Position is null && node.Span.HasValue
+                        ? ex.Diagnostic with { Position = node.Span.Start, Length = node.Span.Length }
+                        : ex.Diagnostic);
+                }
                 switch (numberNode.Value.Kind)
                 {
-                    case MathValue.DataType.Integer
-                        when BigInteger.Abs(numberNode.Value.IntegerValue).GetBitLength() > CalculationLimits.MaxIntegerBits:
-                        throw new CalculationLimitException();
-
                     case MathValue.DataType.Double when !double.IsFinite(numberNode.Value.DoubleValue):
                         throw Invalid(node, EvaluationError.InvalidSyntax, "Number literal must be finite.");
                 }

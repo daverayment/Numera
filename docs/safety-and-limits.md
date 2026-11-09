@@ -24,8 +24,15 @@ Limits are long-lived configuration, so set them on a `CalculatorOptions` and cr
 ```csharp
 var engine = new CalculatorEngine(new CalculatorOptions
 {
-	MaxInputLength = 512,  // Stricter than default 4096
-	MaxNestingDepth = 32   // Stricter than default 128
+	MaxInputLength = 512,       // Stricter than default 4096
+	MaxNestingDepth = 32,       // Stricter than default 128
+	MaxIntegerBits = 4096,      // Stricter than default 16384
+	MaxExponentMagnitude = 500, // Stricter than default 10000
+	ResultFormat = new ResultFormatOptions
+	{
+		SignificantDigits = 10,
+		MaxOutputCharacters = 2048
+	}
 });
 
 var result = engine.Evaluate("1 + 2");
@@ -33,6 +40,26 @@ var result = engine.Evaluate("1 + 2");
 
 > [!NOTE]
 > Custom limits cannot exceed the hard ceilings defined in `CalculationLimits`. Out-of-range values throw `ArgumentOutOfRangeException` when the engine is created.
+
+Calculation limits (`CalculatorOptions`) and formatting presentation options (`ResultFormatOptions`) are cleanly separated immutable configurations. Defaults are:
+
+| Control | Default |
+| :--- | ---: |
+| Integer / reduced rational numerator / reduced denominator bits | 16,384 each |
+| Arithmetic intermediate bits | 32,768 |
+| Absolute integer exponent | 10,000 |
+| Maximum requested significant display digits | 1,000 |
+| Maximum characters per formatted representation | 16,384 |
+
+Fractions are cross-cancelled and reduced before unnecessary growth. Intermediate limits still apply: an oversized intermediate can be rejected even if a later expression would cancel it. Literal coefficients and powers of ten are bounded before allocation; callback-returned values and captured variable values are checked against the receiving engine's limits.
+
+Limit violations throw `CalculationLimitException`; exact calculations never silently fall back to Double and formatted output is never silently truncated. Standalone `MathValue` operators use default numeric limits.
+
+These size limits are not execution-time guarantees and cannot constrain work performed inside caller callbacks. Existing specialized number-theory limits remain in force.
+
+Completed-result arithmetic checks the captured operands and the final value against the selected options' integer and rational-component limits. Operands are checked before arithmetic, even when cancellation would produce a small result. Binary composition selects the left result's options when available, otherwise the right result's options, otherwise the defaults. Unary composition uses the operand's options or the defaults.
+
+Composition also applies the selected structural AST limits to its metadata, without evaluating that metadata. This prevents repeated shared-expression composition from creating an exponentially large inspection workload. Metadata is not required to resolve functions against the receiving engine: its captured values are already authoritative.
 
 ---
 

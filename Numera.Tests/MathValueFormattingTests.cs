@@ -124,7 +124,7 @@ public sealed class MathValueFormattingTests
         var formattedInt = Calculator.FormatResult(intResult, CultureInfo.InvariantCulture);
 
         Assert.AreEqual(intResult, formattedInt.Value);
-        Assert.AreEqual("1092", formattedInt.PrimaryDisplay);
+        Assert.AreEqual("1,092", formattedInt.PrimaryDisplay);
         Assert.AreEqual("1092", formattedInt.MachineReadable);
         Assert.AreEqual("0x444", formattedInt.HexRepresentation);
         Assert.AreEqual("0b10001000100", formattedInt.BinaryRepresentation);
@@ -176,25 +176,104 @@ public sealed class MathValueFormattingTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void ResultDisplayHonorsNumberFormatInfoAndCustomProviders(bool useCustomProvider)
+    {
+        var numberFormat = (NumberFormatInfo)CultureInfo.InvariantCulture.NumberFormat.Clone();
+        numberFormat.NumberDecimalSeparator = ":";
+        numberFormat.NumberGroupSeparator = "_";
+        numberFormat.NumberGroupSizes = [2];
+        numberFormat.NegativeSign = "minus";
+        IFormatProvider provider = useCustomProvider ? new NumericFormatProvider(numberFormat) : numberFormat;
+        var engine = new CalculatorEngine(new CalculatorOptions
+        {
+            Culture = CultureInfo.GetCultureInfo("de-DE"),
+            ResultFormat = new ResultFormatOptions
+            {
+                SignificantDigits = 5,
+                MaxFixedDigits = 4,
+                Style = ExpressionFormatStyle.NormalizedAscii
+            }
+        });
+        (MathValue Value, string Expected)[] cases =
+        [
+            (new MathValue(-1234), "minus12_34"),
+            (new MathValue(-1234.5m), "minus12_34:5"),
+            (MathValue.FromFraction(-2469, 2), "minus12_34:5"),
+            (new MathValue(-1234.5), "minus12_34:5"),
+            (new MathValue(-1234.567m), "minus12_34:6"),
+            (new MathValue(-12345), "minus1:2345E4")
+        ];
+
+        Span<char> characters = stackalloc char[64];
+        Span<byte> utf8 = stackalloc byte[64];
+        foreach (var (value, expected) in cases)
+        {
+            var context = new EvaluationContext { Variables = [new Variable("x", value)] };
+            var result = engine.Evaluate("x", context);
+
+            Assert.AreEqual(expected, result.ToString(provider));
+            Assert.AreEqual(expected, result.ToString(null, provider));
+            Assert.AreEqual(expected, result.ToString("", provider));
+            Assert.AreEqual(expected, string.Format(provider, "{0}", result));
+            Assert.IsTrue(result.TryFormat(characters, out int charsWritten, provider: provider));
+            Assert.AreEqual(expected, new string(characters[..charsWritten]));
+            Assert.IsTrue(result.TryFormat(utf8, out int bytesWritten, provider: provider));
+            Assert.AreEqual(expected, Encoding.UTF8.GetString(utf8[..bytesWritten]));
+            Assert.AreEqual(value.ToString("F2", provider), result.ToString("F2", provider));
+
+            Assert.IsFalse(result.TryFormat(characters[..1], out charsWritten, provider: provider));
+            Assert.AreEqual(0, charsWritten);
+            Assert.IsFalse(result.TryFormat(utf8[..1], out bytesWritten, provider: provider));
+            Assert.AreEqual(0, bytesWritten);
+            Assert.AreEqual(result.PrimaryDisplay, result.ToString(null, null));
+        }
+    }
+
+    [TestMethod]
+    public void CustomProviderCharactersCountTowardsTheResultOutputLimit()
+    {
+        var numberFormat = (NumberFormatInfo)CultureInfo.InvariantCulture.NumberFormat.Clone();
+        numberFormat.NegativeSign = "negative";
+        var provider = new NumericFormatProvider(numberFormat);
+        var engine = new CalculatorEngine(new CalculatorOptions
+        {
+            ResultFormat = new ResultFormatOptions { MaxOutputCharacters = 5 }
+        });
+        var result = engine.Evaluate("-1");
+
+        Assert.ThrowsExactly<CalculationLimitException>(() => result.ToString(provider));
+        Assert.ThrowsExactly<CalculationLimitException>(() => result.TryFormat(new char[16], out _, provider: provider));
+        Assert.ThrowsExactly<CalculationLimitException>(() => result.TryFormat(new byte[16], out _, provider: provider));
+    }
+
+    private sealed class NumericFormatProvider(NumberFormatInfo numberFormat) : IFormatProvider
+    {
+        public object? GetFormat(Type? formatType) =>
+            formatType == typeof(NumberFormatInfo) ? numberFormat : null;
+    }
+
+    [TestMethod]
     public void EvaluationResult_ForwardedFormattingMethods_WorkCorrectly()
     {
         var intResult = Calculator.Evaluate("12345");
         var decResult = Calculator.Evaluate("123.45");
-        var dblResult = Calculator.Evaluate("1 / 3");
+        var rationalResult = Calculator.Evaluate("1 / 3");
 
         // ToString() and ToString(IFormatProvider)
-        Assert.AreEqual("12345", intResult.ToString());
-        Assert.AreEqual("12345", intResult.ToString(CultureInfo.InvariantCulture));
+        Assert.AreEqual("12,345", intResult.ToString());
+        Assert.AreEqual("12,345", intResult.ToString(CultureInfo.InvariantCulture));
         Assert.AreEqual("123.45", decResult.ToString(CultureInfo.InvariantCulture));
 
         // ToString(format, formatProvider)
         Assert.AreEqual("123.45", decResult.ToString("F2", CultureInfo.InvariantCulture));
-        Assert.AreEqual("0.33", dblResult.ToString("F2", CultureInfo.InvariantCulture));
+        Assert.AreEqual("0.33", rationalResult.ToString("F2", CultureInfo.InvariantCulture));
 
         // TryFormat (Span<char>)
         Span<char> charBuf = stackalloc char[64];
         Assert.IsTrue(intResult.TryFormat(charBuf, out int charsWritten));
-        Assert.AreEqual("12345", new string(charBuf[..charsWritten]));
+        Assert.AreEqual("12,345", new string(charBuf[..charsWritten]));
 
         Assert.IsTrue(decResult.TryFormat(charBuf, out charsWritten, "N2", CultureInfo.InvariantCulture));
         Assert.AreEqual("123.45", new string(charBuf[..charsWritten]));
@@ -202,14 +281,14 @@ public sealed class MathValueFormattingTests
         // TryFormat (Span<byte> UTF-8)
         Span<byte> utf8Buf = stackalloc byte[64];
         Assert.IsTrue(intResult.TryFormat(utf8Buf, out int bytesWritten));
-        Assert.AreEqual("12345", Encoding.UTF8.GetString(utf8Buf[..bytesWritten]));
+        Assert.AreEqual("12,345", Encoding.UTF8.GetString(utf8Buf[..bytesWritten]));
 
         Assert.IsTrue(decResult.TryFormat(utf8Buf, out bytesWritten, "N2", CultureInfo.InvariantCulture));
         Assert.AreEqual("123.45", Encoding.UTF8.GetString(utf8Buf[..bytesWritten]));
 
         // Formattable interface cast checks
         IFormattable formattable = intResult;
-        Assert.AreEqual("12345", formattable.ToString(null, CultureInfo.InvariantCulture));
+        Assert.AreEqual("12,345", formattable.ToString(null, CultureInfo.InvariantCulture));
 
         ISpanFormattable spanFormattable = decResult;
         Assert.IsTrue(spanFormattable.TryFormat(charBuf, out charsWritten, "F2", CultureInfo.InvariantCulture));

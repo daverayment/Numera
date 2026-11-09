@@ -20,10 +20,10 @@ public sealed class CustomFunctionTests
         var engine = new CalculatorEngine(options);
 
         var result = engine.Evaluate("double(21)");
-        Assert.AreEqual(42m, result.DecimalValue);
+        Assert.AreEqual(new MathValue(42m), result.Value);
 
         var compound = engine.Evaluate("triple(double(5))");
-        Assert.AreEqual(30m, compound.DecimalValue);
+        Assert.AreEqual(new MathValue(30m), compound.Value);
     }
 
     [TestMethod]
@@ -106,9 +106,9 @@ public sealed class CustomFunctionTests
 
         var engine = new CalculatorEngine(options);
 
-        Assert.AreEqual(6m, engine.Evaluate("MYFUNC(5)").DecimalValue);
-        Assert.AreEqual(7m, engine.Evaluate("myfunc(6)").DecimalValue);
-        Assert.AreEqual(8m, engine.Evaluate("MyFunc(7)").DecimalValue);
+        Assert.AreEqual(new MathValue(6m), engine.Evaluate("MYFUNC(5)").Value);
+        Assert.AreEqual(new MathValue(7m), engine.Evaluate("myfunc(6)").Value);
+        Assert.AreEqual(new MathValue(8m), engine.Evaluate("MyFunc(7)").Value);
     }
 
     [TestMethod]
@@ -375,7 +375,7 @@ public sealed class CustomFunctionTests
             [
                 CustomFunction.Create("positiveOnly", x =>
                 {
-                    if (x.DecimalValue <= 0)
+                    if (x <= new MathValue(0m))
                     {
                         throw new ExpressionException(new EvaluationDiagnostic(
                             EvaluationError.ArgumentOutOfRange, "Value must be positive."));
@@ -408,9 +408,9 @@ public sealed class CustomFunctionTests
 
         var engine = new CalculatorEngine(options);
 
-        Assert.AreEqual(13m, engine.Evaluate("triple(3) + 4").DecimalValue);
-        Assert.AreEqual(36m, engine.Evaluate("triple(3)4").DecimalValue);
-        Assert.AreEqual(36m, engine.Evaluate("4triple(3)").DecimalValue);
+        Assert.AreEqual(new MathValue(13m), engine.Evaluate("triple(3) + 4").Value);
+        Assert.AreEqual(new MathValue(36m), engine.Evaluate("triple(3)4").Value);
+        Assert.AreEqual(new MathValue(36m), engine.Evaluate("4triple(3)").Value);
     }
 
     [DataRow("")]

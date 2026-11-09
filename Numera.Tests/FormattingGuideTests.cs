@@ -47,7 +47,7 @@ public sealed class FormattingGuideTests
         Span<char> buffer = stackalloc char[64];
 
         Assert.IsTrue(value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture));
-        Assert.AreEqual("1100", new string(buffer[..written]));
+        Assert.AreEqual("1,100", new string(buffer[..written]));
     }
 
     [TestMethod]
@@ -70,7 +70,7 @@ public sealed class FormattingGuideTests
         var value = engine.Evaluate("1000 + 2,5");
         var shown = engine.FormatResult(value);
 
-        Assert.AreEqual("1002,5", shown.PrimaryDisplay);
+        Assert.AreEqual("1.002,5", shown.PrimaryDisplay);
         Assert.AreEqual("1002.5", shown.MachineReadable);
         Assert.IsNull(shown.HexRepresentation);
     }
@@ -85,12 +85,17 @@ public sealed class FormattingGuideTests
     }
 
     [TestMethod]
-    public void DisplayText_IsNotGrouped()
+    public void DisplayText_IsGroupedByDefault()
     {
         var engine = GermanEngine();
 
-        Assert.AreEqual("1234567", engine.FormatResult(engine.Evaluate("1234567")).PrimaryDisplay);
-        Assert.AreEqual("1234567,5", engine.FormatResult(engine.Evaluate("1234567,5")).PrimaryDisplay);
+        Assert.AreEqual("1.234.567", engine.FormatResult(engine.Evaluate("1234567")).PrimaryDisplay);
+        Assert.AreEqual("1.234.567,5", engine.FormatResult(engine.Evaluate("1234567,5")).PrimaryDisplay);
+
+        var unGrouped = engine.FormatResult(
+            engine.Evaluate("1234567"),
+            engine.Options.ResultFormat with { GroupDigits = false });
+        Assert.AreEqual("1234567", unGrouped.PrimaryDisplay);
     }
 
     [TestMethod]
@@ -134,9 +139,9 @@ public sealed class FormattingGuideTests
 
             // Display follows the current culture, so the facade, which reads invariant text,
             // cannot re-parse it. That asymmetry is why the docs recommend an engine.
-            Assert.AreEqual("1002,5", shown.PrimaryDisplay);
+            Assert.AreEqual("1.002,5", shown.PrimaryDisplay);
             Assert.AreEqual("1002.5", shown.MachineReadable);
-            Assert.AreEqual("1002.5", Calculator.FormatResult(value, CultureInfo.InvariantCulture).PrimaryDisplay);
+            Assert.AreEqual("1,002.5", Calculator.FormatResult(value, CultureInfo.InvariantCulture).PrimaryDisplay);
         }
         finally
         {

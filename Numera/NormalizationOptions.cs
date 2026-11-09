@@ -2,17 +2,17 @@ namespace Numera;
 
 /// <summary>
 /// Configuration options governing how input expressions are preprocessed and normalized
-/// before evaluation. These flags only switch individual passes on or off; the culture used to read
-/// numbers comes from <see cref="CalculatorOptions.Culture"/> (or is passed directly to
-/// <see cref="ExpressionNormalizer"/>), and culture handling always runs.
+/// before evaluation. These flags only switch individual passes on or off; the culture
+/// used to read numbers comes from <see cref="CalculatorOptions.Culture"/> (or is passed
+/// directly to <see cref="ExpressionNormalizer"/>), and culture handling always runs.
 /// </summary>
 public sealed record NormalizationOptions
 {
     /// <summary>
-    /// Whether to replace typographic operators (such as <c>×</c>, <c>÷</c> and the Unicode minus) and
-    /// the Fortran/Python power operator <c>**</c> with the canonical ASCII operators the parser
-    /// understands (<c>*</c>, <c>/</c>, <c>-</c>, <c>^</c>), so pasted text evaluates. Defaults to
-    /// <c>true</c>.
+    /// Whether to replace typographic operators (such as <c>×</c>, <c>÷</c> and the
+    /// Unicode minus) and the Fortran/Python power operator <c>**</c> with the canonical
+    /// ASCII operators the parser understands (<c>*</c>, <c>/</c>, <c>-</c>, <c>^</c>),
+    /// so pasted text evaluates. Defaults to <c>true</c>.
     /// </summary>
     public bool ReplaceUnicodeOperators { get; init; } = true;
 
@@ -32,8 +32,8 @@ public sealed record NormalizationOptions
     public bool TrimLauncherEquals { get; init; } = true;
 
     /// <summary>
-    /// Default normalization options with all standard transformations enabled. The instance is
-    /// immutable and shared.
+    /// Default normalization options with all standard transformations enabled. The
+    /// instance is immutable and shared.
     /// </summary>
     public static NormalizationOptions Default { get; } = new();
 }

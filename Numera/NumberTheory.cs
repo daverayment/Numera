@@ -12,8 +12,17 @@ internal static class NumberTheory
     /// Computes the greatest common divisor of two integers.
     /// Returns 0 when both are 0; always non-negative.
     /// </summary>
-    public static BigInteger Gcd(BigInteger a, BigInteger b) =>
-        BigInteger.GreatestCommonDivisor(BigInteger.Abs(a), BigInteger.Abs(b));
+    public static BigInteger Gcd(BigInteger a, BigInteger b)
+    {
+        ValidateInteger(a);
+        ValidateInteger(b);
+
+        // Euclidean remainders and quotients cannot exceed the input magnitudes.
+        ValidateIntermediate(a);
+        ValidateIntermediate(b);
+
+        return BigInteger.GreatestCommonDivisor(BigInteger.Abs(a), BigInteger.Abs(b));
+    }
 
     /// <summary>
     /// Computes the least common multiple of two integers.
@@ -21,6 +30,8 @@ internal static class NumberTheory
     /// </summary>
     public static BigInteger Lcm(BigInteger a, BigInteger b)
     {
+        ValidateInteger(a);
+        ValidateInteger(b);
         var absA = BigInteger.Abs(a);
         var absB = BigInteger.Abs(b);
 
@@ -29,13 +40,9 @@ internal static class NumberTheory
             return BigInteger.Zero;
         }
 
-        var gcd = BigInteger.GreatestCommonDivisor(absA, absB);
-        var result = (absA / gcd) * absB;
-
-        if (result.GetBitLength() > CalculationLimits.MaxIntegerBits)
-        {
-            throw new CalculationLimitException();
-        }
+        var gcd = Gcd(absA, absB);
+        var result = MathValue.Product(absA / gcd, absB);
+        ValidateInteger(result);
 
         return result;
     }
@@ -45,6 +52,8 @@ internal static class NumberTheory
     /// </summary>
     public static BigInteger Comb(BigInteger n, BigInteger k)
     {
+        ValidateInteger(n);
+        ValidateInteger(k);
         if (n < BigInteger.Zero || k < BigInteger.Zero)
         {
             throw new ExpressionException(new EvaluationDiagnostic(
@@ -62,9 +71,10 @@ internal static class NumberTheory
         }
 
         // Exploit symmetry C(n, k) == C(n, n - k).
-        if (k > n - k)
+        var complement = BoundedAdd(n, -k);
+        if (k > complement)
         {
-            k = n - k;
+            k = complement;
         }
 
         // Bound the loop iteration count.
@@ -77,12 +87,8 @@ internal static class NumberTheory
         BigInteger result = BigInteger.One;
         for (int i = 1; i <= kInt; i++)
         {
-            result = (result * (n - (i - 1))) / i;
-
-            if (result.GetBitLength() > CalculationLimits.MaxIntegerBits)
-            {
-                throw new CalculationLimitException();
-            }
+            result = MathValue.Product(result, BoundedAdd(n, -(i - 1))) / i;
+            ValidateInteger(result);
         }
 
         return result;
@@ -93,6 +99,8 @@ internal static class NumberTheory
     /// </summary>
     public static BigInteger Perm(BigInteger n, BigInteger k)
     {
+        ValidateInteger(n);
+        ValidateInteger(k);
         if (n < BigInteger.Zero || k < BigInteger.Zero)
         {
             throw new ExpressionException(new EvaluationDiagnostic(
@@ -119,12 +127,8 @@ internal static class NumberTheory
         BigInteger result = BigInteger.One;
         for (int i = 0; i < kInt; i++)
         {
-            result *= (n - i);
-
-            if (result.GetBitLength() > CalculationLimits.MaxIntegerBits)
-            {
-                throw new CalculationLimitException();
-            }
+            result = MathValue.Product(result, BoundedAdd(n, -i));
+            ValidateInteger(result);
         }
 
         return result;
@@ -145,11 +149,14 @@ internal static class NumberTheory
     private static ReadOnlySpan<int> DeterministicBases64 => SmallPrimes[..12];
 
     /// <summary>
-    /// Determines whether an integer is prime. Returns true if n is prime, false
-    /// otherwise. Negative numbers, 0, and 1 return false.
+    /// Tests primality deterministically through the unsigned 64-bit range. Above
+    /// that range, true indicates a probable prime, not a proof. False establishes
+    /// non-primality. Negative numbers, 0, and 1 return false.
     /// </summary>
     public static bool IsPrime(BigInteger n)
     {
+        ValidateInteger(n);
+
         if (n <= BigInteger.One)
         {
             return false;
@@ -160,6 +167,7 @@ internal static class NumberTheory
             return true;
         }
 
+        ValidateIntermediate(n);
         if (n.IsEven || n % 3 == 0)
         {
             return false;
@@ -185,8 +193,6 @@ internal static class NumberTheory
             return true;
         }
 
-        // Bound input bit length to protect against CPU exhaustion on large integers
-        // before entering expensive Miller-Rabin modular exponentiations.
         if (n.GetBitLength() > CalculationLimits.MaxPrimalityBits)
         {
             throw new CalculationLimitException();
@@ -200,14 +206,20 @@ internal static class NumberTheory
             return MillerRabin(n, DeterministicBases64);
         }
 
-        // For larger BigIntegers, use all 25 prime bases which gives virtually zero error
-        // probability.
+        // More fixed bases strengthen probable-prime testing, but do not supply a proof.
         return MillerRabin(n, SmallPrimes);
     }
 
     private static bool MillerRabin(BigInteger n, ReadOnlySpan<int> bases)
     {
-        BigInteger d = n - 1;
+        // ModPow is opaque: every modular multiplication is bounded by (n - 1)^2.
+        // Reserve the conservative upper bound before entering the implementation.
+        if (2 * n.GetBitLength() > CalculationLimits.MaxIntermediateBits)
+        {
+            throw new CalculationLimitException();
+        }
+        BigInteger nMinusOne = BoundedAdd(n, -BigInteger.One);
+        BigInteger d = nMinusOne;
         int s = 0;
         while (d.IsEven)
         {
@@ -223,7 +235,7 @@ internal static class NumberTheory
             }
 
             var x = BigInteger.ModPow(a, d, n);
-            if (x.IsOne || x == n - 1)
+            if (x.IsOne || x == nMinusOne)
             {
                 continue;
             }
@@ -232,7 +244,7 @@ internal static class NumberTheory
             for (int r = 1; r < s; r++)
             {
                 x = BigInteger.ModPow(x, 2, n);
-                if (x == n - 1)
+                if (x == nMinusOne)
                 {
                     composite = false;
                     break;
@@ -263,6 +275,7 @@ internal static class NumberTheory
     /// </summary>
     internal static List<PrimeFactor> Factorize(BigInteger n)
     {
+        ValidateInteger(n);
         if (n <= BigInteger.Zero)
         {
             throw new ExpressionException(new EvaluationDiagnostic(
@@ -279,6 +292,7 @@ internal static class NumberTheory
             throw new CalculationLimitException();
         }
 
+        ValidateIntermediate(n);
         var primeCounts = new Dictionary<BigInteger, int>();
 
         // Remove factors of 2.
@@ -332,7 +346,8 @@ internal static class NumberTheory
         return result;
     }
 
-    private static void FactorizeCompositeRecursive(BigInteger n, Dictionary<BigInteger, int> factors)
+    private static void FactorizeCompositeRecursive(
+        BigInteger n, Dictionary<BigInteger, int> factors)
     {
         if (n == BigInteger.One)
         {
@@ -345,7 +360,12 @@ internal static class NumberTheory
             return;
         }
 
-        // Fast O(1) quadratic residue check + Newton check.
+        // The opaque square-root helper uses Newton sums and a candidate square.
+        // Both fit within one bit beyond the input magnitude.
+        if (n.GetBitLength() + 1 > CalculationLimits.MaxIntermediateBits)
+        {
+            throw new CalculationLimitException();
+        }
         if (n.TryGetExactSquareRoot(out var sqrt))
         {
             FactorizeCompositeRecursive(sqrt, factors);
@@ -366,11 +386,11 @@ internal static class NumberTheory
         }
 
         // Try a few small constants for the polynomial f(x) = x^2 + c mod n to avoid cycles.
-        for (BigInteger c = 1; c <= 10; c++)
+        for (int c = 1; c <= 10; c++)
         {
             // Vary the starting point to avoid duplicate cycles.
-            BigInteger x = c + 1;
-            BigInteger y = c + 1;
+            BigInteger x = BoundedAdd(c, BigInteger.One);
+            BigInteger y = x;
             BigInteger d = 1;
 
             int steps = 0;
@@ -378,10 +398,10 @@ internal static class NumberTheory
 
             while (d == 1 && steps < maxSteps)
             {
-                x = (x * x + c) % n;
-                y = (y * y + c) % n;
-                y = (y * y + c) % n;
-                d = BigInteger.GreatestCommonDivisor(BigInteger.Abs(x - y), n);
+                x = BoundedAdd(MathValue.Product(x, x), c) % n;
+                y = BoundedAdd(MathValue.Product(y, y), c) % n;
+                y = BoundedAdd(MathValue.Product(y, y), c) % n;
+                d = Gcd(BoundedAdd(x, -y), n);
                 steps++;
             }
 
@@ -405,6 +425,7 @@ internal static class NumberTheory
     /// </summary>
     public static BigInteger DivCount(BigInteger n)
     {
+        ValidateInteger(n);
         if (n <= BigInteger.Zero)
         {
             throw new ExpressionException(new EvaluationDiagnostic(
@@ -415,12 +436,8 @@ internal static class NumberTheory
         BigInteger count = BigInteger.One;
         foreach (var factor in factors)
         {
-            count *= (factor.Exponent + 1);
-
-            if (count.GetBitLength() > CalculationLimits.MaxIntegerBits)
-            {
-                throw new CalculationLimitException();
-            }
+            count = MathValue.Product(count, factor.Exponent + 1);
+            ValidateInteger(count);
         }
 
         return count;
@@ -437,6 +454,8 @@ internal static class NumberTheory
     /// </summary>
     public static BigInteger Sigma(BigInteger n, int k)
     {
+        ValidateInteger(n);
+        ValidateInteger(k);
         if (n <= BigInteger.Zero)
         {
             throw new ExpressionException(new EvaluationDiagnostic(
@@ -465,29 +484,20 @@ internal static class NumberTheory
         foreach (var factor in factors)
         {
             // Sum = 1 + p^k + p^(2k) + ... + p^(a*k)
-            BigInteger pToK = BigInteger.Pow(factor.Prime, k);
-            if (pToK.GetBitLength() > CalculationLimits.MaxIntegerBits)
-            {
-                throw new CalculationLimitException();
-            }
+            BigInteger pToK = BoundedPow(factor.Prime, k);
+            ValidateInteger(pToK);
 
             BigInteger termSum = BigInteger.One;
             BigInteger currentPower = BigInteger.One;
             for (int e = 1; e <= factor.Exponent; e++)
             {
-                currentPower *= pToK;
-                if (currentPower.GetBitLength() > CalculationLimits.MaxIntegerBits)
-                {
-                    throw new CalculationLimitException();
-                }
-                termSum += currentPower;
+                currentPower = MathValue.Product(currentPower, pToK);
+                ValidateInteger(currentPower);
+                termSum = BoundedAdd(termSum, currentPower);
             }
 
-            total *= termSum;
-            if (total.GetBitLength() > CalculationLimits.MaxIntegerBits)
-            {
-                throw new CalculationLimitException();
-            }
+            total = MathValue.Product(total, termSum);
+            ValidateInteger(total);
         }
 
         return total;
@@ -499,6 +509,7 @@ internal static class NumberTheory
     /// </summary>
     public static BigInteger Totient(BigInteger n)
     {
+        ValidateInteger(n);
         if (n <= BigInteger.Zero)
         {
             throw new ExpressionException(new EvaluationDiagnostic(
@@ -510,7 +521,8 @@ internal static class NumberTheory
 
         foreach (var factor in factors)
         {
-            result = (result / factor.Prime) * (factor.Prime - 1);
+            result = MathValue.Product(result / factor.Prime, BoundedAdd(factor.Prime, -1));
+            ValidateInteger(result);
         }
 
         return result;
@@ -525,6 +537,7 @@ internal static class NumberTheory
     /// </exception>
     public static BigInteger PopCount(BigInteger n)
     {
+        ValidateInteger(n);
         if (n < BigInteger.Zero)
         {
             throw new ExpressionException(new EvaluationDiagnostic(
@@ -541,8 +554,55 @@ internal static class NumberTheory
         for (int i = 0; i < bytesWritten; i++)
         {
             count += BitOperations.PopCount(buffer[i]);
+            ValidateIntermediate(count);
         }
 
-        return new BigInteger(count);
+        var result = new BigInteger(count);
+        ValidateInteger(result);
+        return result;
+    }
+
+    private static void ValidateInteger(BigInteger value)
+    {
+        if (BigInteger.Abs(value).GetBitLength() > CalculationLimits.MaxIntegerBits)
+        {
+            throw new CalculationLimitException();
+        }
+    }
+
+    private static void ValidateIntermediate(BigInteger value)
+    {
+        if (BigInteger.Abs(value).GetBitLength() > CalculationLimits.MaxIntermediateBits)
+        {
+            throw new CalculationLimitException();
+        }
+    }
+
+    private static BigInteger BoundedAdd(BigInteger a, BigInteger b)
+    {
+        ValidateIntermediate(a);
+        ValidateIntermediate(b);
+        var sum = a + b;
+        ValidateIntermediate(sum);
+        return sum;
+    }
+
+    private static BigInteger BoundedPow(BigInteger value, int exponent)
+    {
+        BigInteger result = BigInteger.One;
+        while (exponent > 0)
+        {
+            if ((exponent & 1) != 0)
+            {
+                result = MathValue.Product(result, value);
+            }
+            exponent >>= 1;
+            if (exponent > 0)
+            {
+                value = MathValue.Product(value, value);
+            }
+        }
+
+        return result;
     }
 }

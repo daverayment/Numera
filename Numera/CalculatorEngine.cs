@@ -211,8 +211,8 @@ public sealed class CalculatorEngine
         }
         catch (OverflowException exception)
         {
-            // Arithmetic operators handle their own decimal-to-double fallback. Any overflow that
-            // still escapes evaluation is reported as a failure here.
+            // Explicit approximate conversions can overflow; exact-domain size failures
+            // remain CalculationLimitException rather than downgrading to Double.
             throw new ExpressionException(
                 new EvaluationDiagnostic(EvaluationError.NumericOverflow, exception.Message), exception);
         }
@@ -241,6 +241,7 @@ public sealed class CalculatorEngine
         {
             var evaluator = new AstEvaluator(Options, context);
             var mathValue = node.Accept(evaluator);
+            mathValue.ValidateLimits(Options.MaxIntegerBits);
 
             // Advance the cumulative context for the next evaluation, merging any new
             // assignments into the previous variables, and recording the evaluated node
@@ -252,7 +253,7 @@ public sealed class CalculatorEngine
                 evaluator.Assignments.ToVariableCollection() :
                 VariableCollection.Empty;
 
-            return new EvaluationResult(mathValue, nextContext, delta, this);
+            return new EvaluationResult(mathValue, nextContext, delta, Options);
         }
         catch (DivideByZeroException exception)
         {
@@ -437,13 +438,18 @@ public sealed class CalculatorEngine
     /// <returns>The rendered expression text.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
     /// null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if the rendering options are invalid.</exception>
     /// <exception cref="NumeraException">Thrown if the expression cannot be normalized or
     /// parsed.</exception>
     public string FormatExpression(
         string expression,
         ExpressionFormatOptions? options = null,
-        EvaluationContext? context = null) =>
-        FormatExpression(Parse(expression, context, allowUnboundVariables: true), options);
+        EvaluationContext? context = null)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        options?.Validate();
+        return FormatExpression(Parse(expression, context, allowUnboundVariables: true), options);
+    }
 
     /// <summary>
     /// Renders an existing expression tree. Unknown function names are tolerated so
@@ -455,12 +461,14 @@ public sealed class CalculatorEngine
     /// <returns>The rendered expression text.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="node"/> is null.
     /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if the rendering options are invalid.</exception>
     /// <exception cref="NumeraException">Thrown if the tree breaches this engine's
     /// limits.</exception>
     public string FormatExpression(ExpressionNode node, ExpressionFormatOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(node);
         options ??= ExpressionFormatOptions.Typographic;
+        options.Validate();
 
         AstValidator.Validate(node, Options, allowUnknownFunctions: true);
 
@@ -475,6 +483,26 @@ public sealed class CalculatorEngine
 
     /// <summary>
     /// Formats an evaluation result into a structured, presentation-ready card using the
+    /// specified options and culture.
+    /// </summary>
+    /// <param name="result">The evaluation result to format.</param>
+    /// <param name="options">The formatting options to use, or <see langword="null"/> to use this engine's default format.</param>
+    /// <param name="culture">The culture to use for formatting, or <see langword="null"/> to use this engine's culture.</param>
+    /// <param name="prefixRadixOutput">Whether to prefix hexadecimal, binary, and octal
+    /// outputs with their respective radix indicators.</param>
+    /// <returns>A <see cref="FormattedCalculation"/> holding the original value, the
+    /// display text in the specified culture, an invariant-culture string for machine
+    /// use, and hex, binary and octal forms.</returns>
+    public FormattedCalculation FormatResult(
+        EvaluationResult result, ResultFormatOptions? options, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
+        ResultFormatter.Format(
+            result,
+            options ?? Options.ResultFormat,
+            culture ?? Options.Culture,
+            prefixRadixOutput);
+
+    /// <summary>
+    /// Formats an evaluation result into a structured, presentation-ready card using the
     /// engine's culture, or the caller-specified culture.
     /// </summary>
     /// <param name="result">The evaluation result to format.</param>
@@ -486,10 +514,30 @@ public sealed class CalculatorEngine
     /// use, and hex, binary and octal forms.</returns>
     public FormattedCalculation FormatResult(
         EvaluationResult result, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
-        FormatCore(
-            result.Value,
+        ResultFormatter.Format(
+            result,
+            Options.ResultFormat,
             culture ?? Options.Culture,
-            result.HasAssignments ? result.AssignedVariables : null,
+            prefixRadixOutput);
+
+    /// <summary>
+    /// Formats a calculation value into a structured presentation-ready card using the
+    /// specified options and culture.
+    /// </summary>
+    /// <param name="value">The calculation value to format.</param>
+    /// <param name="options">The formatting options to use, or <see langword="null"/> to use this engine's default format.</param>
+    /// <param name="culture">The culture to use for formatting, or <see langword="null"/> to use this engine's culture.</param>
+    /// <param name="prefixRadixOutput">Whether to prefix hexadecimal, binary, and octal
+    /// outputs with their respective radix indicators.</param>
+    /// <returns>A <see cref="FormattedCalculation"/> holding the original value, the
+    /// display text in the specified culture, an invariant-culture string for machine
+    /// use, and prefixed hex, binary and octal forms.</returns>
+    public FormattedCalculation FormatResult(
+        MathValue value, ResultFormatOptions? options, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
+        ResultFormatter.Format(
+            value,
+            options ?? Options.ResultFormat,
+            culture ?? Options.Culture,
             prefixRadixOutput);
 
     /// <summary>
@@ -505,54 +553,11 @@ public sealed class CalculatorEngine
     /// use, and prefixed hex, binary and octal forms.</returns>
     public FormattedCalculation FormatResult(
         MathValue value, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
-        FormatCore(
+        ResultFormatter.Format(
             value,
+            Options.ResultFormat,
             culture ?? Options.Culture,
-            null,
             prefixRadixOutput);
-
-    private static FormattedCalculation FormatCore(
-        MathValue value,
-        CultureInfo culture,
-        VariableCollection? assignedVariables,
-        bool prefixRadixOutput)
-    {
-        string primaryDisplay = value.Kind == MathValue.DataType.Decimal ?
-            FormatDisplayDecimal(value.DecimalValue, culture) :
-            value.ToString(culture);
-
-        string machineReadable = value.ToString(CultureInfo.InvariantCulture);
-
-        return new FormattedCalculation(
-            Value: value,
-            PrimaryDisplay: primaryDisplay,
-            MachineReadable: machineReadable,
-            HexRepresentation: value.ToHexString(prefixRadixOutput),
-            BinaryRepresentation: value.ToBinaryString(prefixRadixOutput),
-            OctalRepresentation: value.ToOctalString(prefixRadixOutput),
-            AssignedVariables: assignedVariables);
-    }
-
-    private static string FormatDisplayDecimal(decimal decVal, CultureInfo culture)
-    {
-        // If it's a whole number with excessive trailing zeros (scale > 2 and
-        // Truncate(d) == d), format as a clean integer, while leaving values such as
-        // 100.0 or 194.40 alone if scale <= 2.
-        int scale = (decimal.GetBits(decVal)[3] >> 16) & 0x7F;
-        if (scale > 2 && decimal.Truncate(decVal) == decVal)
-        {
-            return decimal.Truncate(decVal).ToString("F0", culture);
-        }
-
-        // Trim long runs of trailing zeros for human display.
-        if (scale > 4)
-        {
-            decimal normalized = decVal / 1.000000000000000000000000000000000m;
-            return normalized.ToString(culture);
-        }
-
-        return decVal.ToString(culture);
-    }
 
     /// <summary>
     /// Formats a result for display using this engine's culture, the same one used to
@@ -563,10 +568,7 @@ public sealed class CalculatorEngine
     /// display text in this engine's culture, an invariant-culture string for machine
     /// use, and prefixed hex, binary and octal forms.</returns>
     public FormattedCalculation FormatResult(EvaluationResult result)
-    {
-        var card = Calculator.FormatResult(result, Options.Culture);
-        return card with { AssignedVariables = result.HasAssignments ? result.AssignedVariables : null };
-    }
+        => FormatResult(result, Options.Culture);
 
     /// <summary>
     /// Formats a calculation value using this engine's culture.
@@ -576,5 +578,5 @@ public sealed class CalculatorEngine
     /// display text in this engine's culture, an invariant-culture string for machine
     /// use, and prefixed hex, binary and octal forms.</returns>
     public FormattedCalculation FormatResult(MathValue value) =>
-        Calculator.FormatResult(value, Options.Culture);
+        FormatResult(value, Options.Culture);
 }

@@ -19,7 +19,20 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
 
     public string Visit(NumberNode node)
     {
-        string text = node.Value.ToString(CultureInfo.InvariantCulture);
+        if (RendersScientific(node))
+        {
+            var formatOptions = new ResultFormatOptions
+            {
+                MaxFixedDigits = _options.MaxFixedDigits,
+                Style = _options.Style,
+                Notation = NumericNotation.Auto,
+            };
+            return ResultValueFormatter.Format(node.Value, formatOptions, CultureInfo.InvariantCulture).Text;
+        }
+
+        string text = node.Value.Kind == MathValue.DataType.Rational
+            ? $"({node.Value.ToInvariantExpression()})"
+            : node.Value.ToString(CultureInfo.InvariantCulture);
         if (_options.UseUnicodeMinus && text.StartsWith('-'))
         {
             return "−" + text[1..];
@@ -168,10 +181,10 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
         string fn = node.FunctionName;
         if (fn.Equals("sqrt", StringComparison.OrdinalIgnoreCase) && node.Arguments.Count == 1 && _options.Style == ExpressionFormatStyle.TypographicUnicode)
         {
-            return $"√({node.Arguments[0].Accept(this)})";
+            return $"√({FormatChild(node.Arguments[0], node, isRight: true)})";
         }
 
-        string args = string.Join(", ", node.Arguments.Select(a => a.Accept(this)));
+        string args = string.Join(", ", node.Arguments.Select(a => FormatChild(a, node, isRight: true)));
         return $"{fn}({args})";
     }
 
@@ -217,11 +230,16 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
         return Parenthesize(child.Accept(this), child, parent, isRight);
     }
 
-    private static string Parenthesize(string text, ExpressionNode child, ExpressionNode parent, bool isRight) =>
+    private string Parenthesize(string text, ExpressionNode child, ExpressionNode parent, bool isRight) =>
         NeedsParentheses(child, parent, isRight) ? $"({text})" : text;
 
-    private static bool NeedsParentheses(ExpressionNode child, ExpressionNode parent, bool isRight)
+    private bool NeedsParentheses(ExpressionNode child, ExpressionNode parent, bool isRight)
     {
+        if (parent is FunctionCallNode)
+        {
+            return child is AssignmentNode;
+        }
+
         int childPrec = GetPrecedence(child);
         int parentPrec = GetPrecedence(parent);
 
@@ -279,7 +297,10 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
         _ => false,
     };
 
-    private static int GetPrecedence(ExpressionNode node) => node switch
+    private bool RendersScientific(NumberNode n) =>
+        ResultValueFormatter.ShouldRenderScientific(n.Value, _options.MaxFixedDigits);
+
+    private int GetPrecedence(ExpressionNode node) => node switch
     {
         BinaryNode b => b.Op switch
         {
@@ -299,6 +320,8 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
             _ => 9,
         },
         ComparisonChainNode => 5,
+        AssignmentNode => 0,
+        NumberNode n when RendersScientific(n) => 8,
         _ => 12, // Number, Identifier, FunctionCall are primary
     };
 

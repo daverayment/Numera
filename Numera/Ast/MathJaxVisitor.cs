@@ -40,6 +40,22 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
             return FormatScientificLatex(raw);
         }
 
+        if (RendersScientific(node))
+        {
+            var formatOptions = new ResultFormatOptions
+            {
+                MaxFixedDigits = _options.MaxFixedDigits,
+                Style = ExpressionFormatStyle.MathJax,
+                Notation = NumericNotation.Auto,
+            };
+            return ResultValueFormatter.Format(node.Value, formatOptions, CultureInfo.InvariantCulture).Text;
+        }
+
+        if (node.Value.Kind == MathValue.DataType.Rational)
+        {
+            return $@"\frac{{{node.Value.Numerator.ToString(CultureInfo.InvariantCulture)}}}{{{node.Value.Denominator.ToString(CultureInfo.InvariantCulture)}}}";
+        }
+
         string text = node.Value.ToString(CultureInfo.InvariantCulture);
         return FormatScientificLatex(text);
     }
@@ -235,16 +251,16 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
             return $@"\left\lceil {node.Arguments[0].Accept(this)}\right\rceil";
         }
 
+        string args = string.Join(", ", node.Arguments.Select(a => FormatChild(a, node, isRight: true)));
+
         // Standard trigonometric / common functions.
         if (TryGetLatexFunctionName(fn, out string? latexFn))
         {
-            string arg = string.Join(", ", node.Arguments.Select(a => a.Accept(this)));
-            return $@"\{latexFn}({arg})";
+            return $@"\{latexFn}({args})";
         }
 
-        string defaultArgs = string.Join(", ", node.Arguments.Select(a => a.Accept(this)));
         string escapedFn = fn.Replace("_", @"\_", StringComparison.Ordinal);
-        return $@"\operatorname{{{escapedFn}}}({defaultArgs})";
+        return $@"\operatorname{{{escapedFn}}}({args})";
     }
 
     public string Visit(AssignmentNode node) =>
@@ -348,6 +364,11 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
 
     private bool NeedsParentheses(ExpressionNode child, ExpressionNode parent, bool isRight)
     {
+        if (parent is FunctionCallNode)
+        {
+            return child is AssignmentNode;
+        }
+
         // When division is rendered as a 2D fraction (\frac{a}{b}), it has natural visual grouping
         // and does not need parentheses even inside lower/equal precedence contexts.
         if (child is BinaryNode { Op: BinaryOperator.Divide } && _options.Division == DivisionSymbol.Fraction)
@@ -411,12 +432,10 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
         _ => false,
     };
 
-    private static bool RendersScientific(NumberNode n) =>
-        n.Value.Kind == MathValue.DataType.Double &&
-        double.IsFinite(n.Value.DoubleValue) &&
-        n.Value.DoubleValue.ToString("G", CultureInfo.InvariantCulture).AsSpan().IndexOfAny('E', 'e') >= 0;
+    private bool RendersScientific(NumberNode n) =>
+        ResultValueFormatter.ShouldRenderScientific(n.Value, _options.MaxFixedDigits);
 
-    private static int GetPrecedence(ExpressionNode node) => node switch
+    private int GetPrecedence(ExpressionNode node) => node switch
     {
         BinaryNode b => b.Op switch
         {
@@ -436,6 +455,7 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
             _ => 9,
         },
         ComparisonChainNode => 5,
+        AssignmentNode => 0,
         NumberNode n when RendersScientific(n) => 8,
         _ => 12,
     };

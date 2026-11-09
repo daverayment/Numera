@@ -1,13 +1,14 @@
 using System.Collections.Frozen;
 using System.Globalization;
 using System.Numerics;
+using System.Text;
 using Numera.Ast;
 
 namespace Numera;
 
 /// <summary>
-/// The result of evaluating an expression, including the value, updated context, and any 
-/// variables assigned by the expression.
+/// The result of evaluating an expression, including the computed value, updated context,
+/// and any variables assigned during evaluation.
 /// </summary>
 public readonly record struct EvaluationResult :
     IEquatable<MathValue>,
@@ -30,21 +31,12 @@ public readonly record struct EvaluationResult :
 
     /// <summary>
     /// Gets the variables assigned or updated during this specific evaluation, if any.
-    /// Empty if no assignments occurred. A subset of
-    /// <see cref="EvaluationContext.Variables"/> in <see cref="Context"/>.
+    /// Empty if no assignments occurred.
     /// </summary>
     public VariableCollection AssignedVariables { get; }
 
     /// <summary>
-    /// Gets the <see cref="CalculatorEngine"/> used to evaluate the expression, which
-    /// contains the current culture, formatting rules, and other options. Used when
-    /// performing AST-preserving arithmetic operations.
-    /// </summary>
-    internal CalculatorEngine Engine { get; }
-
-    /// <summary>
-    /// Returns <c>true</c> if one or more variables were assigned or updated in this
-    /// evaluation.
+    /// Returns <c>true</c> if one or more variables were assigned or updated in this evaluation.
     /// </summary>
     public bool HasAssignments => AssignedVariables.Count > 0;
 
@@ -71,6 +63,21 @@ public readonly record struct EvaluationResult :
         Context.PreviousExpression?.GetVariableReferences() ?? [];
 
     /// <summary>
+    /// Gets the engine or calculation options associated with this result, if specified; otherwise <c>null</c>.
+    /// </summary>
+    public CalculatorOptions? Options { get; }
+
+    /// <summary>
+    /// Gets the formatting options attached to this result, if specified; otherwise <c>null</c>.
+    /// </summary>
+    public ResultFormatOptions? FormatOptions => Options?.ResultFormat;
+
+    /// <summary>
+    /// Gets the culture associated with this result, if specified; otherwise <c>null</c>.
+    /// </summary>
+    public CultureInfo? Culture => Options?.Culture;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="EvaluationResult"/> struct.
     /// </summary>
     /// <param name="value">The evaluated value of the expression.</param>
@@ -78,25 +85,38 @@ public readonly record struct EvaluationResult :
     /// <see cref="EvaluationContext.PreviousResult"/> (<c>ans</c>) and any new variable
     /// assignments merged into <see cref="EvaluationContext.Variables"/>.</param>
     /// <param name="assignedVariables">The variables assigned or updated by the
-    /// expression, or <c>null</c> if the expression did not assign any variable.</param>
-    /// <param name="engine">The calculator engine used for the evaluation.</param>
+    /// expression, or <c>null</c> if no variables were assigned.</param>
+    /// <param name="options">Optional calculator options to associate with this result.</param>
     public EvaluationResult(
         MathValue value,
         EvaluationContext context,
         VariableCollection? assignedVariables = null,
-        CalculatorEngine? engine = null)
+        CalculatorOptions? options = null)
     {
         Value = value;
         Context = context;
         AssignedVariables = assignedVariables ?? VariableCollection.Empty;
-        Engine = engine ?? CalculatorEngine.Default;
+        Options = options;
     }
 
     // Member-forwarding to MathValue.
+
     /// <summary>
     /// Gets the data type of the current math value.
     /// </summary>
     public MathValue.DataType Type => Value.Kind;
+
+    /// <summary>
+    /// Gets the reduced verified exact fraction, or null when finite Exact provenance is unavailable.
+    /// </summary>
+    public (BigInteger Numerator, BigInteger Denominator)? ExactFraction => Value.ExactFraction;
+
+    /// <summary>
+    /// Gets the reduced fraction when the finite value has Exact calculation provenance.
+    /// </summary>
+    /// <returns>The verified exact numerator and positive denominator in lowest terms.</returns>
+    /// <exception cref="InvalidOperationException">The value has no verified exact fractional representation.</exception>
+    public (BigInteger Numerator, BigInteger Denominator) GetExactFraction() => Value.GetExactFraction();
 
     /// <summary>
     /// Gets the stored <see cref="System.Numerics.BigInteger"/> value when
@@ -121,8 +141,7 @@ public readonly record struct EvaluationResult :
     public bool IsFinite => Value.IsFinite;
 
     /// <summary>
-    /// Returns true if the value is mathematically undefined (Not-a-Number); otherwise
-    /// false.
+    /// Returns true if the value is mathematically undefined (Not-a-Number); otherwise false.
     /// </summary>
     public bool IsNaN => Value.IsNaN;
 
@@ -132,19 +151,23 @@ public readonly record struct EvaluationResult :
     public bool IsZero => Value.IsZero;
 
     /// <summary>
-    /// Forces the value into a standard 64-bit floating-point representation. This may
-    /// result in loss of precision or magnitude.
+    /// Whether a verified-exact finite fractional representation is available.
     /// </summary>
-    /// <returns></returns>
+    public bool HasExactFraction => Value.TryGetExactFraction(out _, out _);
+
+    /// <summary>
+    /// Gets the accuracy established for the calculation, independently of display rounding.
+    /// </summary>
+    public CalculationAccuracy Accuracy => Value.Accuracy;
+
+    /// <summary>
+    /// Forces the value into a standard 64-bit floating-point representation.
+    /// </summary>
     public double AsDouble() => Value.AsDouble();
 
     /// <summary>
-    /// Implicit conversion to <see cref="MathValue"/>. This allows an
-    /// <see cref="EvaluationResult"/> to be used in contexts where a
-    /// <see cref="MathValue"/> is expected, returning the evaluated value, like
-    /// <c>MathValue val = Calculator.Evaluate("2 + 2");</c>
+    /// Implicit conversion to <see cref="MathValue"/>.
     /// </summary>
-    /// <param name="result">The evaluation result to convert.</param>
     public static implicit operator MathValue(EvaluationResult result) => result.Value;
 
     /// <summary>
@@ -152,480 +175,347 @@ public readonly record struct EvaluationResult :
     /// </summary>
     public bool Equals(MathValue other) => Value.Equals(other);
 
-    // AST-preserving arithmetic operators.
+    // Operator overloads.
 
     /// <summary>
-    /// Returns the sum of two evaluation results, combining their values using their
-    /// original ASTs.
+    /// Adds two evaluation results.
     /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The sum of the two evaluation results.</returns>
     public static EvaluationResult operator +(EvaluationResult left, EvaluationResult right) =>
-        CombineBinary(left, right, BinaryOperator.Add);
+        Combine(left, right, BinaryOperator.Add);
 
     /// <summary>
-    /// Returns the difference of two evaluation results, combining their values using
-    /// their original ASTs.
+    /// Subtracts the right evaluation result from the left.
     /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The result of subtracting <paramref name="right"/> from
-    /// <paramref name="left"/>.</returns>
     public static EvaluationResult operator -(EvaluationResult left, EvaluationResult right) =>
-        CombineBinary(left, right, BinaryOperator.Subtract);
+        Combine(left, right, BinaryOperator.Subtract);
 
     /// <summary>
-    /// Returns the product of two evaluation results, combining their values using their
-    /// original ASTs.
+    /// Multiplies two evaluation results.
     /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The product of the two evaluation results.</returns>
     public static EvaluationResult operator *(EvaluationResult left, EvaluationResult right) =>
-        CombineBinary(left, right, BinaryOperator.Multiply);
+        Combine(left, right, BinaryOperator.Multiply);
 
     /// <summary>
-    /// Returns the quotient of two evaluation results, combining their values using their
-    /// original ASTs.
+    /// Divides the left evaluation result by the right.
     /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The quotient of the two evaluation results.</returns>
     public static EvaluationResult operator /(EvaluationResult left, EvaluationResult right) =>
-        CombineBinary(left, right, BinaryOperator.Divide);
+        Combine(left, right, BinaryOperator.Divide);
 
     /// <summary>
-    /// Returns the remainder of dividing evaluation results, combining their values using
-    /// their original ASTs.
+    /// Computes the remainder of dividing the left evaluation result by the right.
     /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The remainder dividing the two evaluation results.</returns>
     public static EvaluationResult operator %(EvaluationResult left, EvaluationResult right) =>
-        CombineBinary(left, right, BinaryOperator.Modulo);
-
-    // Overloads with MathValue (and primitives via implicit MathValue conversion).
+        Combine(left, right, BinaryOperator.Modulo);
 
     /// <summary>
-    /// Returns the sum of an <see cref="EvaluationResult"/> and <see cref="MathValue"/>.
+    /// Adds a math value to an evaluation result.
     /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The sum of the evaluation result and the math value.</returns>
     public static EvaluationResult operator +(EvaluationResult left, MathValue right) =>
-        CombineBinary(left, right, BinaryOperator.Add);
+        Combine(left, right, BinaryOperator.Add);
 
     /// <summary>
-    /// Returns the sum of a <see cref="MathValue"/> and <see cref="EvaluationResult"/>.
+    /// Adds an evaluation result to a math value.
     /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The sum of the evaluation result and the math value.</returns>
     public static EvaluationResult operator +(MathValue left, EvaluationResult right) =>
-        CombineBinary(left, right, BinaryOperator.Add);
+        Combine(left, right, BinaryOperator.Add);
 
     /// <summary>
-    /// Returns the difference of two evaluation results, combining their values using
-    /// their original ASTs.
+    /// Subtracts a math value from an evaluation result.
     /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The result of subtracting <paramref name="right"/> from
-    /// <paramref name="left"/>.</returns>
     public static EvaluationResult operator -(EvaluationResult left, MathValue right) =>
-        CombineBinary(left, right, BinaryOperator.Subtract);
+        Combine(left, right, BinaryOperator.Subtract);
 
     /// <summary>
-    /// Returns the difference of two evaluation results, combining their values using
-    /// their original ASTs.
+    /// Subtracts an evaluation result from a math value.
     /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The result of subtracting <paramref name="right"/> from
-    /// <paramref name="left"/>.</returns>
     public static EvaluationResult operator -(MathValue left, EvaluationResult right) =>
-        CombineBinary(left, right, BinaryOperator.Subtract);
+        Combine(left, right, BinaryOperator.Subtract);
 
     /// <summary>
-    /// Returns the product of an <see cref="EvaluationResult"/> and
-    /// <see cref="MathValue"/>.
+    /// Multiplies an evaluation result by a math value.
     /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The result of multiplying <paramref name="left"/> by
-    /// <paramref name="right"/>.</returns>
     public static EvaluationResult operator *(EvaluationResult left, MathValue right) =>
-        CombineBinary(left, right, BinaryOperator.Multiply);
+        Combine(left, right, BinaryOperator.Multiply);
 
     /// <summary>
-    /// Returns the product of a <see cref="MathValue"/> and
-    /// <see cref="EvaluationResult"/>.
+    /// Multiplies a math value by an evaluation result.
     /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The result of multiplying <paramref name="left"/> by
-    /// <paramref name="right"/>.</returns>
     public static EvaluationResult operator *(MathValue left, EvaluationResult right) =>
-        CombineBinary(left, right, BinaryOperator.Multiply);
+        Combine(left, right, BinaryOperator.Multiply);
 
     /// <summary>
-    /// Returns the quotient of an <see cref="EvaluationResult"/> and
-    /// <see cref="MathValue"/>.
+    /// Divides an evaluation result by a math value.
     /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The result of dividing <paramref name="left"/> by
-    /// <paramref name="right"/>.</returns>
     public static EvaluationResult operator /(EvaluationResult left, MathValue right) =>
-        CombineBinary(left, right, BinaryOperator.Divide);
+        Combine(left, right, BinaryOperator.Divide);
 
     /// <summary>
-    /// Returns the quotient of a <see cref="MathValue"/> and
-    /// <see cref="EvaluationResult"/>.
+    /// Divides a math value by an evaluation result.
     /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The result of dividing <paramref name="left"/> by
-    /// <paramref name="right"/>.</returns>
     public static EvaluationResult operator /(MathValue left, EvaluationResult right) =>
-        CombineBinary(left, right, BinaryOperator.Divide);
+        Combine(left, right, BinaryOperator.Divide);
 
     /// <summary>
-    /// Returns the remainder of dividing an <see cref="EvaluationResult"/> by a
-    /// <see cref="MathValue"/>.
+    /// Computes the remainder of dividing an evaluation result by a math value.
     /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The remainder dividing <paramref name="left"/> by
-    /// <paramref name="right"/>.</returns>
     public static EvaluationResult operator %(EvaluationResult left, MathValue right) =>
-        CombineBinary(left, right, BinaryOperator.Modulo);
+        Combine(left, right, BinaryOperator.Modulo);
 
     /// <summary>
-    /// Returns the remainder of dividing a <see cref="MathValue"/> by an
-    /// <see cref="EvaluationResult"/>.
+    /// Computes the remainder of dividing a math value by an evaluation result.
     /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>The remainder from dividing <paramref name="left"/> by
-    /// <paramref name="right"/>.</returns>
     public static EvaluationResult operator %(MathValue left, EvaluationResult right) =>
-        CombineBinary(left, right, BinaryOperator.Modulo);
-
-    // Unary
+        Combine(left, right, BinaryOperator.Modulo);
 
     /// <summary>
-    /// Return the negation of an evaluation result, combining its value using its
-    /// original AST.
+    /// Negates an evaluation result.
     /// </summary>
-    /// <param name="operand">The operand to negate.</param>
-    /// <returns>The result of negating the operand.</returns>
     public static EvaluationResult operator -(EvaluationResult operand)
     {
         var node = new UnaryNode(UnaryOperator.Negate, operand.GetExpressionNode());
-        return operand.Engine.Evaluate(node, operand.Context);
+        var options = operand.Options ?? CalculatorOptions.Default;
+        AstValidator.Validate(node, options, allowUnknownFunctions: true, validateNodeInvariants: false);
+        operand.Value.ValidateLimits(options.MaxIntegerBits);
+        var val = -operand.Value;
+        val.ValidateLimits(options.MaxIntegerBits);
+        return new EvaluationResult(val, operand.Context.Advance(null, val, node), options: options);
     }
 
     /// <summary>
-    /// Return the positive of an evaluation result.
+    /// Unary positive operator.
     /// </summary>
-    /// <param name="operand">The operand to return as positive.</param>
-    /// <returns>The result of returning the operand as positive.</returns>
     public static EvaluationResult operator +(EvaluationResult operand)
     {
         var node = new UnaryNode(UnaryOperator.Positive, operand.GetExpressionNode());
-        return operand.Engine.Evaluate(node, operand.Context);
+        var options = operand.Options ?? CalculatorOptions.Default;
+        AstValidator.Validate(node, options, allowUnknownFunctions: true, validateNodeInvariants: false);
+        operand.Value.ValidateLimits(options.MaxIntegerBits);
+        var val = operand.Value;
+        return new EvaluationResult(val, operand.Context.Advance(null, val, node), options: options);
     }
 
     // Comparison operators with MathValue.
 
-    /// <summary>
-    /// Determines whether an evaluation result and a math value are equal.
-    /// </summary>
+    /// <summary>Determines if an evaluation result equals a math value.</summary>
     public static bool operator ==(EvaluationResult left, MathValue right) => left.Value.Equals(right);
-
-    /// <summary>
-    /// Determines whether a math value and an evaluation result are equal.
-    /// </summary>
+    /// <summary>Determines if a math value equals an evaluation result.</summary>
     public static bool operator ==(MathValue left, EvaluationResult right) => left.Equals(right.Value);
-
-    /// <summary>
-    /// Determines whether an evaluation result and a math value are not equal.
-    /// </summary>
+    /// <summary>Determines if an evaluation result does not equal a math value.</summary>
     public static bool operator !=(EvaluationResult left, MathValue right) => !left.Value.Equals(right);
-
-    /// <summary>
-    /// Determines whether a math value and an evaluation result are not equal.
-    /// </summary>
+    /// <summary>Determines if a math value does not equal an evaluation result.</summary>
     public static bool operator !=(MathValue left, EvaluationResult right) => !left.Equals(right.Value);
-
-    /// <summary>
-    /// Determines whether <paramref name="left"/> is greater than
-    /// <paramref name="right"/> based on their <see cref="MathValue"/> values.
-    /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns><see langword="true"/> if <paramref name="left"/> is greater than
-    /// <paramref name="right"/>; otherwise <see langword="false"/>.
-    /// </returns>
+    /// <summary>Determines if an evaluation result is greater than a math value.</summary>
     public static bool operator >(EvaluationResult left, MathValue right) => left.Value > right;
-
-    /// <summary>
-    /// Determines whether <paramref name="left"/> is greater than
-    /// <paramref name="right"/> based on their <see cref="MathValue"/> values.
-    /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns><see langword="true"/> if <paramref name="left"/> is greater than
-    /// <paramref name="right"/>; otherwise <see langword="false"/>.
-    /// </returns>
+    /// <summary>Determines if a math value is greater than an evaluation result.</summary>
     public static bool operator >(MathValue left, EvaluationResult right) => left > right.Value;
-
-    /// <summary>
-    /// Determines whether <paramref name="left"/> is less than <paramref name="right"/>
-    /// based on their <see cref="MathValue"/> values.
-    /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns><see langword="true"/> if <paramref name="left"/> is less than
-    /// <paramref name="right"/>; otherwise <see langword="false"/>.
-    /// </returns>
+    /// <summary>Determines if an evaluation result is less than a math value.</summary>
     public static bool operator <(EvaluationResult left, MathValue right) => left.Value < right;
-
-    /// <summary>
-    /// Determines whether <paramref name="left"/> is less than <paramref name="right"/>
-    /// based on their <see cref="MathValue"/> values.
-    /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns><see langword="true"/> if <paramref name="left"/> is less than
-    /// <paramref name="right"/>; otherwise <see langword="false"/>.
-    /// </returns>
+    /// <summary>Determines if a math value is less than an evaluation result.</summary>
     public static bool operator <(MathValue left, EvaluationResult right) => left < right.Value;
-
-    /// <summary>
-    /// Determines whether <paramref name="left"/> is greater than or equal to
-    /// <paramref name="right"/> based on their <see cref="MathValue"/> values.
-    /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns><see langword="true"/> if <paramref name="left"/> is greater than or
-    /// equal to <paramref name="right"/>; otherwise <see langword="false"/>.
-    /// </returns>
+    /// <summary>Determines if an evaluation result is greater than or equal to a math value.</summary>
     public static bool operator >=(EvaluationResult left, MathValue right) => left.Value >= right;
-
-    /// <summary>
-    /// Determines whether <paramref name="left"/> is greater than or equal to
-    /// <paramref name="right"/> based on their <see cref="MathValue"/> values.
-    /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns><see langword="true"/> if <paramref name="left"/> is greater than or
-    /// equal to <paramref name="right"/>; otherwise <see langword="false"/>.
-    /// </returns>
+    /// <summary>Determines if a math value is greater than or equal to an evaluation result.</summary>
     public static bool operator >=(MathValue left, EvaluationResult right) => left >= right.Value;
-
-    /// <summary>
-    /// Determines whether <paramref name="left"/> is less than or equal to
-    /// <paramref name="right"/> based on their <see cref="MathValue"/> values.
-    /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns><see langword="true"/> if <paramref name="left"/> is less than or equal
-    /// to <paramref name="right"/>; otherwise <see langword="false"/>.
-    /// </returns>
+    /// <summary>Determines if an evaluation result is less than or equal to a math value.</summary>
     public static bool operator <=(EvaluationResult left, MathValue right) => left.Value <= right;
-
-    /// <summary>
-    /// Determines whether <paramref name="left"/> is less than or equal to
-    /// <paramref name="right"/> based on their <see cref="MathValue"/> values.
-    /// </summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns><see langword="true"/> if <paramref name="left"/> is less than or equal
-    /// to <paramref name="right"/>; otherwise <see langword="false"/>.
-    /// </returns>
+    /// <summary>Determines if a math value is less than or equal to an evaluation result.</summary>
     public static bool operator <=(MathValue left, EvaluationResult right) => left <= right.Value;
 
-    // Explicit conversions to primitive types and BigInteger.
+    // Explicit conversions.
 
-    /// <summary>
-    /// Returns the result's value as a decimal.
-    /// </summary>
-    public static explicit operator decimal(EvaluationResult result) => result.Value.DecimalValue;
-
-    /// <summary>
-    /// Returns the result's value as a <see cref="BigInteger"/>.
-    /// </summary>
-    public static explicit operator BigInteger(EvaluationResult result) => result.Value.IntegerValue;
-
-    /// <summary>
-    /// Returns the result's value as an int.
-    /// </summary>
-    public static explicit operator int(EvaluationResult result) => (int)result.Value.IntegerValue;
-
-    /// <summary>
-    /// Returns the result's value as a long.
-    /// </summary>
-    public static explicit operator long(EvaluationResult result) => (long)result.Value.IntegerValue;
-
-    /// <summary>
-    /// Returns the result as a double.
-    /// </summary>
+    /// <summary>Converts the evaluation result explicitly to <see cref="decimal"/>.</summary>
+    public static explicit operator decimal(EvaluationResult result) => result.Value.ToDecimal();
+    /// <summary>Converts the evaluation result explicitly to <see cref="BigInteger"/>.</summary>
+    public static explicit operator BigInteger(EvaluationResult result) => GetInteger(result.Value);
+    /// <summary>Converts the evaluation result explicitly to <see cref="int"/>.</summary>
+    public static explicit operator int(EvaluationResult result) => (int)GetInteger(result.Value);
+    /// <summary>Converts the evaluation result explicitly to <see cref="long"/>.</summary>
+    public static explicit operator long(EvaluationResult result) => (long)GetInteger(result.Value);
+    /// <summary>Converts the evaluation result explicitly to <see cref="double"/>.</summary>
     public static explicit operator double(EvaluationResult result) => result.Value.AsDouble();
 
-    /// <summary>
-    /// Returns the hexadecimal string representation of the underlying
-    /// <see cref="MathValue" /> if it is an integer; otherwise <see langword="null" />.
-    /// </summary>
-    /// <param name="prefix">Whether to include the "0x" prefix.</param>
-    /// <returns>The hexadecimal string representation or <see langword="null" /> if not
-    /// an integer.</returns>
-    public string? ToHexString(bool prefix = true) =>
-        Value.ToHexString(prefix);
+    // Radix representations.
+
+    /// <summary>Returns the hexadecimal string representation of the result if integral.</summary>
+    public string? ToHexString(bool prefix = true) => Value.ToHexString(prefix);
+    /// <summary>Returns the binary string representation of the result if integral.</summary>
+    public string? ToBinaryString(bool prefix = true) => Value.ToBinaryString(prefix);
+    /// <summary>Returns the octal string representation of the result if integral.</summary>
+    public string? ToOctalString(bool prefix = true) => Value.ToOctalString(prefix);
+
+    // Presentation and formatting helpers.
 
     /// <summary>
-    /// Returns the binary string representation of the underlying
-    /// <see cref="MathValue" /> if it is an integer; otherwise <see langword="null" />.
+    /// Formats this result into a presentation-ready card using the specified options and culture.
     /// </summary>
-    /// <param name="prefix">Whether to include the "0b" prefix.</param>
-    /// <returns>The binary string representation or <see langword="null" /> if not an
-    /// integer.</returns>
-    public string? ToBinaryString(bool prefix = true) =>
-        Value.ToBinaryString(prefix);
+    /// <param name="options">Optional formatting options; defaults to result or standard display settings.</param>
+    /// <param name="culture">Optional culture used for formatting; defaults to result or invariant culture.</param>
+    /// <param name="prefixRadixOutput">Whether to include radix prefixes ("0x", "0b", "0o").</param>
+    /// <returns>A <see cref="FormattedCalculation"/> representing the formatted result.</returns>
+    public FormattedCalculation FormatResult(
+        ResultFormatOptions? options = null, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
+        ResultFormatter.Format(this, options ?? FormatOptions, culture ?? Culture, prefixRadixOutput);
 
     /// <summary>
-    /// Returns the octal string representation of the underlying <see cref="MathValue" />
-    /// if it is an integer; otherwise <see langword="null" />.
+    /// Formats this result into a presentation-ready card using the specified culture and default or result options.
     /// </summary>
-    /// <param name="prefix">Whether to include the "0o" prefix.</param>
-    /// <returns>The octal string representation or <see langword="null" /> if not an
-    /// integer.</returns>
-    public string? ToOctalString(bool prefix = true) =>
-        Value.ToOctalString(prefix);
-
-    // Formatting interfaces: IFormattable, ISpanFormattable, IUtf8SpanFormattable.
-    /// <summary>
-    /// Formats the value of the current instance using the specified format string and
-    /// format provider.
-    /// </summary>
-    /// <param name="format">A format string that defines the output representation.
-    /// </param>
-    /// <param name="formatProvider">An object that supplies culture-specific formatting
-    /// information.</param>
-    /// <returns>The string representation of the value of the current instance as
-    /// specified by format and formatProvider.</returns>
-    public string ToString(string? format, IFormatProvider? formatProvider) =>
-        Value.ToString(format, formatProvider);
+    /// <param name="culture">The culture used for formatting.</param>
+    /// <param name="prefixRadixOutput">Whether to include radix prefixes ("0x", "0b", "0o").</param>
+    /// <returns>A <see cref="FormattedCalculation"/> representing the formatted result.</returns>
+    public FormattedCalculation FormatResult(
+        CultureInfo culture, bool prefixRadixOutput = true) =>
+        ResultFormatter.Format(this, FormatOptions, culture, prefixRadixOutput);
 
     /// <summary>
-    /// Formats the result's value using the specified format provider and no format
-    /// string.
+    /// Gets the primary human-facing formatted representation of the result's value.
     /// </summary>
-    /// <param name="formatProvider">The format provider to use.</param>
-    /// <returns>The formatted string representation of the value.</returns>
-    public string ToString(IFormatProvider? formatProvider) =>
-        ToString(null, formatProvider);
+    public string PrimaryDisplay => FormatDisplay(FormatOptions, Culture);
 
     /// <summary>
-    /// Formats the value into a character span.
+    /// Gets the invariant machine-readable string for this result.
     /// </summary>
-    public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider? provider = null) =>
-        Value.TryFormat(destination, out charsWritten, format, provider);
-
-    /// <summary>
-    /// Formats the value into a UTF-8 byte span.
-    /// </summary>
-    public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format = default, IFormatProvider? provider = null) =>
-        Value.TryFormat(utf8Destination, out bytesWritten, format, provider);
-
-    /// <summary>
-    /// Returns the hash code of the underlying <see cref="MathValue" />.
-    /// </summary>
-    public override int GetHashCode() => Value.GetHashCode();
-
-    /// <summary>
-    /// Formats the value as a string using the underlying
-    /// <see cref="MathValue.ToString()" />.
-    /// </summary>
-    public override string ToString() => Value.ToString();
+    public string MachineReadable => Value.ToInvariantExpression();
 
     /// <summary>
     /// Gets a formatted summary of assigned variables (e.g. "a = 10, b = 20"), or
     /// <see langword="null"/> if no assignments occurred.
     /// </summary>
-    public string? AssignmentSummary =>
-        HasAssignments ? AssignedVariables.ToString() : null;
+    public string? AssignmentSummary => HasAssignments ? AssignedVariables.ToString() : null;
 
-    /// <summary>
-    /// Formats this result into a presentation-ready card using the engine's culture.
-    /// </summary>
-    /// <param name="culture">Optional <see cref="CultureInfo"/> to use for formatting, or
-    /// <c>null</c> to use the engine's culture.</param>
-    /// <param name="prefixRadixOutput">Whether to include the "0x", "0b", and "0o"
-    /// prefixes.</param>
-    /// <returns>A <see cref="FormattedCalculation"/> representing the formatted result.
-    /// </returns>
-    public FormattedCalculation FormatResult(CultureInfo? culture = null, bool prefixRadixOutput = true) =>
-        (Engine ?? CalculatorEngine.Default).FormatResult(this, culture, prefixRadixOutput);
+    // Formatting interfaces.
 
-    /// <summary>
-    /// Gets the localized, human-facing formatted representation of the result's value
-    /// (e.g. "1002,5" in de-DE), formatted using the originating engine's culture.
-    /// </summary>
-    public string PrimaryDisplay => FormatResult().PrimaryDisplay;
+    /// <inheritdoc />
+    public override string ToString() => FormatDisplay(FormatOptions, Culture);
+    /// <inheritdoc cref="IFormattable.ToString(string?, IFormatProvider?)" />
+    public string ToString(IFormatProvider? formatProvider) => ToString(null, formatProvider);
 
-    /// <summary>
-    /// Gets the invariant machine-readable string for this result (e.g. "1002.5").
-    /// </summary>
-    public string MachineReadable => FormatResult().MachineReadable;
+    /// <inheritdoc />
+    public string ToString(string? format, IFormatProvider? formatProvider) =>
+        string.IsNullOrEmpty(format)
+            ? FormatDisplay(FormatOptions, formatProvider)
+            : Value.ToString(format, formatProvider);
 
-    // AST preservation and synthesis helpers.
+    private string FormatDisplay(ResultFormatOptions? options, IFormatProvider? provider)
+    {
+        var (text, _) = ResultValueFormatter.Format(
+            Value,
+            options ?? FormatOptions ?? ResultFormatOptions.Default,
+            provider ?? Culture ?? CultureInfo.InvariantCulture);
+        return text;
+    }
+
+    /// <inheritdoc />
+    public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider? provider = null)
+    {
+        if (!format.IsEmpty)
+        {
+            return Value.TryFormat(destination, out charsWritten, format, provider);
+        }
+
+        string text = ToString(null, provider);
+        bool success = text.AsSpan().TryCopyTo(destination);
+        charsWritten = success ? text.Length : 0;
+        return success;
+    }
+
+    /// <inheritdoc />
+    public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format = default, IFormatProvider? provider = null)
+    {
+        if (!format.IsEmpty)
+        {
+            return Value.TryFormat(utf8Destination, out bytesWritten, format, provider);
+        }
+
+        bool success = Encoding.UTF8.TryGetBytes(ToString(null, provider), utf8Destination, out bytesWritten);
+        if (!success) bytesWritten = 0;
+        return success;
+    }
+
+    /// <inheritdoc />
+    public override int GetHashCode() => Value.GetHashCode();
+
+    // Context and AST preservation helpers.
 
     private ExpressionNode GetExpressionNode() =>
         Context.PreviousExpression ?? new NumberNode(Value);
 
-    private static EvaluationResult CombineBinary(
-        EvaluationResult left,
-        EvaluationResult right,
-        BinaryOperator op)
+    private static BigInteger GetInteger(MathValue value) =>
+        value.TryGetInteger(out var integer)
+            ? integer
+            : throw new InvalidCastException("The value is not an integer.");
+
+    private static EvaluationResult Combine(
+        EvaluationResult left, EvaluationResult right, BinaryOperator op)
     {
-        var engine = left.Engine ?? right.Engine ?? CalculatorEngine.Default;
         var leftNode = left.GetExpressionNode();
         var rightNode = right.GetExpressionNode();
-        var binary = new BinaryNode(op, leftNode, rightNode);
+        var node = new BinaryNode(op, leftNode, rightNode);
+        var options = left.Options ?? right.Options ?? CalculatorOptions.Default;
+        AstValidator.Validate(node, options, allowUnknownFunctions: true, validateNodeInvariants: false);
 
-        // Merge contexts: right variables overlay left variables.
+        var resultValue = CalculateBinaryValue(left.Value, right.Value, node, options);
+
         var mergedVariables = left.Context.Variables.SetItems(right.Context.Variables);
-        var mergedContext = new EvaluationContext(mergedVariables, left.Value, leftNode);
-
-        return engine.Evaluate(binary, mergedContext);
+        var mergedContext = new EvaluationContext(mergedVariables, resultValue, node);
+        return new EvaluationResult(resultValue, mergedContext, options: options);
     }
 
-    private static EvaluationResult CombineBinary(
-        EvaluationResult left,
-        MathValue right,
-        BinaryOperator op)
+    private static EvaluationResult Combine(
+        EvaluationResult left, MathValue right, BinaryOperator op)
     {
-        var engine = left.Engine ?? CalculatorEngine.Default;
         var leftNode = left.GetExpressionNode();
         var rightNode = new NumberNode(right);
-        var binary = new BinaryNode(op, leftNode, rightNode);
+        var node = new BinaryNode(op, leftNode, rightNode);
+        var options = left.Options ?? CalculatorOptions.Default;
+        AstValidator.Validate(node, options, allowUnknownFunctions: true, validateNodeInvariants: false);
 
-        return engine.Evaluate(binary, left.Context);
+        var resultValue = CalculateBinaryValue(left.Value, right, node, options);
+
+        return new EvaluationResult(resultValue, left.Context.Advance(null, resultValue, node), options: options);
     }
 
-    private static EvaluationResult CombineBinary(
-        MathValue left,
-        EvaluationResult right,
-        BinaryOperator op)
+    private static EvaluationResult Combine(
+        MathValue left, EvaluationResult right, BinaryOperator op)
     {
-        var engine = right.Engine ?? CalculatorEngine.Default;
         var leftNode = new NumberNode(left);
         var rightNode = right.GetExpressionNode();
-        var binary = new BinaryNode(op, leftNode, rightNode);
+        var node = new BinaryNode(op, leftNode, rightNode);
+        var options = right.Options ?? CalculatorOptions.Default;
+        AstValidator.Validate(node, options, allowUnknownFunctions: true, validateNodeInvariants: false);
 
-        return engine.Evaluate(binary, right.Context);
+        var resultValue = CalculateBinaryValue(left, right.Value, node, options);
+
+        return new EvaluationResult(resultValue, right.Context.Advance(null, resultValue, node), options: options);
+    }
+
+    private static MathValue CalculateBinaryValue(
+        MathValue left, MathValue right, BinaryNode node, CalculatorOptions options)
+    {
+        left.ValidateLimits(options.MaxIntegerBits);
+        right.ValidateLimits(options.MaxIntegerBits);
+
+        MathValue resultValue;
+        if (PercentRules.IsMarkup(node))
+        {
+            var one = new MathValue(1);
+            resultValue = node.Op is BinaryOperator.Add
+                ? left * (one + right)
+                : left * (one - right);
+        }
+        else
+        {
+            resultValue = node.Op switch
+            {
+                BinaryOperator.Add => left + right,
+                BinaryOperator.Subtract => left - right,
+                BinaryOperator.Multiply => left * right,
+                BinaryOperator.Divide => left / right,
+                BinaryOperator.Modulo => left % right,
+                _ => throw new InvalidOperationException()
+            };
+        }
+
+        resultValue.ValidateLimits(options.MaxIntegerBits);
+        return resultValue;
     }
 }

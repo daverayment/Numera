@@ -3,9 +3,8 @@ namespace Numera;
 /// <summary>
 /// Hard safety ceilings for expression parsing and bounded numeric operations.
 /// </summary>
-public static class CalculationLimits
+public sealed class CalculationLimits
 {
-    // Bound work on user input before allocating large integers or recursing deeply.
     /// <summary>
     /// The maximum permitted length of an expression string in UTF-16 code units.
     /// </summary>
@@ -33,14 +32,27 @@ public static class CalculationLimits
     public const int MaxExponentMagnitude = 10000;
 
     /// <summary>
-    /// The maximum bit length permitted for integer factorization.
+    /// The maximum bit length for intermediate arithmetic calculations before reduction.
+    /// </summary>
+    public const int MaxIntermediateBits = 32768;
+
+    /// <summary>
+    /// The maximum bit length allowed for Miller-Rabin primality testing.
+    /// </summary>
+    public const int MaxPrimalityBits = 2048;
+
+    /// <summary>
+    /// The maximum bit length allowed for integer factorization.
     /// </summary>
     public const int MaxFactorizationBits = 128;
 
     /// <summary>
-    /// The maximum bit length permitted for Miller-Rabin primality testing.
-    /// Numbers exceeding this bound are rejected to prevent CPU exhaustion
-    /// from large modular exponentiations across multiple prime bases.
+    /// The maximum significant digits permitted in a formatted numeric representation.
     /// </summary>
-    public const int MaxPrimalityBits = 2048;
+    public const int MaxSignificantDigits = 1000;
+
+    /// <summary>
+    /// The maximum characters permitted in a formatted numeric representation.
+    /// </summary>
+    public const int MaxOutputCharacters = 16384;
 }

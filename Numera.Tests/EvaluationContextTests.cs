@@ -28,10 +28,10 @@ public sealed class EvaluationContextTests
 
         Assert.AreEqual(100m, context.PreviousResult?.DecimalValue);
 
-        Assert.AreEqual(142m, Calculator.Evaluate("ans + x", context).DecimalValue);
+        Assert.AreEqual(new MathValue(142m), Calculator.Evaluate("ans + x", context).Value);
 
         var otherContext = new EvaluationContext(vars, new MathValue(55m));
-        Assert.AreEqual(97m, Calculator.Evaluate("ans + x", otherContext).DecimalValue);
+        Assert.AreEqual(new MathValue(97m), Calculator.Evaluate("ans + x", otherContext).Value);
     }
 
     [TestMethod]
@@ -40,10 +40,10 @@ public sealed class EvaluationContextTests
         var context = new EvaluationContext(
             variables: null,
             previousResult: new MathValue(100m));
-        Assert.AreEqual(200m, Calculator.Evaluate("ans * 2", context).DecimalValue);
+        Assert.AreEqual(new MathValue(200m), Calculator.Evaluate("ans * 2", context).Value);
 
         var updated = context with { PreviousResult = new MathValue(50m) };
-        Assert.AreEqual(100m, Calculator.Evaluate("ans * 2", updated).DecimalValue);
+        Assert.AreEqual(new MathValue(100m), Calculator.Evaluate("ans * 2", updated).Value);
 
         var cleared = context with { PreviousResult = null };
         Assert.IsFalse(Calculator.TryEvaluate("ans * 2", out _, out var diag, cleared));
@@ -61,7 +61,7 @@ public sealed class EvaluationContextTests
             previousResult: new MathValue(100m));
 
         // Explicit variable 'ans' should take precedence over PreviousResult.
-        Assert.AreEqual(84m, Calculator.Evaluate("ans * 2", context).DecimalValue);
+        Assert.AreEqual(new MathValue(84m), Calculator.Evaluate("ans * 2", context).Value);
     }
 
     [TestMethod]
@@ -508,7 +508,7 @@ public sealed class EvaluationContextTests
             new MathValue(100m));
 
         var result = engine.Evaluate("ans * 2", context);
-        Assert.AreEqual(10m, result.Value.DecimalValue);
+        Assert.AreEqual(new MathValue(10m), result.Value);
     }
 
     [TestMethod]
@@ -526,7 +526,7 @@ public sealed class EvaluationContextTests
         var context = new EvaluationContext(weirdVars, null);
 
         // Valid variable is still readable.
-        Assert.AreEqual(30m, engine.Evaluate("valid", context).DecimalValue);
+        Assert.AreEqual(new MathValue(30m), engine.Evaluate("valid", context).Value);
 
         // Parser will not produce an empty or null-containing identifier token for
         // variables.
@@ -540,7 +540,7 @@ public sealed class EvaluationContextTests
         Assert.AreEqual(1000, largeContext.Variables.Count);
 
         var evaluateLookup = engine.Evaluate("var_999 + var_0", largeContext);
-        Assert.AreEqual(999m, evaluateLookup.Value.DecimalValue);
+        Assert.AreEqual(new MathValue(999m), evaluateLookup.Value);
 
         var advanced = largeContext.Advance(
             [new Variable("var_0", new MathValue(42m))],new MathValue(999m));

@@ -291,8 +291,8 @@ public sealed class CustomFunctionCollectionTests
         Assert.AreEqual("three", functions[2].Description);
         Assert.AreEqual("many", functions[3].Description);
         Assert.AreEqual(1m, functions[0].Implementation([one]).DecimalValue);
-        Assert.AreEqual(3m, functions[1].Implementation([one, two]).DecimalValue);
-        Assert.AreEqual(6m, functions[2].Implementation([one, two, three]).DecimalValue);
+        Assert.AreEqual(new MathValue(3m), functions[1].Implementation([one, two]));
+        Assert.AreEqual(new MathValue(6m), functions[2].Implementation([one, two, three]));
         Assert.AreEqual(1m, functions[3].Implementation([one, two]).DecimalValue);
         Assert.AreEqual(1, functions[3].Signature.MinimumArguments);
         Assert.IsNull(functions[3].Signature.MaximumArguments);
