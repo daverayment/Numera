@@ -2966,7 +2966,10 @@ public class NumericTests
             int k = exp == 0 ? 1074 : 1075 - exp;
             vNum = raw < 0 ? -m : m;
             vDen = k >= 0 ? BigInteger.One << k : BigInteger.One;
-            if (k < 0) vNum <<= -k;
+            if (k < 0)
+            {
+                vNum <<= -k;
+            }
         }
 
         // |vNum/vDen - num/den| / |num/den| == |vNum*den - num*vDen| / |num*vDen|
@@ -2978,7 +2981,11 @@ public class NumericTests
     {
         for (int b = -300; b <= 300; b++)
         {
-            if (b is 0 or 1 or -1) continue;
+            if (b is 0 or 1 or -1)
+            {
+                continue;
+            }
+
             for (int n = 1; n <= 150; n++)
             {
                 BigInteger d = BigInteger.Pow(b, n);

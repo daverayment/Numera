@@ -411,9 +411,19 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                 switch (lower)
                 {
                     case "ceil":
-                        return ExactFunctionFraction(integral + (remainder.Sign > 0 ? BigInteger.One : BigInteger.Zero), BigInteger.One, args[0]);
+                        if (remainder.Sign > 0)
+                        {
+                            integral++;
+                        }
+
+                        return ExactFunctionFraction(integral, BigInteger.One, args[0]);
                     case "floor":
-                        return ExactFunctionFraction(integral - (remainder.Sign < 0 ? BigInteger.One : BigInteger.Zero), BigInteger.One, args[0]);
+                        if (remainder.Sign < 0)
+                        {
+                            integral--;
+                        }
+
+                        return ExactFunctionFraction(integral, BigInteger.One, args[0]);
                     case "trunc":
                         return ExactFunctionFraction(integral, BigInteger.One, args[0]);
                     case "frac":
@@ -885,7 +895,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
             return lower switch
             {
                 "clamp" => EvaluateClamp(args[0], args[1], args[2]),
-                "lerp" => Add(args[0], Multiply(args[2], Subtract(args[1], args[0]))),
+                "lerp" => Add(args[0], Multiply(args[2], Subtract(args[1], args[0]))), // a + t * (b - a)
                 _ => throw new ExpressionException(new EvaluationDiagnostic(
                     EvaluationError.UnknownFunction, $"Unknown function '{name}'.")),
             };

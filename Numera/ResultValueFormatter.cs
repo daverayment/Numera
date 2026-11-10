@@ -477,7 +477,20 @@ internal static class ResultValueFormatter
     }
 
     private static int IntegerLength(BigInteger value)
-        => value.IsZero ? 1 : DecimalExponent(BigInteger.Abs(value), BigInteger.One) + 1 + (value.Sign < 0 ? 1 : 0);
+    {
+        if (value.IsZero)
+        {
+            return 1;
+        }
+
+        int length = DecimalExponent(BigInteger.Abs(value), BigInteger.One) + 1;
+        if (value.Sign < 0)
+        {
+            length++;
+        }
+
+        return length;
+    }
 
     private static int ComparePowerOfTen(BigInteger numerator, BigInteger denominator, int exponent)
         => exponent >= 0

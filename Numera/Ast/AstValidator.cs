@@ -285,9 +285,13 @@ internal static class AstValidator
         };
 
         // If parameter names are available, format a signature hint: e.g. "round(x[, places])".
-        string paramHint = signature.Parameters.Count > 0 ?
-            $" Syntax: {functionName}({string.Join(", ", signature.Parameters.Select(p => p.IsOptional ? $"[{p.Name}]" : p.Name))})." :
-            "";
+        string paramHint = "";
+        if (signature.Parameters.Count > 0)
+        {
+            var parameterNames = signature.Parameters.Select(parameter =>
+                parameter.IsOptional ? $"[{parameter.Name}]" : parameter.Name);
+            paramHint = $" Syntax: {functionName}({string.Join(", ", parameterNames)}).";
+        }
 
         return $"Function '{functionName}' {expected}, but received {actualCount}.{paramHint}";
     }

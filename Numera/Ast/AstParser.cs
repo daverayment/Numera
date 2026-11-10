@@ -575,10 +575,17 @@ internal sealed class AstParser
 
     private bool StartsImplicitOperand(ExpressionNode left)
     {
-        if (!_options.AllowImplicitMultiplication) return false;
+        if (!_options.AllowImplicitMultiplication)
+        {
+            return false;
+        }
+
         SkipWhitespace();
         char c = Peek();
-        if (c == '(') return true;
+        if (c == '(')
+        {
+            return true;
+        }
 
         // Find the rightmost term of the preceding expression, but stop unwrapping if
         // the node itself is a parenthesized group (e.g. do not unwrap inside (3 + 4).
@@ -607,7 +614,10 @@ internal sealed class AstParser
         // Reject boolean literals and keywords from starting an implicit product, e.g.
         // allow "2x" but not "2true" or "2and(3,4)".
         int len = GetIdentifierLengthAt(_pos);
-        if (len == 0) return false;
+        if (len == 0)
+        {
+            return false;
+        }
 
         return !KeywordCatalog.PreventsImplicitMultiplication(_input.AsSpan(_pos, len));
     }
@@ -1020,13 +1030,9 @@ internal sealed class AstParser
             if (exponentIndex >= 0)
             {
                 var exponentText = numberSpan[(exponentIndex + 1)..];
-                zeroScale = long.TryParse(exponentText, NumberStyles.AllowLeadingSign,
-                    CultureInfo.InvariantCulture, out var zeroExponent)
-                    ? zeroExponent >= fractionalDigits ? 0
-                        : zeroExponent < -MathValue.MaxDecimalDisplayScale ? MathValue.MaxDecimalDisplayScale
-                        : fractionalDigits - zeroExponent
-                    : exponentText.StartsWith("-") ? MathValue.MaxDecimalDisplayScale : 0;
+                zeroScale = GetZeroDisplayScale(exponentText, fractionalDigits);
             }
+
             bool decimalZero = hasDecimal || (exponentIndex >= 0 && numberSpan[exponentIndex + 1] == '-');
             return MathValue.FromExactFraction(BigInteger.Zero, BigInteger.One, decimalZero)
                 .WithDecimalDisplayScale(zeroScale);
@@ -1076,6 +1082,32 @@ internal sealed class AstParser
         {
             throw LiteralLimit(start);
         }
+    }
+
+    private static long GetZeroDisplayScale(ReadOnlySpan<char> exponentText, int fractionalDigits)
+    {
+        if (!long.TryParse(exponentText, NumberStyles.AllowLeadingSign,
+            CultureInfo.InvariantCulture, out var exponent))
+        {
+            if (exponentText.StartsWith("-"))
+            {
+                return MathValue.MaxDecimalDisplayScale;
+            }
+
+            return 0;
+        }
+
+        if (exponent >= fractionalDigits)
+        {
+            return 0;
+        }
+
+        if (exponent < -MathValue.MaxDecimalDisplayScale)
+        {
+            return MathValue.MaxDecimalDisplayScale;
+        }
+
+        return fractionalDigits - exponent;
     }
 
     private CalculationLimitException LiteralLimit(int start) => new(Diagnostic(
@@ -1173,7 +1205,11 @@ internal sealed class AstParser
 
     private bool MatchKeyword(string keyword)
     {
-        if (!IsKeywordAt(keyword)) return false;
+        if (!IsKeywordAt(keyword))
+        {
+            return false;
+        }
+
         _pos += keyword.Length;
         return true;
     }

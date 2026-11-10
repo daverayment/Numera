@@ -348,9 +348,17 @@ public sealed class VariableCollection : IReadOnlyList<Variable>
             next.Remove(name);
         }
 
-        return next is null ?
-            this :
-            (next.Count == 0 ? _empty : new VariableCollection(next));
+        if (next is null)
+        {
+            return this;
+        }
+
+        if (next.Count == 0)
+        {
+            return _empty;
+        }
+
+        return new VariableCollection(next);
     }
 
     /// <summary>

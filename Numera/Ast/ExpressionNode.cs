@@ -31,8 +31,16 @@ public readonly record struct TextSpan(int Start, int Length)
     /// </summary>
     public static TextSpan Combine(TextSpan first, TextSpan last)
     {
-        if (!first.HasValue) return last;
-        if (!last.HasValue) return first;
+        if (!first.HasValue)
+        {
+            return last;
+        }
+
+        if (!last.HasValue)
+        {
+            return first;
+        }
+
         int end = Math.Max(first.Start + first.Length, last.Start + last.Length);
         int start = Math.Min(first.Start, last.Start);
         return new TextSpan(start, end - start);
@@ -107,12 +115,24 @@ public abstract record ExpressionNode(TextSpan Span = default)
                     break;
 
                 case BinaryNode binary:
-                    if (binary.Right is not null) stack.Push(binary.Right);
-                    if (binary.Left is not null) stack.Push(binary.Left);
+                    if (binary.Right is not null)
+                    {
+                        stack.Push(binary.Right);
+                    }
+
+                    if (binary.Left is not null)
+                    {
+                        stack.Push(binary.Left);
+                    }
+
                     break;
 
                 case UnaryNode unary:
-                    if (unary.Operand is not null) stack.Push(unary.Operand);
+                    if (unary.Operand is not null)
+                    {
+                        stack.Push(unary.Operand);
+                    }
+
                     break;
 
                 case FunctionCallNode function:
@@ -258,7 +278,10 @@ public sealed record UnaryNode(UnaryOperator Op, ExpressionNode Operand, TextSpa
             _ => Op.ToString()
         };
 
-        if (maxDepth <= 0) return $"{opStr}...";
+        if (maxDepth <= 0)
+        {
+            return $"{opStr}...";
+        }
 
         string inner = Operand?.ToDisplayString(maxDepth - 1) ?? "null";
         return Op is UnaryOperator.Factorial or UnaryOperator.Percent ?
@@ -321,7 +344,10 @@ public sealed record BinaryNode(
             _ => Op.ToString()
         };
 
-        if (maxDepth <= 0) return $"... {opStr} ...";
+        if (maxDepth <= 0)
+        {
+            return $"... {opStr} ...";
+        }
 
         string l = Left is BinaryNode or ComparisonChainNode ?
             $"({Left.ToDisplayString(maxDepth - 1)})"
@@ -433,7 +459,11 @@ public sealed record ComparisonChainNode : ExpressionNode
 #if DEBUG
     internal override string ToDisplayString(int maxDepth = 3)
     {
-        if (maxDepth < 0) return "... <=> ...";
+        if (maxDepth < 0)
+        {
+            return "... <=> ...";
+        }
+
         var sb = new StringBuilder();
         for (int i = 0; i < Operands.Count; i++)
         {
@@ -502,7 +532,10 @@ public sealed record ComparisonChainNode : ExpressionNode
             foreach (var op in Operands)
             {
                 int h = op.Height;
-                if (h > max) max = h;
+                if (h > max)
+                {
+                    max = h;
+                }
             }
             return 1 + max;
         }
@@ -556,7 +589,11 @@ public sealed record FunctionCallNode : ExpressionNode
 #if DEBUG
     internal override string ToDisplayString(int maxDepth = 3)
     {
-        if (maxDepth <= 0) return $"{FunctionName}(...)";
+        if (maxDepth <= 0)
+        {
+            return $"{FunctionName}(...)";
+        }
+
         string args = string.Join(", ", Arguments.Select(a => a?.ToDisplayString(maxDepth - 1) ?? "null"));
         return $"{FunctionName}({args})";
     }
@@ -602,7 +639,10 @@ public sealed record FunctionCallNode : ExpressionNode
             foreach (var arg in Arguments)
             {
                 int h = arg.Height;
-                if (h > max) max = h;
+                if (h > max)
+                {
+                    max = h;
+                }
             }
             return 1 + max;
         }

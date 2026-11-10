@@ -55,6 +55,40 @@ public sealed class DecimalDisplayScaleTests
     }
 
     [TestMethod]
+    [DataRow("0", 0, MathValue.DataType.Integer)]
+    [DataRow("0.000", 3, MathValue.DataType.Decimal)]
+    [DataRow("0.000e1", 2, MathValue.DataType.Decimal)]
+    [DataRow("0.000e3", 0, MathValue.DataType.Decimal)]
+    [DataRow("0.000e4", 0, MathValue.DataType.Decimal)]
+    [DataRow("0.000e-2", 5, MathValue.DataType.Decimal)]
+    [DataRow("0e-28", 28, MathValue.DataType.Decimal)]
+    [DataRow("0.00e-28", 29, MathValue.DataType.Decimal)]
+    [DataRow("0e-29", 29, MathValue.DataType.Decimal)]
+    [DataRow("0e-30", 29, MathValue.DataType.Decimal)]
+    [DataRow("0e-0", 0, MathValue.DataType.Decimal)]
+    [DataRow("0e9223372036854775807", 0, MathValue.DataType.Integer)]
+    [DataRow("0e-9223372036854775808", 29, MathValue.DataType.Decimal)]
+    [DataRow("0.00e9223372036854775808", 0, MathValue.DataType.Decimal)]
+    [DataRow("0e+9223372036854775808", 0, MathValue.DataType.Integer)]
+    [DataRow("0e-9223372036854775809", 29, MathValue.DataType.Decimal)]
+    public void ZeroLiteralScalesRemainBoundedAcrossExponentBranches(
+        string expression, int expectedScale, MathValue.DataType expectedType)
+    {
+        var engine = new CalculatorEngine(new CalculatorOptions
+        {
+            MaxIntegerBits = 1,
+            MaxExponentMagnitude = 1
+        });
+        var result = engine.Evaluate(expression);
+
+        Assert.IsTrue(result.IsZero);
+        Assert.AreEqual(expectedScale, result.Value.DecimalDisplayScale);
+        Assert.AreEqual(expectedType, result.Type);
+        Assert.AreEqual(CalculationAccuracy.Exact, result.Accuracy);
+        Assert.AreEqual((BigInteger.Zero, BigInteger.One), result.GetExactFraction());
+    }
+
+    [TestMethod]
     public void ScaleSurvivesCapturedValuesOperatorsAndSerialization()
     {
         var engine = new CalculatorEngine();

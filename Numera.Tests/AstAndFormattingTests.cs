@@ -941,9 +941,17 @@ public sealed class AstAndFormattingTests
         int depth = 200;
         string deepSin = new('s', 0);
         var sbSin = new StringBuilder();
-        for (int i = 0; i < depth; i++) sbSin.Append("sin(");
+        for (int i = 0; i < depth; i++)
+        {
+            sbSin.Append("sin(");
+        }
+
         sbSin.Append('1');
-        for (int i = 0; i < depth; i++) sbSin.Append(')');
+        for (int i = 0; i < depth; i++)
+        {
+            sbSin.Append(')');
+        }
+
         string sinExpr = sbSin.ToString();
 
         // 200-deep nesting exceeds MaxNestingDepth (128) and rejects with
@@ -952,9 +960,17 @@ public sealed class AstAndFormattingTests
 
         // 200-deep parenthesized comparisons: (((1 == 1) == 1)...).
         var sbComp = new StringBuilder();
-        for (int i = 0; i < depth; i++) sbComp.Append('(');
+        for (int i = 0; i < depth; i++)
+        {
+            sbComp.Append('(');
+        }
+
         sbComp.Append("1 == 1");
-        for (int i = 0; i < depth; i++) sbComp.Append(" == 1)");
+        for (int i = 0; i < depth; i++)
+        {
+            sbComp.Append(" == 1)");
+        }
+
         string compExpr = sbComp.ToString();
 
         Assert.Throws<CalculationLimitException>(() => Calculator.Parse(compExpr));

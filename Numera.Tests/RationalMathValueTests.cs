@@ -142,7 +142,10 @@ public sealed class RationalMathValueTests
             MathValue.LogicalAnd(unknown, precise), MathValue.LogicalOr(unknown, precise),
             MathValue.LogicalXor(unknown, precise), MathValue.LogicalNot(unknown),
         })
+        {
             Assert.AreEqual(CalculationAccuracy.Unverified, value.Accuracy);
+        }
+
         var integral = new MathValue(6).WithAccuracy(CalculationAccuracy.Unverified);
         foreach (var value in new[]
         {
@@ -153,7 +156,10 @@ public sealed class RationalMathValueTests
             MathValue.ShiftLeft(integral, new MathValue(1)),
             MathValue.ShiftRight(integral, new MathValue(1)),
         })
+        {
             Assert.AreEqual(CalculationAccuracy.Unverified, value.Accuracy);
+        }
+
         Assert.AreEqual(precise, unknown);
         Assert.AreEqual(precise.GetHashCode(), unknown.GetHashCode());
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => precise.WithAccuracy((CalculationAccuracy)20));
@@ -245,7 +251,9 @@ public sealed class RationalMathValueTests
             Assert.AreEqual(value.Accuracy, restored.Accuracy);
             Assert.AreEqual(value.ToInvariantExpression(), restored.ToInvariantExpression());
             if (value.Kind == MathValue.DataType.Double && value.IsZero)
+            {
                 Assert.AreEqual(BitConverter.DoubleToInt64Bits(value.DoubleValue), BitConverter.DoubleToInt64Bits(restored.DoubleValue));
+            }
         }
         Assert.ThrowsExactly<CalculationLimitException>(() => MathValue.Deserialize(new MathValue(65536).Serialize(), maxIntegerBits: 16));
         Assert.ThrowsExactly<FormatException>(() => MathValue.Deserialize("{\"Kind\":1,\"Accuracy\":1,\"Value\":\"0.123456789012345678901234567891\"}"));
@@ -299,12 +307,24 @@ public sealed class RationalMathValueTests
         var random = new Random(65537);
         for (int i = 0; i < 500; i++)
         {
-            int n = random.Next(-65535, 65536), m = random.Next(-65535, 65536);
+            int n = random.Next(-65535, 65536);
+            int m = random.Next(-65535, 65536);
             for (int operation = 0; operation < 3; operation++)
             {
-                var expected = new BigInteger(operation == 0 ? n & m : operation == 1 ? n | m : n ^ m);
-                MathValue calculated = operation == 0 ? MathValue.BitwiseAnd(n, m)
-                    : operation == 1 ? MathValue.BitwiseOr(n, m) : MathValue.BitwiseXor(n, m);
+                var expected = new BigInteger(operation switch
+                {
+                    0 => n & m,
+                    1 => n | m,
+                    2 => n ^ m,
+                    _ => throw new InvalidOperationException(),
+                });
+                MathValue calculated = operation switch
+                {
+                    0 => MathValue.BitwiseAnd(n, m),
+                    1 => MathValue.BitwiseOr(n, m),
+                    2 => MathValue.BitwiseXor(n, m),
+                    _ => throw new InvalidOperationException(),
+                };
                 Assert.AreEqual(new MathValue(expected), calculated);
             }
             int shift = random.Next(0, 20);
@@ -320,19 +340,25 @@ public sealed class RationalMathValueTests
         Span<char> characters = stackalloc char[64];
         Span<byte> utf8 = stackalloc byte[64];
         for (int i = 0; i < 32; i++)
+        {
             foreach (var value in values)
             {
                 value.TryFormat(characters, out _, "G", CultureInfo.InvariantCulture);
                 value.TryFormat(utf8, out _, "G", CultureInfo.InvariantCulture);
             }
+        }
+
         long before = GC.GetAllocatedBytesForCurrentThread();
         bool succeeded = true;
         for (int i = 0; i < 1000; i++)
+        {
             foreach (var value in values)
             {
                 succeeded &= value.TryFormat(characters, out _, "G", CultureInfo.InvariantCulture);
                 succeeded &= value.TryFormat(utf8, out _, "G", CultureInfo.InvariantCulture);
             }
+        }
+
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.IsTrue(succeeded);
         Assert.AreEqual(0L, allocated);

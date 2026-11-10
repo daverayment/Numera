@@ -282,8 +282,14 @@ public static class ExpressionNormalizer
         for (int i = 0; i < text.Length; i++)
         {
             char c = text[i];
-            if (c == '[') bracketDepth++;
-            else if (c == ']') bracketDepth = Math.Max(0, bracketDepth - 1);
+            if (c == '[')
+            {
+                bracketDepth++;
+            }
+            else if (c == ']')
+            {
+                bracketDepth = Math.Max(0, bracketDepth - 1);
+            }
 
             sb.Append(c == ':' && bracketDepth == 0 && IsDivisionColon(text, i) ? '/' : c);
         }
@@ -294,8 +300,15 @@ public static class ExpressionNormalizer
     private static bool IsDivisionColon(string text, int index)
     {
         int left = index - 1;
-        while (left >= 0 && char.IsWhiteSpace(text[left])) left--;
-        if (left < 0) return false;
+        while (left >= 0 && char.IsWhiteSpace(text[left]))
+        {
+            left--;
+        }
+
+        if (left < 0)
+        {
+            return false;
+        }
 
         char prev = text[left];
 
@@ -342,13 +355,23 @@ public static class ExpressionNormalizer
     private static bool IsValidRightOperand(ReadOnlySpan<char> span)
     {
         int i = 0;
-        while (i < span.Length && char.IsWhiteSpace(span[i])) i++;
-        if (i >= span.Length) return false;
+        while (i < span.Length && char.IsWhiteSpace(span[i]))
+        {
+            i++;
+        }
+
+        if (i >= span.Length)
+        {
+            return false;
+        }
 
         if (span[i] is '+' or '-')
         {
             i++;
-            if (i >= span.Length) return false;
+            if (i >= span.Length)
+            {
+                return false;
+            }
         }
 
         if (span[i] == '(')
@@ -374,9 +397,16 @@ public static class ExpressionNormalizer
         {
             char prefix = char.ToLowerInvariant(span[1]);
             int j = 2;
-            while (j < span.Length && IsRadixDigit(prefix, span[j])) j++;
+            while (j < span.Length && IsRadixDigit(prefix, span[j]))
+            {
+                j++;
+            }
 
-            if (j == 2) return false;
+            if (j == 2)
+            {
+                return false;
+            }
+
             consumed = j;
             return true;
         }
@@ -399,18 +429,30 @@ public static class ExpressionNormalizer
             }
         }
 
-        if (!hasDigits) return false;
+        if (!hasDigits)
+        {
+            return false;
+        }
 
         // An exponent only counts if digits follow; otherwise the 'e' is left for the caller to reject.
         if (i < span.Length && (span[i] is 'e' or 'E'))
         {
             int j = i + 1;
-            if (j < span.Length && (span[j] is '+' or '-')) j++;
+            if (j < span.Length && (span[j] is '+' or '-'))
+            {
+                j++;
+            }
 
             int digitsStart = j;
-            while (j < span.Length && char.IsAsciiDigit(span[j])) j++;
+            while (j < span.Length && char.IsAsciiDigit(span[j]))
+            {
+                j++;
+            }
 
-            if (j > digitsStart) i = j;
+            if (j > digitsStart)
+            {
+                i = j;
+            }
         }
 
         consumed = i;
@@ -454,8 +496,14 @@ public static class ExpressionNormalizer
         for (int i = 0; i < text.Length; i++)
         {
             char c = text[i];
-            if (c == '(') parenDepth++;
-            else if (c == ')') parenDepth = Math.Max(0, parenDepth - 1);
+            if (c == '(')
+            {
+                parenDepth++;
+            }
+            else if (c == ')')
+            {
+                parenDepth = Math.Max(0, parenDepth - 1);
+            }
 
             // Swiss digit grouping: apostrophe between digits (e.g. 1'000'000 or 1’000’000).
             // Supports both straight apostrophe (U+0027) and typographic/curly apostrophe (U+2019).
