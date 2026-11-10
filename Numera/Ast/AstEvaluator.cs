@@ -171,6 +171,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                     exact ? CalculationAccuracy.Exact : CalculationAccuracy.Unverified);
             }
 
+            // Reuse the middle operand: a < f() < b must call f() only once.
             left = right;
         }
 
@@ -304,6 +305,8 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
     private MathValue Multiply(MathValue left, MathValue right) => MathValue.Multiply(left, right);
     private MathValue Divide(MathValue left, MathValue right) => MathValue.Divide(left, right);
 
+    // Provenance can only be downgraded here. Exact inputs do not certify an
+    // approximate function result, and integer/boolean outputs do not erase uncertainty.
     private static MathValue PropagateAccuracy(MathValue value, IReadOnlyList<MathValue> args) =>
         args.Any(arg => arg.Accuracy != CalculationAccuracy.Exact)
             ? value.WithAccuracy(CalculationAccuracy.Unverified)
@@ -440,7 +443,8 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
             // Math-based functions use double approximations. Branches that can operate
             // on integer or decimal values use the original argument instead.
-            double v = args[0].AsDouble();
+            double v = lower is "sin" or "cos" or "tan" or "cot" or "sec" or "csc"
+                ? ProjectAngle(args[0]) : args[0].AsDouble();
             switch (lower)
             {
                 case "ceil":
@@ -507,36 +511,26 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
                 case "log":
                 case "log10":
-                    if (v <= 0)
-                    {
-                        throw new ExpressionException(new EvaluationDiagnostic(
-                            EvaluationError.UndefinedMathResult, "Logarithm is undefined for non-positive values."));
-                    }
-                    return new MathValue(Math.Log10(v));
+                    return new MathValue(EvaluateLogarithm(args[0], 10));
 
                 case "log2":
-                    if (v <= 0)
-                    {
-                        throw new ExpressionException(new EvaluationDiagnostic(
-                            EvaluationError.UndefinedMathResult, "Logarithm is undefined for non-positive values."));
-                    }
-                    return new MathValue(Math.Log2(v));
+                    return new MathValue(EvaluateLogarithm(args[0], 2));
 
                 case "ln":
-                    if (v <= 0)
-                    {
-                        throw new ExpressionException(new EvaluationDiagnostic(
-                            EvaluationError.UndefinedMathResult, "Natural logarithm is undefined for non-positive values."));
-                    }
-                    return new MathValue(Math.Log(v));
+                    return new MathValue(EvaluateLogarithm(args[0]));
 
                 case "log1p":
+                    if (MathValue.TryToRational(args[0], out var logNumerator, out var logDenominator))
+                    {
+                        // Form 1+x exactly: projecting x first could round a valid input to -1.
+                        return new MathValue(LogFraction(logNumerator + logDenominator, logDenominator));
+                    }
                     if (v <= -1.0)
                     {
                         throw new ExpressionException(new EvaluationDiagnostic(
                             EvaluationError.UndefinedMathResult, "log1p argument must be strictly greater than -1."));
                     }
-                    return new MathValue(double.LogP1(v));
+                    return new MathValue(SpecialFunctions.Log1p(v));
 
                 case "factorial":
                     return EvaluateFactorial(args[0]);
@@ -807,14 +801,23 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                     return MathValue.Pow(args[0], args[1], _options.MaxExponentMagnitude);
 
                 case "logn":
-                    var logVal = args[0].AsDouble();
-                    var logBase = args[1].AsDouble();
-                    if (logVal <= 0.0 || logBase <= 0.0 || logBase == 1.0)
+                    if (MathValue.Compare(args[1], new MathValue(1)) == 0)
                     {
                         throw new ExpressionException(new EvaluationDiagnostic(
                             EvaluationError.UndefinedMathResult, "logn requires positive arguments and base cannot be 1."));
                     }
-                    return new MathValue(Math.Log(logVal, logBase));
+
+                    var valueLog = LogarithmParts(args[0]);
+                    var baseLog = LogarithmParts(args[1]);
+                    if (args[1].Kind == MathValue.DataType.Double && !args[1].IsFinite)
+                    {
+                        // Native logn has special rules for NaN and infinite bases, not just ln(x)/ln(b).
+                        return new MathValue(Math.Log(args[0].AsDouble(), args[1].DoubleValue));
+                    }
+
+                    // ln(x)/ln(b) = (valuePart/basePart) * 2^(valueExponent-baseExponent).
+                    // Dividing the parts first avoids turning two tiny logarithms into 0/0.
+                    return new MathValue(Math.ScaleB(valueLog.Value / baseLog.Value, valueLog.Exponent - baseLog.Exponent));
 
                 case "atan2":
                     var y = args[0].AsDouble();
@@ -822,7 +825,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                     return new MathValue(EvaluateArcTan2(y, x));
 
                 case "hypot":
-                    return new MathValue(Math.Sqrt(args[0].AsDouble() * args[0].AsDouble() + args[1].AsDouble() * args[1].AsDouble()));
+                    return new MathValue(EvaluateHypot(args[0], args[1]));
 
                 case "mod":
                     return MathValue.Modulo(args[0], args[1]);
@@ -1134,6 +1137,157 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
     private MathValue ExactFunctionFraction(BigInteger numerator, BigInteger denominator, MathValue input) =>
         MathValue.FromExactFraction(numerator, denominator, input.Kind == MathValue.DataType.Decimal);
 
+    // Radix zero selects the natural logarithm; 2 and 10 select the corresponding bases.
+    private static double EvaluateLogarithm(MathValue value, int radix = 0)
+    {
+        if (MathValue.TryToRational(value, out var numerator, out var denominator))
+        {
+            var (Value, Exponent) = LogFractionParts(numerator, denominator);
+            double projected = value.AsDouble();
+
+            // Away from one, a normal Double retains enough input precision for the
+            // native base-specific routines, avoiding an extra change-of-base rounding.
+            if (double.IsNormal(projected) && projected is < 0.5 or > 1.5)
+            {
+                return radix switch
+                {
+                    2 => Math.Log2(projected),
+                    10 => Math.Log10(projected),
+                    _ => Math.ScaleB(Value, Exponent),
+                };
+            }
+
+            // Change base before restoring the scale, so a tiny logarithm does not
+            // underflow before division by ln(2) or ln(10).
+            double result = radix switch
+            {
+                2 => Value / Math.Log(2),
+                10 => Value / Math.Log(10),
+                _ => Value,
+            };
+            return Math.ScaleB(result, Exponent);
+        }
+
+        double input = value.AsDouble();
+        if (input <= 0)
+        {
+            throw LogarithmDomainException();
+        }
+
+        return radix switch { 2 => Math.Log2(input), 10 => Math.Log10(input), _ => Math.Log(input) };
+    }
+
+    private static (double Value, int Exponent) LogarithmParts(MathValue value) =>
+        MathValue.TryToRational(value, out var numerator, out var denominator) ?
+            LogFractionParts(numerator, denominator) : (EvaluateLogarithm(value), 0);
+
+    private static double LogFraction(BigInteger numerator, BigInteger denominator)
+    {
+        var (Value, Exponent) = LogFractionParts(numerator, denominator);
+        return Math.ScaleB(Value, Exponent);
+    }
+
+    // Returns ln(numerator/denominator) approximately as Value * 2^Exponent.
+    // The exponent belongs to the logarithm's result, not to its original input.
+    private static (double Value, int Exponent) LogFractionParts(BigInteger numerator, BigInteger denominator)
+    {
+        if (numerator.Sign <= 0)
+        {
+            throw LogarithmDomainException();
+        }
+
+        // n/d = 1 + (n-d)/d. Subtract before conversion so a small difference from
+        // one survives; |n-d|*2 <= d means the offset lies between -0.5 and 0.5.
+        var difference = numerator - denominator;
+        if (BigInteger.Abs(difference) * 2 <= denominator)
+        {
+            int differenceExponent = (int)(BigInteger.Abs(difference).GetBitLength() - denominator.GetBitLength());
+            // Below 2^-54, log(1+x)/x differs from one by less than double precision.
+            // Keep the exponent separate so logn can divide even underflow-sized logs.
+            if (!difference.IsZero && differenceExponent < -54)
+            {
+                return (ScaleFractionAsDouble(difference, denominator, differenceExponent), differenceExponent);
+            }
+
+            return (SpecialFunctions.Log1p(MathValue.DivideIntegersAsDouble(difference, denominator)), 0);
+        }
+
+        double projected = MathValue.DivideIntegersAsDouble(numerator, denominator);
+        if (double.IsNormal(projected))
+        {
+            return (Math.Log(projected), 0);
+        }
+
+        int exponent = (int)(numerator.GetBitLength() - denominator.GetBitLength());
+        double mantissa = ScaleFractionAsDouble(numerator, denominator, exponent);
+        // n/d = mantissa * 2^exponent, hence ln(n/d) = ln(mantissa) + exponent*ln(2).
+        return (Math.Log(mantissa) + exponent * Math.Log(2), 0);
+    }
+
+    private static ExpressionException LogarithmDomainException() => new(new EvaluationDiagnostic(
+        EvaluationError.UndefinedMathResult, "Logarithm is undefined for non-positive values."));
+
+    // Computes (numerator/denominator) * 2^-exponent, shifting exact integers before
+    // conversion so the unscaled fraction need not fit in Double's range.
+    private static double ScaleFractionAsDouble(BigInteger numerator, BigInteger denominator, int exponent) =>
+        exponent >= 0 ?
+            MathValue.DivideIntegersAsDouble(numerator, denominator << exponent) :
+            MathValue.DivideIntegersAsDouble(numerator << -exponent, denominator);
+
+    private static double EvaluateHypot(MathValue left, MathValue right)
+    {
+        if (!MathValue.TryToRational(left, out var leftNumerator, out var leftDenominator) ||
+            !MathValue.TryToRational(right, out var rightNumerator, out var rightDenominator))
+        {
+            return double.Hypot(left.AsDouble(), right.AsDouble());
+        }
+
+        leftNumerator = BigInteger.Abs(leftNumerator);
+        rightNumerator = BigInteger.Abs(rightNumerator);
+        if (leftNumerator.IsZero || rightNumerator.IsZero)
+        {
+            return leftNumerator.IsZero ?
+                MathValue.DivideIntegersAsDouble(rightNumerator, rightDenominator) :
+                MathValue.DivideIntegersAsDouble(leftNumerator, leftDenominator);
+        }
+
+        // Use the same binary scale for both inputs, bringing the larger close to one.
+        // hypot(x,y) = 2^e * hypot(x/2^e,y/2^e); only the final rescaling can overflow.
+        int exponent = (int)Math.Max(leftNumerator.GetBitLength() - leftDenominator.GetBitLength(),
+            rightNumerator.GetBitLength() - rightDenominator.GetBitLength());
+        return Math.ScaleB(double.Hypot(
+            ScaleFractionAsDouble(leftNumerator, leftDenominator, exponent),
+            ScaleFractionAsDouble(rightNumerator, rightDenominator, exponent)), exponent);
+    }
+
+    /// <summary>
+    /// Projects an angle into the range of a single revolution based on the current angle
+    /// unit.
+    /// </summary>
+    /// <param name="value">The angle value to project.</param>
+    /// <returns>The projected angle value within a single revolution.</returns>
+    private double ProjectAngle(MathValue value)
+    {
+        if (_options.AngleUnit == AngleUnit.Radians ||
+            !MathValue.TryToRational(value, out var numerator, out var denominator))
+        {
+            return value.AsDouble();
+        }
+
+        // Work in numerator units: one turn of n/d is 360*d (or 400*d).
+        // Removing whole turns here preserves offsets hidden by converting a huge angle.
+        var revolution = denominator * (_options.AngleUnit == AngleUnit.Degrees ? 360 : 400);
+        var remainder = numerator % revolution;
+        // Beyond half a turn, shift by a WHOLE turn to choose the equivalent angle
+        // closer to zero (270 degrees becomes -90). Doubling avoids integer division.
+        if (BigInteger.Abs(remainder) * 2 > revolution)
+        {
+            remainder -= remainder.Sign * revolution;
+        }
+
+        return MathValue.DivideIntegersAsDouble(remainder, denominator);
+    }
+
     private MathValue EvaluateRoot(MathValue value, MathValue degree)
     {
         if (degree.IsZero)
@@ -1164,9 +1318,9 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
         double projectedValue = value.AsDouble();
         double magnitude = isNegative ? -projectedValue : projectedValue;
-        double root = hasFraction && !numerator.IsZero && !double.IsNormal(magnitude)
-            ? ApproximateFractionRoot(BigInteger.Abs(numerator), denominator, degree)
-            : ApproximateRoot(magnitude, degree.AsDouble());
+        double root = hasFraction && !numerator.IsZero && !double.IsNormal(magnitude) ?
+            ApproximateFractionRoot(BigInteger.Abs(numerator), denominator, degree) :
+            ApproximateRoot(magnitude, degree.AsDouble());
 
         return new MathValue(isNegative ? -root : root);
     }
@@ -1182,18 +1336,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
     {
         // Keep the magnitude in a separate exponent before converting the fraction to Double.
         int exponent = (int)(numerator.GetBitLength() - denominator.GetBitLength());
-        BigInteger scaledNumerator = numerator;
-        BigInteger scaledDenominator = denominator;
-        if (exponent >= 0)
-        {
-            scaledDenominator <<= exponent;
-        }
-        else
-        {
-            scaledNumerator <<= -exponent;
-        }
-
-        double mantissa = MathValue.DivideIntegersAsDouble(scaledNumerator, scaledDenominator);
+        double mantissa = ScaleFractionAsDouble(numerator, denominator, exponent);
         double approximateDegree = degree.AsDouble();
 
         if (degree.TryGetInteger(out var integerDegree) && integerDegree >= int.MinValue && integerDegree <= int.MaxValue)

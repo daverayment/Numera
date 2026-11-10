@@ -509,10 +509,10 @@ public sealed class AstAndFormattingTests
 
         // Extreme exponents format in scientific notation for Typographic and Ascii styles
         string extremeSmallTypo = Calculator.FormatExpression("1e-4932", ExpressionFormatOptions.Typographic);
-        Assert.AreEqual("1 ×10^-4932", extremeSmallTypo);
+        Assert.AreEqual("1 × 10^-4932", extremeSmallTypo);
 
         string extremeLargeTypo = Calculator.FormatExpression("1e4932", ExpressionFormatOptions.Typographic);
-        Assert.AreEqual("1 ×10^4932", extremeLargeTypo);
+        Assert.AreEqual("1 × 10^4932", extremeLargeTypo);
 
         string extremeSmallAscii = Calculator.FormatExpression("1e-4932", ExpressionFormatOptions.Ascii);
         Assert.AreEqual("1E-4932", extremeSmallAscii);
@@ -1317,7 +1317,7 @@ public sealed class AstAndFormattingTests
 
     [TestMethod]
     [DataRow(ExpressionFormatStyle.NormalizedAscii, "1.2345E4", "1.2345E-4")]
-    [DataRow(ExpressionFormatStyle.TypographicUnicode, "1.2345 ×10^4", "1.2345 ×10^-4")]
+    [DataRow(ExpressionFormatStyle.TypographicUnicode, "1.2345 × 10^4", "1.2345 × 10^-4")]
     [DataRow(ExpressionFormatStyle.MathJax, @"1.2345 \times 10^{4}", @"1.2345 \times 10^{-4}")]
     public void ExpressionNotationThresholdDoesNotReduceScientificPrecision(
         ExpressionFormatStyle style, string large, string small)
@@ -1330,7 +1330,7 @@ public sealed class AstAndFormattingTests
 
     [TestMethod]
     [DataRow(ExpressionFormatStyle.NormalizedAscii, "1E1", "1E1000")]
-    [DataRow(ExpressionFormatStyle.TypographicUnicode, "1 ×10^1", "1 ×10^1000")]
+    [DataRow(ExpressionFormatStyle.TypographicUnicode, "1 × 10^1", "1 × 10^1000")]
     [DataRow(ExpressionFormatStyle.MathJax, @"1 \times 10^{1}", @"1 \times 10^{1000}")]
     public void ExpressionFixedThresholdSupportsBothValidatedBoundaries(
         ExpressionFormatStyle style, string smallScientific, string largeScientific)

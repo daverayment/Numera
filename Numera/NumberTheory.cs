@@ -87,6 +87,8 @@ internal static class NumberTheory
         BigInteger result = BigInteger.One;
         for (int i = 1; i <= kInt; i++)
         {
+            // Each step is C(n,i) = C(n,i-1)*(n-i+1)/i, so division is exact.
+            // Avoiding factorials also avoids huge intermediates for small k and large n.
             result = MathValue.Product(result, BoundedAdd(n, -(i - 1))) / i;
             ValidateInteger(result);
         }
@@ -219,6 +221,9 @@ internal static class NumberTheory
             throw new CalculationLimitException();
         }
         BigInteger nMinusOne = BoundedAdd(n, -BigInteger.One);
+
+        // Write n-1 = d*2^s with d odd. Each witness starts at a^d and repeatedly
+        // squares; a prime must give 1 initially or -1 at some stage of the sequence.
         BigInteger d = nMinusOne;
         int s = 0;
         while (d.IsEven)
@@ -396,6 +401,8 @@ internal static class NumberTheory
             int steps = 0;
             const int maxSteps = 100_000; // Limit steps to avoid infinite loops on pathological cases.
 
+            // Floyd's cycle detection: y advances twice as fast as x. A collision
+            // modulo a factor of n can make gcd(x-y,n) reveal that factor before x==y.
             while (d == 1 && steps < maxSteps)
             {
                 x = BoundedAdd(MathValue.Product(x, x), c) % n;
@@ -521,6 +528,8 @@ internal static class NumberTheory
 
         foreach (var factor in factors)
         {
+            // Apply phi(n) = n * product((p-1)/p) once per distinct prime.
+            // Dividing first is exact and avoids an unnecessarily large product.
             result = MathValue.Product(result / factor.Prime, BoundedAdd(factor.Prime, -1));
             ValidateInteger(result);
         }

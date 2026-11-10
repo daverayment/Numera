@@ -64,6 +64,9 @@ public static class ResultFormatter
         options.Validate();
 
         var (primaryDisplay, isRounded) = ResultValueFormatter.Format(value, options, culture);
+
+        // Machine text preserves the stored value, not the rounded primary display;
+        // copying a readable approximation here would silently lose information.
         string machineReadable = value.ToInvariantExpression();
         string? fraction = ResultValueFormatter.FormatExactFraction(value, options);
 

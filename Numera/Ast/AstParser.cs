@@ -670,6 +670,9 @@ internal sealed class AstParser
         if (Peek() == '^')
         {
             Consume();
+
+            // Re-enter unary parsing to allow 2^-3 and make powers right-associative:
+            // 2^3^4 means 2^(3^4), while the enclosing unary parser keeps -2^2 as -(2^2).
             var right = ParseUnary();
             return new BinaryNode(BinaryOperator.Power, left, right, Combine(left, right));
         }
@@ -783,6 +786,8 @@ internal sealed class AstParser
         string identifier = identifierSpan.ToString();
         SkipWhitespace();
 
+        // A known function owns its parentheses; a bound variable followed by a group
+        // can instead be an implicit product such as x(2+3).
         if (Peek() == '(' && FunctionArity.TryGet(identifier, _options.CustomFunctions, out var signature))
         {
             var args = ParseArgumentList();
@@ -988,6 +993,8 @@ internal sealed class AstParser
                     nextPos++;
                 }
 
+                // Without exponent digits, leave 'e' for identifier parsing (2e is
+                // multiplication by Euler's constant, not a malformed exponent).
                 if (!char.IsAsciiDigit(Peek(nextPos)))
                 {
                     break;
@@ -1051,9 +1058,15 @@ internal sealed class AstParser
         string coefficientText = dot < 0 ? mantissa.ToString() :
             string.Concat(mantissa[..dot], mantissa[(dot + 1)..]);
         var coefficientDigits = coefficientText.AsSpan().TrimStart('0');
+
+        // Move trailing coefficient zeros into the power of ten before allocating
+        // either component, preserving the value with smaller integer intermediates.
         int trailingZeros = coefficientDigits.Length - coefficientDigits.TrimEnd('0').Length;
         coefficientDigits = coefficientDigits[..(coefficientDigits.Length - trailingZeros)];
         long power = exponent - fractionalDigits + trailingZeros;
+
+        // log2(10) turns decimal length into a pre-allocation size estimate.
+        // Exact bit-length checks below still enforce the boundary after construction.
         if ((coefficientDigits.Length - 1L) * 3.3219280948873623 > CalculationLimits.MaxIntermediateBits ||
             Math.Abs(power) * 3.3219280948873623 > CalculationLimits.MaxIntermediateBits)
         {

@@ -93,9 +93,9 @@ public sealed class CalculationExamplesTests
     [TestMethod]
     [DataRow("1/3", "0.333333333333333333333333", true)]
     [DataRow("1/8", "0.125", false)]
-    [DataRow("2^100", "1.2676506002282294014967 ×10^30", true)]
-    [DataRow("1e-400", "1 ×10^-400", false)]
-    [DataRow("sqrt(2^2000)", "1.07150860718626732094843 ×10^301", true)]
+    [DataRow("2^100", "1.2676506002282294014967e30", true)]
+    [DataRow("1e-400", "1e-400", false)]
+    [DataRow("sqrt(2^2000)", "1.07150860718626732094843e301", true)]
     public void GuideNumericDisplaysAreSeparateFromExactAnswers(string expression, string display, bool rounded)
     {
         var result = Calculator.Evaluate(expression);

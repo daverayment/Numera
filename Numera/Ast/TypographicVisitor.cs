@@ -26,6 +26,10 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
                 MaxFixedDigits = _options.MaxFixedDigits,
                 Style = _options.Style,
                 Notation = NumericNotation.Auto,
+
+                // Expression normalization keeps its own convention, independent of
+                // result displays.
+                ExponentMarker = ExponentMarker.Uppercase,
             };
             return ResultValueFormatter.Format(node.Value, formatOptions, CultureInfo.InvariantCulture).Text;
         }

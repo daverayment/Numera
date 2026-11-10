@@ -203,7 +203,7 @@ public sealed class MathValueFormattingTests
             (MathValue.FromFraction(-2469, 2), "minus12_34:5"),
             (new MathValue(-1234.5), "minus12_34:5"),
             (new MathValue(-1234.567m), "minus12_34:6"),
-            (new MathValue(-12345), "minus1:2345E4")
+            (new MathValue(-12345), "minus1:2345e4")
         ];
 
         Span<char> characters = stackalloc char[64];

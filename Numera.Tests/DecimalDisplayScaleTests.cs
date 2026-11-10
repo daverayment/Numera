@@ -145,8 +145,8 @@ public sealed class DecimalDisplayScaleTests
         {
             ResultFormat = new ResultFormatOptions { Notation = NumericNotation.Scientific }
         });
-        Assert.AreEqual("9.44 ×10^1", scientific.Evaluate("194.40-100").FormatResult().PrimaryDisplay);
-        AssertDefaultDisplay(scientific.Evaluate("194.40-100"), "9.44 ×10^1");
+        Assert.AreEqual("9.44e1", scientific.Evaluate("194.40-100").FormatResult().PrimaryDisplay);
+        AssertDefaultDisplay(scientific.Evaluate("194.40-100"), "9.44e1");
         var german = CalculatorEngine.ForCulture(CultureInfo.GetCultureInfo("de-DE"));
         Assert.AreEqual("94,40", german.Evaluate("194,40-100").FormatResult().PrimaryDisplay);
         AssertDefaultDisplay(german.Evaluate("194,40-100"), "94,40");
@@ -228,10 +228,50 @@ public sealed class DecimalDisplayScaleTests
     public void DefaultResultStringsUseNumericPresentationRatherThanNativeValueText()
     {
         var result = Calculator.Evaluate("2^100");
-        AssertDefaultDisplay(result, "1.2676506002282294014967 ×10^30");
+        AssertDefaultDisplay(result, "1.2676506002282294014967e30");
         Assert.AreEqual("1267650600228229401496703205376", result.Value.ToString(CultureInfo.InvariantCulture));
-        AssertDefaultDisplay(Calculator.Evaluate("1e-400"), "1 ×10^-400");
+        AssertDefaultDisplay(Calculator.Evaluate("1e-400"), "1e-400");
         AssertDefaultDisplay(Calculator.Evaluate("1/3"), "0.333333333333333333333333");
+    }
+
+    [TestMethod]
+    [DataRow("1e-400", ExponentMarker.Lowercase, "1e-400")]
+    [DataRow("1e-400", ExponentMarker.Uppercase, "1E-400")]
+    [DataRow("-1e400", ExponentMarker.Lowercase, "-1e400")]
+    [DataRow("-1e400", ExponentMarker.Uppercase, "-1E400")]
+    [DataRow("2^100", ExponentMarker.Lowercase, "1.2676506002282294014967e30")]
+    [DataRow("2^100", ExponentMarker.Uppercase, "1.2676506002282294014967E30")]
+    public void ExponentCasingIsConsistentAcrossResultDisplaySurfaces(
+        string expression, ExponentMarker marker, string expected)
+    {
+        var options = new ResultFormatOptions { ExponentMarker = marker };
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture,
+            settings => settings with { ResultFormat = options });
+        var result = engine.Evaluate(expression);
+
+        AssertDefaultDisplay(result, expected);
+        Assert.AreEqual(expected, result.PrimaryDisplay);
+        Assert.AreEqual(expected, result.FormatResult().PrimaryDisplay);
+        Assert.AreEqual(expected, engine.FormatResult(result).PrimaryDisplay);
+        Assert.AreEqual(expected, ResultFormatter.Format(result, options).PrimaryDisplay);
+        Assert.AreEqual(expected, ResultFormatter.Format(result.Value, options).PrimaryDisplay);
+        Assert.AreEqual(result.Value.ToInvariantExpression(), result.MachineReadable);
+        Assert.AreEqual(Calculator.Evaluate(expression).MachineReadable, result.MachineReadable);
+    }
+
+    [TestMethod]
+    public void ResultDefaultsAndOverridesAreSeparateFromExpressionFormatting()
+    {
+        Assert.AreEqual(ExpressionFormatStyle.NormalizedAscii, ResultFormatOptions.Default.Style);
+        Assert.AreEqual(ExponentMarker.Lowercase, ResultFormatOptions.Default.ExponentMarker);
+        var result = Calculator.Evaluate("1e-400");
+        Assert.AreEqual("1e-400", result.Value.ToString(CultureInfo.InvariantCulture));
+        Assert.AreEqual("1E-400", ResultFormatter.Format(result,
+            new ResultFormatOptions { ExponentMarker = ExponentMarker.Uppercase }).PrimaryDisplay);
+        AssertDefaultDisplay(result, "1e-400");
+        Assert.AreEqual("exp(1E-400) + ResultE",
+            Calculator.FormatExpression("exp(1e-400)+ResultE", ExpressionFormatOptions.Ascii));
+        Assert.AreEqual("1 × 10^-400", Calculator.FormatExpression("1e-400"));
     }
 
     [TestMethod]
@@ -242,7 +282,7 @@ public sealed class DecimalDisplayScaleTests
             ResultFormat = new ResultFormatOptions { MaxOutputCharacters = 10 }
         });
         var result = engine.Evaluate("1e-50");
-        AssertDefaultDisplay(result, "1 ×10^-50");
+        AssertDefaultDisplay(result, "1e-50");
         Assert.ThrowsExactly<CalculationLimitException>(() => result.FormatResult());
         var limited = new CalculatorEngine(new CalculatorOptions
         {

@@ -1,6 +1,22 @@
 namespace Numera;
 
 /// <summary>
+/// Specifies the letter used for the exponent in compact scientific result displays.
+/// </summary>
+public enum ExponentMarker
+{
+    /// <summary>
+    /// Lowercase e, as in "1e-400".
+    /// </summary>
+    Lowercase,
+
+    /// <summary>
+    /// Uppercase E, as in "1E-400".
+    /// </summary>
+    Uppercase
+}
+
+/// <summary>
 /// Controls the numeric presentation of calculation results, including notation,
 /// precision, formatting style, and output safety limits.
 /// </summary>
@@ -32,9 +48,16 @@ public sealed record ResultFormatOptions
     public NumericNotation Notation { get; init; } = NumericNotation.Auto;
 
     /// <summary>
-    /// Gets the scientific rendering style, defaulting to typographic Unicode.
+    /// Gets the scientific rendering style, defaulting to compact e-notation.
     /// </summary>
-    public ExpressionFormatStyle Style { get; init; } = ExpressionFormatStyle.TypographicUnicode;
+    public ExpressionFormatStyle Style { get; init; } = ExpressionFormatStyle.NormalizedAscii;
+
+    /// <summary>
+    /// Gets the exponent marker for compact scientific displays, defaulting to lowercase e.
+    /// Applies only to <see cref="ExpressionFormatStyle.NormalizedAscii"/> result displays;
+    /// expression formatting and machine-readable representations are unaffected.
+    /// </summary>
+    public ExponentMarker ExponentMarker { get; init; } = ExponentMarker.Lowercase;
 
     /// <summary>
     /// Gets whether to group digits in the integer part of a number, defaulting to true.
@@ -84,6 +107,11 @@ public sealed record ResultFormatOptions
         if (!Enum.IsDefined(Style))
         {
             throw new ArgumentOutOfRangeException(nameof(Style));
+        }
+
+        if (!Enum.IsDefined(ExponentMarker))
+        {
+            throw new ArgumentOutOfRangeException(nameof(ExponentMarker));
         }
     }
 }

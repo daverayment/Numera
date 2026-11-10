@@ -45,6 +45,8 @@ internal static class ResultValueFormatter
             rational.IsNegative,
             options.SignificantDigits);
 
+        // Rounding can carry into a new decade, so select notation from the rounded
+        // exponent rather than the input magnitude (e.g. 999.9 rounding to 1000).
         bool useScientific = ShouldUseScientific(rounded.Exponent, options);
 
         string formatted = useScientific
@@ -128,6 +130,8 @@ internal static class ResultValueFormatter
             throw new ArgumentOutOfRangeException(nameof(denominator), "The denominator must be positive.");
         }
 
+        // The floating-point estimate is only a starting point. Exact comparisons
+        // below decide the decade, including fractions extremely close to a power of ten.
         int exponent = (int)Math.Floor((numerator.GetBitLength() - denominator.GetBitLength()) * Math.Log10(2));
         while (ComparePowerOfTen(numerator, denominator, exponent) < 0)
         {
@@ -249,6 +253,9 @@ internal static class ResultValueFormatter
         }
 
         BigInteger coefficient = BigInteger.DivRem(scaledNumerator, scaledDenominator, out var remainder);
+
+        // This records display loss relative to storage, not calculation accuracy.
+        // An Unverified value may display without rounding and still be approximate.
         bool isRounded = !remainder.IsZero;
 
         // Midpoint ties round to nearest even integer
@@ -284,7 +291,7 @@ internal static class ResultValueFormatter
     {
         string sign = rounded.IsNegative ? culture.NegativeSign : "";
         string separator = culture.NumberDecimalSeparator;
-        string suffix = ScientificSuffix(rounded.Exponent, options.Style);
+        string suffix = ScientificSuffix(rounded.Exponent, options);
 
         long length = (long)sign.Length + rounded.Digits.Length + suffix.Length
             + (rounded.Digits.Length > 1 ? separator.Length : 0);
@@ -305,6 +312,9 @@ internal static class ResultValueFormatter
         NumberFormatInfo culture)
     {
         var layout = CreateFixedLayout(rounded, originalValue, isWholeNumber, options);
+
+        // Share the layout with length checking, so padding and culture separators
+        // cannot make the rendered string exceed a limit that the preflight accepted.
         CheckFixedLength(rounded, layout, options, culture);
 
         string sign = rounded.IsNegative ? culture.NegativeSign : "";
@@ -371,6 +381,8 @@ internal static class ResultValueFormatter
     {
         if (rounded.IsRounded)
         {
+            // Literal-scale padding must not suggest retained precision after the
+            // significant-digit budget has already discarded part of the stored value.
             return 0;
         }
 
@@ -421,6 +433,8 @@ internal static class ResultValueFormatter
         int groupIndex = 0;
         int groupCount = 0;
 
+        // .NET repeats the final nonzero group size; a terminal zero stops grouping.
+        // Counting the same way keeps preflight limits consistent with ToString("N0").
         while (groupSizes.Length > 0 && groupSizes[groupIndex] > 0 && remainingDigits > groupSizes[groupIndex])
         {
             remainingDigits -= groupSizes[groupIndex];
@@ -441,14 +455,15 @@ internal static class ResultValueFormatter
         return value.DecimalDisplayScale <= maximumScale ? value.DecimalDisplayScale : 0;
     }
 
-    private static string ScientificSuffix(int exponent, ExpressionFormatStyle style)
+    private static string ScientificSuffix(int exponent, ResultFormatOptions options)
     {
         string power = exponent.ToString(CultureInfo.InvariantCulture);
-        return style switch
+        return options.Style switch
         {
-            ExpressionFormatStyle.NormalizedAscii => "E" + power,
+            ExpressionFormatStyle.NormalizedAscii =>
+                (options.ExponentMarker == ExponentMarker.Uppercase ? "E" : "e") + power,
             ExpressionFormatStyle.MathJax => @" \times 10^{" + power + "}",
-            _ => " ×10^" + power,
+            _ => " × 10^" + power,
         };
     }
 

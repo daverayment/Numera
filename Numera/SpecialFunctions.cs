@@ -10,6 +10,20 @@ internal static class SpecialFunctions
 {
     private static readonly double Sqrt2 = Math.Sqrt(2.0);
 
+    internal static double Log1p(double x)
+    {
+        if (Math.Abs(x) > 0.5)
+        {
+            return double.LogP1(x);
+        }
+
+        double sum = 1.0 + x;
+
+        // sum-1 may differ from x after rounding; x/(sum-1) compensates for that loss.
+        // If sum rounded to one, ln(1+x) rounds to x at this scale instead of zero.
+        return sum == 1.0 ? x : Math.Log(sum) * (x / (sum - 1.0));
+    }
+
     // Cody 1969 rational Chebyshev approximation coefficients for erf/erfc.
     // Interval 1: [0, 0.46875] for erf(x) = x * P(x^2) / Q(x^2)
     // P and Q are stored from lowest degree (constant term) to highest degree:

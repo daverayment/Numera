@@ -53,7 +53,7 @@ public sealed class MachineReadableFormattingTests
             }
         });
         var result = engine.Evaluate("194.40-100");
-        Assert.AreEqual("9.4 ×10^1", result.PrimaryDisplay);
+        Assert.AreEqual("9.4e1", result.PrimaryDisplay);
         Assert.AreEqual("94.40", result.MachineReadable);
         Assert.AreEqual(result.Value, Calculator.Evaluate(result.MachineReadable).Value);
         const string precise = "1.2345678901234567890123456789";

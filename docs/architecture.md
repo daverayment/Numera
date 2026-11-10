@@ -55,6 +55,17 @@ flowchart TD
 - Approximate roots retain the binary magnitude of exact inputs that would project to zero, subnormal values, or infinity before rooting. Only the final approximate root is subject to Double's output range. Standard deviation uses the same root handling but remains a Double result with Unverified accuracy, even when its variance has an exact square root.
 - Negative finite bases with finite fractional power exponents report `UndefinedMathResult`. This domain check uses the original values, even when the base or exponent would overflow or underflow during Double conversion. Actual nonfinite Double exponents retain native floating-point semantics.
 
+### Preserving Inputs Before Approximation
+
+Selected functions retain exact input information until floating-point approximation is needed:
+
+- `ln`, `log`/`log10`, and `log2` use scaled rational magnitudes when inputs exceed Double's range. For example, `log10(1e-400)` remains approximately `-400`, rather than treating the input as zero.
+- Near one, logarithms use the original fractional difference and compensated `log1p` evaluation. `ln(1+1e-30)` retains its small nonzero result. `logn` keeps tiny logarithms scaled through division, including when either logarithm alone would underflow. `log1p` checks the original input against its domain boundary before forming `1+x`.
+- Degree and gradian `sin`, `cos`, `tan`, `cot`, `sec`, and `csc` reduce exact inputs modulo a revolution before Double conversion. Very large whole revolutions therefore do not erase a small remaining angle. Radian reduction and supplied Double angles retain their existing behavior.
+- `hypot` scales exact inputs before conversion and uses the floating-point hypotenuse routine instead of directly squaring inputs. This avoids intermediate overflow/underflow, including loss of individually underflow-sized inputs whose combined result is representable.
+
+These are numerical algorithm improvements, not arbitrary-precision transcendental output or expression replay. Results remain Doubles with Unverified accuracy, subject to Double's final output range. Subsequent expressions operate on the stored approximation. Increasing display precision does not recover additional calculation precision.
+
 ---
 
 ## Inspection & Conversion
@@ -117,6 +128,8 @@ Representation selection is centralized after bounded fraction arithmetic; Decim
 - **Launcher Presentation**: `CalculatorEngine.FormatResult(value)` produces a structured `FormattedCalculation` containing primary display text in the engine's culture, machine-readable invariant text, and integer radix strings.
 
 The default primary display uses at most 24 significant digits with culture-aware digit grouping enabled, stripping insignificant trailing zeros. Automatic notation selection uses the rounded base-10 exponent: fixed notation applies from -24 through 23 inclusive (`MaxFixedDigits = 24`); other magnitudes transition to scientific notation. This threshold governs magnitude, not the total number of fractional digits. `ResultFormatOptions` configures this independently of arithmetic.
+
+Scientific result displays default to compact lowercase e-notation (`Style = ExpressionFormatStyle.NormalizedAscii`), for example `1e-400`. Set `ExponentMarker = ExponentMarker.Uppercase` for `1E-400`. This setting affects only the numeric exponent marker, not identifiers, expression formatting, or machine-readable text. Explicit `TypographicUnicode` and `MathJax` result styles retain their mathematical exponent notation and ignore marker casing. Expression formatting still defaults to typographic Unicode; its normalized ASCII style retains uppercase E.
 
 Digit grouping follows the culture's complete group-size sequence, including variable-sized groups and a terminal zero that stops further grouping. Finite numeric output length is checked before rendering and verified afterward. `MaxOutputCharacters` includes signs, decimal and group separators, scientific suffixes, and preserved trailing zeros; output that exactly fits the limit is permitted, and longer output is rejected rather than truncated. Fixed-layout digit counts and preserved padding are calculated once and shared by rendering and length checking.
 

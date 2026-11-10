@@ -265,6 +265,8 @@ public readonly partial struct MathValue :
             den = -den;
         }
 
+        // Intermediate components may exceed storage limits but reduce to a small value.
+        // Enforce the stored-value ceiling after cancellation, never by rounding to fit.
         var gcd = BigInteger.GreatestCommonDivisor(BigInteger.Abs(num), den);
         num /= gcd;
         den /= gcd;
@@ -322,6 +324,8 @@ public readonly partial struct MathValue :
         return false;
     }
 
+    // Representation access, not an accuracy check: Unverified fractions still qualify.
+    // Double is deliberately excluded so arithmetic does not silently become exact-domain.
     internal static bool TryToRational(
         MathValue value, out BigInteger num, out BigInteger den)
     {
@@ -384,6 +388,8 @@ public readonly partial struct MathValue :
             return exact;
         }
 
+        // Try the finest Decimal scale first. Each candidate rounds the original
+        // fraction, not the previously rounded coefficient, avoiding double rounding.
         var scaledNumerator = BigInteger.Abs(numerator) * BigInteger.Pow(10, 28);
         for (int scale = 28; scale >= 0; scale--)
         {
@@ -984,6 +990,8 @@ public readonly partial struct MathValue :
         BigInteger resultDenominator;
         if (operation is '+' or '-' or '%')
         {
+            // Use the least common denominator rather than multiplying denominators
+            // blindly; this reduces temporary growth before the final GCD reduction.
             var commonFactor = BigInteger.GreatestCommonDivisor(leftDenominator, rightDenominator);
             var scaledLeft = Product(leftNumerator, rightDenominator / commonFactor);
             var scaledRight = Product(rightNumerator, leftDenominator / commonFactor);
@@ -1004,12 +1012,16 @@ public readonly partial struct MathValue :
                 (rightNumerator, rightDenominator) = (rightDenominator, rightNumerator);
             }
 
+            // Cancel across the product before multiplication, so removable factors
+            // cannot trigger an avoidable intermediate-size limit failure.
             var leftCancellation = BigInteger.GreatestCommonDivisor(BigInteger.Abs(leftNumerator), BigInteger.Abs(rightDenominator));
             var rightCancellation = BigInteger.GreatestCommonDivisor(BigInteger.Abs(rightNumerator), leftDenominator);
             resultNumerator = Product(leftNumerator / leftCancellation, rightNumerator / rightCancellation);
             resultDenominator = Product(leftDenominator / rightCancellation, rightDenominator / leftCancellation);
         }
 
+        // Domain follows the operands, not whether the answer happens to terminate:
+        // Decimal + Integer may stay Decimal, but involving Rational keeps that domain.
         bool decimalDomain = (left.Kind == DataType.Decimal || right.Kind == DataType.Decimal) &&
             left.Kind != DataType.Rational && right.Kind != DataType.Rational;
         var result = FromExactFraction(resultNumerator, resultDenominator, decimalDomain);
@@ -1171,6 +1183,8 @@ public readonly partial struct MathValue :
             return b.DoubleValue > 0 ? -1 : 1;
         }
 
+        // Compare stored values as fractions, including a Double's exact binary value.
+        // Converting both sides to Double would merge distinct large or nearby values.
         NumericFraction(a, out var an, out var ad);
         NumericFraction(b, out var bn, out var bd);
         var commonDenominator = BigInteger.GreatestCommonDivisor(ad, bd);
@@ -1220,6 +1234,8 @@ public readonly partial struct MathValue :
             return DoubleValue.GetHashCode();
         }
 
+        // Equality ignores representation and provenance, so hashing must use the same
+        // reduced fraction: Integer 1, Decimal 1.0, and Double 1.0 need identical hashes.
         NumericFraction(this, out var n, out var d);
 
         return d.IsOne ? n.GetHashCode() : HashCode.Combine(n, d);
@@ -1720,6 +1736,8 @@ public readonly partial struct MathValue :
             return false;
         }
 
+        // A reduced fraction terminates in base ten only with denominator 2^a * 5^b.
+        // Fill in the missing factors to obtain 10^scale, adjusting the numerator too.
         var mantissa = Product(
             Product(BigInteger.Abs(numerator), BigInteger.One << (scale - factorsOfTwo)),
             BoundedPower(5, scale - factorsOfFive));
@@ -1761,6 +1779,8 @@ public readonly partial struct MathValue :
             return negative ? double.NegativeInfinity : double.PositiveInfinity;
         }
 
+        // Divide the original finite values before rounding, avoiding inf/inf or 0/0
+        // when individual conversions would overflow or underflow but their ratio fits.
         NumericFraction(a, out var an, out var ad);
         NumericFraction(b, out var bn, out var bd);
         var first = BigInteger.GreatestCommonDivisor(BigInteger.Abs(an), BigInteger.Abs(bn));
@@ -1794,7 +1814,11 @@ public readonly partial struct MathValue :
             return negative ? -0.0 : 0.0;
         }
 
-        long bitLengthDifference = scaledNumerator.GetBitLength() - scaledDenominator.GetBitLength();
+        long bitLengthDifference =
+            scaledNumerator.GetBitLength() - scaledDenominator.GetBitLength();
+
+        // Bit lengths give conservative range bounds; borderline overflow and
+        // underflow cases continue through division so rounding decides the result.
         if (bitLengthDifference >= 1025)
         {
             return negative ? double.NegativeInfinity : double.PositiveInfinity;
@@ -1812,7 +1836,11 @@ public readonly partial struct MathValue :
             var coefficient = BigInteger.DivRem(scaledNumerator, scaledDenominator, out var subnormalRemainder);
             int discardedBits = (int)(coefficient & 7);
             coefficient >>= 3;
-            if (discardedBits > 4 || (discardedBits == 4 && (!subnormalRemainder.IsZero || !coefficient.IsEven)))
+
+            // A nonzero division remainder is a sticky bit: an apparent halfway
+            // guard-bit pattern is actually above halfway if more fraction remains.
+            if (discardedBits > 4 || (discardedBits == 4 &&
+                (!subnormalRemainder.IsZero || !coefficient.IsEven)))
             {
                 coefficient++;
             }

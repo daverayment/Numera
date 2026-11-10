@@ -1365,7 +1365,12 @@ public class NumericTests
 
         var log1pResult = Calculator.Evaluate("log1p(1e-5)");
         Assert.AreEqual(MathValue.DataType.Double, log1pResult.Type);
-        Assert.AreEqual(double.LogP1(x), log1pResult.DoubleValue, 0.0);
+
+        // Independent high-precision reference for ln(1.00001), rounded to double by C#.
+        // double.LogP1 loses precision on this runtime; the tolerance is about one
+        // double-spacing here.
+        Assert.AreEqual(
+            0.000009999950000333330833353333166668095, log1pResult.DoubleValue, 2e-21);
 
         // At x = 0, expm1(0) == 0 and log1p(0) == 0 exactly.
         Assert.AreEqual(0.0, Calculator.Evaluate("expm1(0)").DoubleValue, 0.0);
