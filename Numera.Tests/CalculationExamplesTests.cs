@@ -6,6 +6,7 @@ namespace Numera.Tests;
 public sealed class CalculationExamplesTests
 {
     [TestMethod]
+    [DataRow("2 + 2", "4")]
     [DataRow("2 + 3 * 4", "14")]
     [DataRow("(2 + 3) * 4", "20")]
     [DataRow("2^3^2", "512")]
@@ -57,6 +58,7 @@ public sealed class CalculationExamplesTests
     [DataRow("gcd(24,36,60)", "12")]
     [DataRow("lcm(4,6)", "12")]
     [DataRow("factorial(6)", "720")]
+    [DataRow("5!", "120")]
     [DataRow("comb(52,5)", "2598960")]
     [DataRow("perm(10,3)", "720")]
     [DataRow("isprime(97)", "1")]
@@ -99,7 +101,7 @@ public sealed class CalculationExamplesTests
     public void GuideNumericDisplaysAreSeparateFromExactAnswers(string expression, string display, bool rounded)
     {
         var result = Calculator.Evaluate(expression);
-        var card = result.FormatResult(CultureInfo.InvariantCulture);
+        var card = result.FormatResult(culture: CultureInfo.InvariantCulture);
         Assert.AreEqual(display, card.PrimaryDisplay);
         Assert.AreEqual(rounded, card.IsDisplayRounded);
         Assert.AreEqual(CalculationAccuracy.Exact, result.Accuracy);
@@ -136,9 +138,61 @@ public sealed class CalculationExamplesTests
         Assert.AreEqual(1.0, gradians.Evaluate("sin(100)").AsDouble(), 1e-15);
         var german = CalculatorEngine.ForCulture(CultureInfo.GetCultureInfo("de-DE"));
         Assert.AreEqual("1.000,75", german.Evaluate("1.000,50 + 0,25").PrimaryDisplay);
+        Assert.AreEqual("4,0", german.Evaluate("1,5 + 2,5").PrimaryDisplay);
     }
 
     [TestMethod]
+    [DataRow(120, 18, 138)]
+    [DataRow(200, 30, 230)]
+    public void ReadmeBillSessionKeepsNamedValuesAndPreviousAnswer(int subtotal, int tip, int total)
+    {
+        var context = EvaluationContext.Empty;
+        var result = Calculator.Evaluate($"subtotal = {subtotal}", context);
+        Assert.AreEqual(subtotal.ToString(CultureInfo.InvariantCulture), result.PrimaryDisplay);
+        context = result.Context;
+
+        result = Calculator.Evaluate("15% of subtotal", context);
+        Assert.AreEqual(tip.ToString(CultureInfo.InvariantCulture), result.PrimaryDisplay);
+        context = result.Context;
+
+        result = Calculator.Evaluate("subtotal + ans", context);
+        Assert.AreEqual(total.ToString(CultureInfo.InvariantCulture), result.PrimaryDisplay);
+        Assert.AreEqual(new MathValue(subtotal), result.Context.Variables["subtotal"].Value);
+        Assert.AreEqual(result.Value, result.Context.PreviousResult);
+    }
+
+    [TestMethod]
+    [DataRow("sin(90)", "1", null, false)]
+    [DataRow("cos(180)", "-1", null, false)]
+    [DataRow("tan(45)", "1", null, false)]
+    [DataRow("1/3", "0.333333", "1/3", true)]
+    [DataRow("1/8", "0.125", "1/8", false)]
+    [DataRow("sqrt(2)", "1.41421", null, true)]
+    public void ReadmeConfiguredCalculatorSupportsNumericAndFractionViews(
+        string expression, string numericDisplay, string? exactFraction, bool isDisplayRounded)
+    {
+        var calculator = new CalculatorEngine(new CalculatorOptions
+        {
+            Culture = CultureInfo.InvariantCulture,
+            AngleUnit = AngleUnit.Degrees,
+            ResultFormat = new ResultFormatOptions { SignificantDigits = 6 }
+        });
+        var result = calculator.Evaluate(expression);
+        var formatted = result.FormatResult();
+
+        Assert.AreEqual(numericDisplay, result.ToString());
+        Assert.AreEqual(numericDisplay, formatted.PrimaryDisplay);
+        Assert.AreEqual(exactFraction, formatted.FractionRepresentation);
+        Assert.AreEqual(exactFraction is not null, result.HasExactFraction);
+        Assert.AreEqual(isDisplayRounded, formatted.IsDisplayRounded);
+        if (expression == "1/3")
+        {
+            Assert.AreEqual("1", (result * 3).ToString());
+        }
+    }
+
+    [TestMethod]
+    [DataRow("2 +", EvaluationError.InvalidSyntax)]
     [DataRow("1/0", EvaluationError.DivisionByZero)]
     [DataRow("1/(1/0)", EvaluationError.DivisionByZero)]
     [DataRow("sqrt(-1)", EvaluationError.UndefinedMathResult)]

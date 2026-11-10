@@ -27,7 +27,7 @@ public sealed class MachineReadableFormattingTests
     public void MachineTextPreservesNumericValueAndRepresentableDecimalScale(string expression, string expected)
     {
         var result = Calculator.Evaluate(expression);
-        var card = result.FormatResult(CultureInfo.InvariantCulture);
+        var card = result.FormatResult(culture: CultureInfo.InvariantCulture);
         Assert.AreEqual(expected, card.MachineReadable);
         Assert.AreEqual(expected, result.MachineReadable);
         Assert.AreEqual(expected, result.Value.ToInvariantExpression());
@@ -82,7 +82,7 @@ public sealed class MachineReadableFormattingTests
         var result = Calculator.Evaluate("94.40000");
         Assert.AreEqual("94.4", result.PrimaryDisplay);
         Assert.AreEqual("94.40000", result.MachineReadable);
-        Assert.AreEqual("94.40000", Calculator.FormatResult(new MathValue(94.40000m)).MachineReadable);
+        Assert.AreEqual("94.40000", new CalculatorEngine().FormatResult(new MathValue(94.40000m)).MachineReadable);
         var whole = Calculator.Evaluate("100.000");
         Assert.AreEqual("100", whole.PrimaryDisplay);
         Assert.AreEqual("100.000", whole.MachineReadable);

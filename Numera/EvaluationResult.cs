@@ -126,7 +126,7 @@ public readonly record struct EvaluationResult :
     /// supplied.
     /// </summary>
     /// <remarks>
-    /// Display formatting uses invariant culture when absent. Supplying a format provider
+    /// Display formatting uses current culture when absent. Supplying a format provider
     /// overrides the result's culture.
     /// </remarks>
     public CultureInfo? Culture => Options?.Culture;
@@ -190,24 +190,30 @@ public readonly record struct EvaluationResult :
     public (BigInteger Numerator, BigInteger Denominator) GetExactFraction() => Value.GetExactFraction();
 
     /// <summary>
-    /// Gets the stored integer, or zero if the number is not stored as Integer.
+    /// Gets the stored integer without converting other storage types.
     /// </summary>
     /// <remarks>Does not convert other storage types. Cast to <see cref="BigInteger"/>
     /// to convert a whole number instead.</remarks>
+    /// <exception cref="InvalidOperationException">The number is not stored as Integer.
+    /// </exception>
     public BigInteger IntegerValue => Value.IntegerValue;
 
     /// <summary>
-    /// Gets the stored decimal, or zero if the number is not stored as Decimal.
+    /// Gets the stored decimal without converting other storage types.
     /// </summary>
     /// <remarks>Does not convert other storage types. Cast to <see cref="decimal"/> to
     /// convert instead.</remarks>
+    /// <exception cref="InvalidOperationException">The number is not stored as Decimal.
+    /// </exception>
     public decimal DecimalValue => Value.DecimalValue;
 
     /// <summary>
-    /// Gets the stored double, or zero if the number is not stored as Double.
+    /// Gets the stored double without converting other storage types.
     /// </summary>
     /// <remarks>Does not convert other storage types. Use <see cref="AsDouble"/> to
     /// convert instead.</remarks>
+    /// <exception cref="InvalidOperationException">The number is not stored as Double.
+    /// </exception>
     public double DoubleValue => Value.DoubleValue;
 
     /// <summary>
@@ -727,7 +733,7 @@ public readonly record struct EvaluationResult :
     /// result's options, falling back to <see cref="ResultFormatOptions.Default"/>.
     /// </param>
     /// <param name="culture">Display culture, or <see langword="null"/> to use the
-    /// result's culture, falling back to invariant culture.</param>
+    /// result's culture, falling back to current culture.</param>
     /// <param name="prefixRadixOutput">Whether to include <c>0x</c>, <c>0b</c>, and
     /// <c>0o</c> prefixes. Defaults to <see langword="true"/>.</param>
     /// <returns>Display text and alternatives, with rounding information and any assigned
@@ -742,36 +748,14 @@ public readonly record struct EvaluationResult :
     /// exceeds a limit.</exception>
     public FormattedCalculation FormatResult(
         ResultFormatOptions? options = null, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
-        ResultFormatter.Format(this, options ?? FormatOptions, culture ?? Culture, prefixRadixOutput);
-
-    /// <summary>
-    /// Formats the result and its alternatives using the specified culture.
-    /// </summary>
-    /// <param name="culture">The culture to use instead of the result's culture.</param>
-    /// <param name="prefixRadixOutput">Whether to include <c>0x</c>, <c>0b</c>, and
-    /// <c>0o</c> prefixes. Defaults to <see langword="true"/>.</param>
-    /// <returns>Display text and alternatives, with rounding information and any assigned
-    /// variables.</returns>
-    /// <remarks>
-    /// Keeps the result's display options, or library defaults if none were supplied.
-    /// Passing null at runtime uses invariant culture, unlike omitting culture in the
-    /// other overload. The output limit applies to every numeric representation,
-    /// including alternatives.
-    /// </remarks>
-    /// <exception cref="ArgumentOutOfRangeException">A formatting option is outside its
-    /// supported range.</exception>
-    /// <exception cref="CalculationLimitException">An output or formatting calculation
-    /// exceeds a limit.</exception>
-    public FormattedCalculation FormatResult(
-        CultureInfo culture, bool prefixRadixOutput = true) =>
-        ResultFormatter.Format(this, FormatOptions, culture, prefixRadixOutput);
+        ResultFormatter.Format(this, options, culture, prefixRadixOutput);
 
     /// <summary>
     /// Gets the number as display text, using the result's formatting options and
     /// culture.
     /// </summary>
     /// <remarks>
-    /// Uses library display defaults and invariant culture if none were supplied. Does
+    /// Uses library display defaults and current culture if none were supplied. Does
     /// not format alternatives; use
     /// <see cref="FormatResult(ResultFormatOptions?, CultureInfo?, bool)"/> for those and
     /// display-rounding information. Display text alone does not establish exactness.
@@ -810,7 +794,7 @@ public readonly record struct EvaluationResult :
     /// Returns the result as display text, using its formatting options and culture.
     /// </summary>
     /// <returns>The same text as <see cref="PrimaryDisplay"/>.</returns>
-    /// <remarks>Uses library display defaults and invariant culture if none were
+    /// <remarks>Uses library display defaults and current culture if none were
     /// supplied.</remarks>
     /// <exception cref="ArgumentOutOfRangeException">A formatting option is outside its
     /// supported range.</exception>
@@ -823,7 +807,7 @@ public readonly record struct EvaluationResult :
     /// format.
     /// </summary>
     /// <param name="formatProvider">A culture or numeric format provider. Null uses the
-    /// result's culture, or invariant culture if absent.</param>
+    /// result's culture, or current culture if absent.</param>
     /// <returns>The numeric display text, retaining the result's display options.
     /// </returns>
     /// <exception cref="ArgumentOutOfRangeException">A formatting option is outside its
@@ -837,9 +821,9 @@ public readonly record struct EvaluationResult :
     /// </summary>
     /// <param name="format">A numeric format supported by the stored type, or null or
     /// empty to use the result's display options.</param>
-    /// <param name="formatProvider">A culture or numeric format provider. If null,
-    /// display formatting uses the result's culture (or invariant culture); an explicit
-    /// format uses current culture.</param>
+    /// <param name="formatProvider">A culture or numeric format provider. Null uses the
+    /// result's culture, or current culture if absent, with or without an explicit
+    /// format.</param>
     /// <returns>The formatted number.</returns>
     /// <remarks>Explicit formats bypass the result's display options and use
     /// <see cref="MathValue"/> formatting. For example, <c>R</c> returns a stored
@@ -853,14 +837,14 @@ public readonly record struct EvaluationResult :
     public string ToString(string? format, IFormatProvider? formatProvider) =>
         string.IsNullOrEmpty(format)
             ? FormatDisplay(FormatOptions, formatProvider)
-            : Value.ToString(format, formatProvider);
+            : Value.ToString(format, formatProvider ?? Culture ?? CultureInfo.CurrentCulture);
 
     private string FormatDisplay(ResultFormatOptions? options, IFormatProvider? provider)
     {
         var (text, _) = ResultValueFormatter.Format(
             Value,
             options ?? FormatOptions ?? ResultFormatOptions.Default,
-            provider ?? Culture ?? CultureInfo.InvariantCulture);
+            provider ?? Culture ?? CultureInfo.CurrentCulture);
         return text;
     }
 
@@ -889,7 +873,11 @@ public readonly record struct EvaluationResult :
     {
         if (!format.IsEmpty)
         {
-            return Value.TryFormat(destination, out charsWritten, format, provider);
+            return Value.TryFormat(
+                destination,
+                out charsWritten,
+                format,
+                provider ?? Culture ?? CultureInfo.CurrentCulture);
         }
 
         string text = ToString(null, provider);
@@ -927,7 +915,11 @@ public readonly record struct EvaluationResult :
     {
         if (!format.IsEmpty)
         {
-            return Value.TryFormat(utf8Destination, out bytesWritten, format, provider);
+            return Value.TryFormat(
+                utf8Destination,
+                out bytesWritten,
+                format,
+                provider ?? Culture ?? CultureInfo.CurrentCulture);
         }
 
         bool success = Encoding.UTF8.TryGetBytes(ToString(null, provider), utf8Destination, out bytesWritten);

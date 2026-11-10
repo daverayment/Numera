@@ -6,7 +6,7 @@ Desktop calculators, app launchers (e.g. PowerToys Run, Raycast, Alfred), search
 - Typographic operators pasted from articles or Word documents (`×`, `÷`, `−`, `·`)
 - Culture-specific decimal commas and digit grouping separators (`1.000,50` vs `1,000.50` vs `1'000.50` vs `1 000 000`)
 
-Numera's evaluator (`Calculator.Evaluate` and `Calculator.TryEvaluate`) requires a culture-invariant grammar with standard ASCII operators. The standalone **`ExpressionNormalizer`** bridges this gap, allowing applications to clean human expressions into that grammar before parsing.
+Numera automatically normalizes human input into its parser's culture-invariant grammar. `Calculator.Evaluate` and `Calculator.TryEvaluate` use current culture at each call; an engine uses the culture captured when it was created. The standalone **`ExpressionNormalizer`** is available for applications that only need text cleanup.
 
 Percentage idioms (`15% of 200`, `100 + 20%`), postfix factorials (`5!`) and implicit multiplication (`2pi`, `2(3+4)`) are **not** normalizer concerns: they are part of the Numera grammar and are handled by the parser. See [Percentages](#percentages) below.
 
@@ -26,16 +26,16 @@ The normalizer only rewrites text that the grammar has no way to express, so it 
 using Numera;
 using System.Globalization;
 
-// The static facade normalizes human input by default (invariant culture):
+// The static facade normalizes human input using current culture:
 var result = Calculator.Evaluate("= 2 × 3! + 15% of 200 =");
 
-// For a user's culture, create an engine once and reuse it. The same culture is used to read input and
-// to format results, so a displayed value can be typed back in.
+// To select a particular culture, create an engine once and reuse it.
+// Results retain that culture for display even if current culture changes.
 var engine = new CalculatorEngine(CalculatorOptions.ForCulture(new CultureInfo("de-DE")));
 
 if (engine.TryEvaluate("= 1.000,50 × (2 + 3)! + 15% of 200 =", out var value, out var diagnostic))
 {
-	Console.WriteLine(engine.FormatResult(value).PrimaryDisplay);
+	Console.WriteLine(value.PrimaryDisplay);
 }
 else
 {
@@ -117,8 +117,10 @@ var options = CalculatorOptions.ForCurrentCulture() with
 var engine = new CalculatorEngine(options);
 ```
 
-- `CalculatorOptions.Default` uses the invariant culture with all passes enabled.
-- `ForCurrentCulture()` captures the culture at the moment of the call. If the user changes culture later, create new options and a new engine; an existing engine does not follow.
+- `new CalculatorOptions()` and each access to `CalculatorOptions.Default` capture current culture with all passes enabled.
+- `new CalculatorEngine()` and each access to `CalculatorEngine.Default` create an engine capturing current culture. `ForCurrentCulture()` also captures at call time. Existing options and engines do not follow later culture changes.
+- `Calculator` resolves current culture per call; its results retain the culture used for evaluation.
+- Explicitly select `CultureInfo.InvariantCulture` for machine-authored expressions, including `MachineReadable` output. Machine text and serialization never use the display culture.
 - An engine is bound to one culture. Applications serving users with different cultures should keep one engine per culture.
 - Set `Normalization = null` for raw mode, which passes text to the parser untouched. This suits serialized or machine-generated expressions.
 - Angle units are never changed implicitly. Opt in explicitly with `with { AngleUnit = AngleUnit.Degrees }`.

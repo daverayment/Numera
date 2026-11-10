@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Numerics;
+using System.Text;
 
 namespace Numera.Tests;
 
@@ -111,14 +112,32 @@ public sealed class FormattingGuideTests
     }
 
     [TestMethod]
-    public void StaticFacade_ReadsInvariantInputWhateverTheCurrentCulture()
+    [DataRow("de-DE", "1000 + 2,5", "1.002,5")]
+    [DataRow("fr-FR", "1000 + 2,5", "1\u202f002,5")]
+    [DataRow("en-US", "1000 + 2.5", "1,002.5")]
+    public void StaticFacade_ReadsAndDisplaysUsingCurrentCulture(string culture, string input, string expected)
     {
         var original = CultureInfo.CurrentCulture;
         try
         {
-            CultureInfo.CurrentCulture = German;
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
+            var result = Calculator.Evaluate(input);
 
-            Assert.AreEqual(1002.5m, Calculator.Evaluate("1000 + 2.5").DecimalValue);
+            Assert.AreEqual(1002.5m, result.DecimalValue);
+            Assert.AreEqual(culture, result.Culture?.Name);
+            Assert.AreEqual(expected, result.PrimaryDisplay);
+            Assert.AreEqual(expected, result.FormatResult().PrimaryDisplay);
+            Assert.AreEqual("1002.5", result.MachineReadable);
+            Assert.AreEqual(result.Value, Calculator.Evaluate(expected).Value);
+            Assert.IsTrue(Calculator.TryEvaluate(input, out var attempted, out var diagnostic));
+            Assert.IsNull(diagnostic);
+            Assert.AreEqual(result.Value, attempted.Value);
+            Assert.AreEqual(expected, attempted.PrimaryDisplay);
+            Assert.AreEqual(result.Value, Calculator.Evaluate(Calculator.Parse(input)).Value);
+            Assert.IsTrue(Calculator.TryParse(input, out var node, out diagnostic));
+            Assert.IsNull(diagnostic);
+            Assert.AreEqual(result.Value, Calculator.Evaluate(node).Value);
+            Assert.AreEqual("1000 + 2.5", Calculator.FormatExpression(input, ExpressionFormatOptions.Ascii));
         }
         finally
         {
@@ -127,21 +146,125 @@ public sealed class FormattingGuideTests
     }
 
     [TestMethod]
-    public void StaticFormatResult_WithoutACulture_UsesTheCurrentCulture()
+    public void ResultsAndExistingEnginesRetainCultureWhileFacadeFollowsCurrentCulture()
     {
         var original = CultureInfo.CurrentCulture;
         try
         {
             CultureInfo.CurrentCulture = German;
-            var value = Calculator.Evaluate("1000 + 2.5");
+            var engine = new CalculatorEngine();
+            var result = Calculator.Evaluate("1000 + 2,5");
+            Assert.AreEqual(2.5m, Calculator.Evaluate("max(1,5; 2,5)").DecimalValue);
 
-            var shown = Calculator.FormatResult(value);
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
 
-            // Display follows the current culture, so the facade, which reads invariant text,
-            // cannot re-parse it. That asymmetry is why the docs recommend an engine.
-            Assert.AreEqual("1.002,5", shown.PrimaryDisplay);
-            Assert.AreEqual("1002.5", shown.MachineReadable);
-            Assert.AreEqual("1,002.5", Calculator.FormatResult(value, CultureInfo.InvariantCulture).PrimaryDisplay);
+            Assert.AreEqual("1.002,5", result.PrimaryDisplay);
+            Assert.AreEqual("1.002,5", result.FormatResult().PrimaryDisplay);
+            Assert.AreEqual("1.002,5", result.FormatResult(null, null).PrimaryDisplay);
+            Assert.AreEqual("1.002,5", result.ToString());
+            Assert.AreEqual("1.002,5", $"{result}");
+            Assert.AreEqual("1.002,5", engine.Evaluate("1000 + 2,5").PrimaryDisplay);
+            Assert.AreEqual(result.Value, engine.Evaluate(result.PrimaryDisplay).Value);
+            Assert.AreEqual("1,002.5", Calculator.Evaluate("1000 + 2.5").PrimaryDisplay);
+            Assert.AreEqual("1,002.5", result.FormatResult(culture: CultureInfo.InvariantCulture).PrimaryDisplay);
+            Assert.AreEqual("1002.5", result.FormatResult().MachineReadable);
+            Assert.AreEqual(result.Value, CalculatorEngine.ForCulture(CultureInfo.InvariantCulture)
+                .Evaluate(result.MachineReadable).Value);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+    }
+
+    [TestMethod]
+    public void ExplicitNumericFormatsAndSpansRetainResultCultureUnlessOverridden()
+    {
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            var result = GermanEngine().Evaluate("1234,5");
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
+
+            Assert.AreEqual("1234,50", result.ToString("F2", null));
+            Assert.AreEqual("1234,50", $"{result:F2}");
+            Assert.AreEqual("1234.50", result.ToString("F2", CultureInfo.InvariantCulture));
+            Span<char> chars = stackalloc char[32];
+            Span<byte> bytes = stackalloc byte[32];
+            foreach (string format in new[] { "", "F2" })
+            {
+                string expected = format.Length == 0 ? "1.234,5" : "1234,50";
+                Assert.IsTrue(result.TryFormat(chars, out int charsWritten, format));
+                Assert.AreEqual(expected, chars[..charsWritten].ToString());
+                Assert.IsTrue(result.TryFormat(bytes, out int bytesWritten, format));
+                Assert.AreEqual(expected, Encoding.UTF8.GetString(bytes[..bytesWritten]));
+
+                string invariant = format.Length == 0 ? "1,234.5" : "1234.50";
+                Assert.IsTrue(result.TryFormat(chars, out charsWritten, format, CultureInfo.InvariantCulture));
+                Assert.AreEqual(invariant, chars[..charsWritten].ToString());
+                Assert.IsTrue(result.TryFormat(bytes, out bytesWritten, format, CultureInfo.InvariantCulture));
+                Assert.AreEqual(invariant, Encoding.UTF8.GetString(bytes[..bytesWritten]));
+            }
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+    }
+
+    [TestMethod]
+    public void ResultOverridesAndReceivingEnginePolicyAreExplicitAndIndependent()
+    {
+        var options = new ResultFormatOptions { SignificantDigits = 3, GroupDigits = false };
+        var origin = new CalculatorEngine(new CalculatorOptions { Culture = German, ResultFormat = options });
+        var result = origin.Evaluate("amount=12,345");
+        var moreDigits = options with { SignificantDigits = 5 };
+
+        Assert.AreEqual("12,3", result.FormatResult().PrimaryDisplay);
+        Assert.AreEqual("12,3", result.FormatResult(culture: null).PrimaryDisplay);
+        Assert.AreEqual("12,345", result.FormatResult(moreDigits).PrimaryDisplay);
+        Assert.AreEqual("12.3", result.FormatResult(culture: CultureInfo.InvariantCulture).PrimaryDisplay);
+        var overridden = result.FormatResult(moreDigits, CultureInfo.InvariantCulture);
+        Assert.AreEqual("12.345", overridden.PrimaryDisplay);
+        Assert.AreEqual("12.345", overridden.MachineReadable);
+        Assert.AreEqual("2469/200", overridden.FractionRepresentation);
+        Assert.AreSame(result.AssignedVariables, overridden.AssignedVariables);
+
+        var receiving = new CalculatorEngine(new CalculatorOptions
+        {
+            Culture = CultureInfo.InvariantCulture,
+            ResultFormat = options with { SignificantDigits = 4 }
+        });
+        Assert.AreEqual("12.34", receiving.FormatResult(result).PrimaryDisplay);
+        Assert.AreEqual("12.34", receiving.FormatResult(result.Value).PrimaryDisplay);
+        Assert.AreEqual("12.34", receiving.FormatResult(result, null, null).PrimaryDisplay);
+        Assert.AreEqual("12.34", receiving.FormatResult(result.Value, null, null).PrimaryDisplay);
+        Assert.AreEqual("12,345", receiving.FormatResult(result, moreDigits, German).PrimaryDisplay);
+        Assert.AreEqual("12,345", receiving.FormatResult(result.Value, moreDigits, German).PrimaryDisplay);
+        Assert.AreSame(result.AssignedVariables, receiving.FormatResult(result).AssignedVariables);
+        Assert.AreEqual("12,3", result.PrimaryDisplay);
+        Assert.AreSame(options, result.FormatOptions);
+
+        var integer = origin.Evaluate("n=42");
+        Assert.AreEqual("2A", integer.FormatResult(prefixRadixOutput: false).HexRepresentation);
+        Assert.AreEqual("101010", receiving.FormatResult(integer, prefixRadixOutput: false).BinaryRepresentation);
+        Assert.AreEqual("52", receiving.FormatResult(integer.Value, prefixRadixOutput: false).OctalRepresentation);
+    }
+
+    [TestMethod]
+    public void ResultsWithoutCapturedOptionsUseHumanFacingDefaults()
+    {
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = German;
+            var result = new EvaluationResult(new MathValue(12.5m), EvaluationContext.Empty);
+
+            Assert.IsNull(result.Options);
+            Assert.AreEqual("12,5", result.PrimaryDisplay);
+            Assert.AreEqual("12,5", result.FormatResult().PrimaryDisplay);
+            Assert.AreEqual("12,50", result.ToString("F2", null));
+            Assert.AreEqual("12.5", result.FormatResult(culture: CultureInfo.InvariantCulture).PrimaryDisplay);
         }
         finally
         {

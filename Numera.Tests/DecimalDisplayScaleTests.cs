@@ -46,7 +46,7 @@ public sealed class DecimalDisplayScaleTests
     public void ExpressionsPreserveOnlyBoundedDecimalScale(string expression, string expected)
     {
         var result = Calculator.Evaluate(expression);
-        var card = result.FormatResult(CultureInfo.InvariantCulture);
+        var card = result.FormatResult(culture: CultureInfo.InvariantCulture);
         Assert.AreEqual(expected, card.PrimaryDisplay);
         AssertDefaultDisplay(result, expected);
         Assert.IsFalse(card.IsDisplayRounded);
@@ -117,16 +117,17 @@ public sealed class DecimalDisplayScaleTests
     [TestMethod]
     public void DirectDecimalValuesRespectTheSameDisplayThresholds()
     {
-        Assert.AreEqual("1", Calculator.FormatResult(MathValue.FromFraction(1, 2) * new MathValue(2)).PrimaryDisplay);
-        Assert.AreEqual("94.40", Calculator.FormatResult(new MathValue(94.40m)).PrimaryDisplay);
-        Assert.AreEqual("94.4000", Calculator.FormatResult(new MathValue(94.4000m)).PrimaryDisplay);
-        Assert.AreEqual("94.4", Calculator.FormatResult(new MathValue(94.40000m)).PrimaryDisplay);
-        Assert.AreEqual("100.00", Calculator.FormatResult(new MathValue(100.00m)).PrimaryDisplay);
-        Assert.AreEqual("100", Calculator.FormatResult(new MathValue(100.000m)).PrimaryDisplay);
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+        Assert.AreEqual("1", engine.FormatResult(MathValue.FromFraction(1, 2) * new MathValue(2)).PrimaryDisplay);
+        Assert.AreEqual("94.40", engine.FormatResult(new MathValue(94.40m)).PrimaryDisplay);
+        Assert.AreEqual("94.4000", engine.FormatResult(new MathValue(94.4000m)).PrimaryDisplay);
+        Assert.AreEqual("94.4", engine.FormatResult(new MathValue(94.40000m)).PrimaryDisplay);
+        Assert.AreEqual("100.00", engine.FormatResult(new MathValue(100.00m)).PrimaryDisplay);
+        Assert.AreEqual("100", engine.FormatResult(new MathValue(100.000m)).PrimaryDisplay);
         var unverified = new MathValue(94.40m).WithAccuracy(CalculationAccuracy.Unverified);
-        Assert.AreEqual("94.40", Calculator.FormatResult(unverified).PrimaryDisplay);
-        Assert.IsNull(Calculator.FormatResult(unverified).FractionRepresentation);
-        Assert.AreEqual("0.5", Calculator.FormatResult(new MathValue(0.5)).PrimaryDisplay);
+        Assert.AreEqual("94.40", engine.FormatResult(unverified).PrimaryDisplay);
+        Assert.IsNull(engine.FormatResult(unverified).FractionRepresentation);
+        Assert.AreEqual("0.5", engine.FormatResult(new MathValue(0.5)).PrimaryDisplay);
     }
 
     [TestMethod]
@@ -253,8 +254,8 @@ public sealed class DecimalDisplayScaleTests
         Assert.AreEqual(expected, result.PrimaryDisplay);
         Assert.AreEqual(expected, result.FormatResult().PrimaryDisplay);
         Assert.AreEqual(expected, engine.FormatResult(result).PrimaryDisplay);
-        Assert.AreEqual(expected, ResultFormatter.Format(result, options).PrimaryDisplay);
-        Assert.AreEqual(expected, ResultFormatter.Format(result.Value, options).PrimaryDisplay);
+        Assert.AreEqual(expected, result.FormatResult(options).PrimaryDisplay);
+        Assert.AreEqual(expected, engine.FormatResult(result.Value, options).PrimaryDisplay);
         Assert.AreEqual(result.Value.ToInvariantExpression(), result.MachineReadable);
         Assert.AreEqual(Calculator.Evaluate(expression).MachineReadable, result.MachineReadable);
     }
@@ -266,7 +267,7 @@ public sealed class DecimalDisplayScaleTests
         Assert.AreEqual(ExponentMarker.Lowercase, ResultFormatOptions.Default.ExponentMarker);
         var result = Calculator.Evaluate("1e-400");
         Assert.AreEqual("1e-400", result.Value.ToString(CultureInfo.InvariantCulture));
-        Assert.AreEqual("1E-400", ResultFormatter.Format(result,
+        Assert.AreEqual("1E-400", result.FormatResult(
             new ResultFormatOptions { ExponentMarker = ExponentMarker.Uppercase }).PrimaryDisplay);
         AssertDefaultDisplay(result, "1e-400");
         Assert.AreEqual("exp(1E-400) + ResultE",

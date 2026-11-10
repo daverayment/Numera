@@ -61,6 +61,12 @@ public readonly partial struct MathValue :
         Rational
     }
 
+    private readonly BigInteger integerValue;
+
+    private readonly decimal decimalValue;
+
+    private readonly double doubleValue;
+
     private readonly BigInteger numerator;
 
     private readonly BigInteger denominator;
@@ -83,19 +89,31 @@ public readonly partial struct MathValue :
     public CalculationAccuracy Accuracy { get; }
 
     /// <summary>
-    /// The stored integer, or zero if <see cref="Kind"/> is not Integer.
+    /// Gets the stored integer without converting other storage types.
     /// </summary>
-    public BigInteger IntegerValue { get; }
+    /// <exception cref="InvalidOperationException"><see cref="Kind"/> is not Integer.
+    /// </exception>
+    public BigInteger IntegerValue => Kind == DataType.Integer ?
+        integerValue :
+        throw new InvalidOperationException("Value is not stored as an integer.");
 
     /// <summary>
-    /// The stored decimal, or zero if <see cref="Kind"/> is not Decimal.
+    /// Gets the stored decimal without converting other storage types.
     /// </summary>
-    public decimal DecimalValue { get; }
+    /// <exception cref="InvalidOperationException"><see cref="Kind"/> is not Decimal.
+    /// </exception>
+    public decimal DecimalValue => Kind == DataType.Decimal ?
+        decimalValue :
+        throw new InvalidOperationException("Value is not stored as a decimal.");
 
     /// <summary>
-    /// The stored double, or zero if <see cref="Kind"/> is not Double.
+    /// Gets the stored double without converting other storage types.
     /// </summary>
-    public double DoubleValue { get; }
+    /// <exception cref="InvalidOperationException"><see cref="Kind"/> is not Double.
+    /// </exception>
+    public double DoubleValue => Kind == DataType.Double ?
+        doubleValue :
+        throw new InvalidOperationException("Value is not stored as a double.");
 
     /// <summary>
     /// The numerator of the reduced fraction.
@@ -125,7 +143,7 @@ public readonly partial struct MathValue :
         this = default;
         CheckBits(value, CalculationLimits.MaxIntegerBits);
         Kind = DataType.Integer;
-        IntegerValue = value;
+        integerValue = value;
         Accuracy = CalculationAccuracy.Exact;
     }
 
@@ -156,7 +174,7 @@ public readonly partial struct MathValue :
     {
         this = default;
         Kind = DataType.Decimal;
-        DecimalValue = value;
+        decimalValue = value;
         DecimalDisplayScale = DecomposeDecimal(value).Scale;
         Accuracy = CalculationAccuracy.Exact;
     }
@@ -168,7 +186,7 @@ public readonly partial struct MathValue :
     {
         this = default;
         Kind = DataType.Double;
-        DoubleValue = value;
+        doubleValue = value;
     }
 
     private MathValue(MathValue value, CalculationAccuracy accuracy)

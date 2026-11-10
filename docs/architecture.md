@@ -95,7 +95,7 @@ switch (result.Kind)
 }
 ```
 
-Representation access and conversion are distinct. Use `ToDouble()` (or `AsDouble()`) for an explicit, potentially lossy scalar conversion and `ToDecimal()` for an explicit Decimal conversion. `TryGetExactFraction` extracts a verified-exact fraction across Integer, Decimal, and Rational representations. Supplied exact inputs assert their value, not the accuracy of any calculation performed before supplying them.
+Representation access and conversion are distinct. Storage getters (`IntegerValue`, `DecimalValue`, `DoubleValue`, `Numerator`, and `Denominator`) throw `InvalidOperationException` if the storage type does not match; they never convert or return a placeholder zero. The same applies to the forwarded getters on `EvaluationResult` and `Variable`. Use `ToDouble()` (or `AsDouble()`) for an explicit, potentially lossy scalar conversion and `ToDecimal()` for an explicit Decimal conversion. `TryGetExactFraction` extracts a verified-exact fraction across Integer, Decimal, and Rational representations. Supplied exact inputs assert their value, not the accuracy of any calculation performed before supplying them.
 
 For callers who do not need storage details, `MathValue.ExactFraction` and `EvaluationResult.ExactFraction` return a nullable named tuple `(BigInteger Numerator, BigInteger Denominator)` in lowest terms. `GetExactFraction()` returns the same tuple or throws `InvalidOperationException` when finite Exact provenance is unavailable. Thus `1/3 + 2/3` exposes `(1, 1)` without requiring a Rational representation. The strict Rational-only storage getters remain unchanged. Caller-asserted Exact Doubles expose their stored binary fraction; ordinary Doubles and Unverified values do not qualify.
 
@@ -182,27 +182,30 @@ if (value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCultu
 
 | Property | Culture | Use it for |
 | :--- | :--- | :--- |
-| `PrimaryDisplay` | The engine's culture | Showing the result to the user |
+| `PrimaryDisplay` | The result's captured culture, unless explicitly overridden | Showing the result to the user |
 | `MachineReadable` | Always invariant | Clipboard, logs, storage, other programs |
 
 ```csharp
 var engine = new CalculatorEngine(CalculatorOptions.ForCulture(new CultureInfo("de-DE")));
 
 var value = engine.Evaluate("1000 + 2,5");   // the user types a decimal comma
-var shown = engine.FormatResult(value);
+var shown = value.FormatResult();
 
-shown.PrimaryDisplay;    // "1002,5"  (decimal comma, as the user would type it)
+shown.PrimaryDisplay;    // "1.002,5" (decimal comma and digit grouping)
 shown.MachineReadable;   // "1002.5"  (always invariant)
 shown.HexRepresentation; // null      (not an integer)
 ```
 
 The culture rules to be aware of:
 
-- **An engine reads and writes in one culture.** `engine.FormatResult` uses the same culture the engine uses to read input, so `PrimaryDisplay` can be typed or pasted back into that engine.
-- **Display text has no digit grouping.** Output is not grouped (`1002,5`, not `1.002,5`), so it stays re-parseable. Add grouping in your UI if you want it, from the original `Value`.
-- **The static facade is invariant for input, but not for display.** `Calculator.Evaluate` always reads invariant text, whereas `Calculator.FormatResult(value, culture)` formats with `CultureInfo.CurrentCulture` when no culture is passed. The result may then not be re-parseable by the facade. Use an engine, or pass `CultureInfo.InvariantCulture`, when round-tripping matters.
-- **Doubles use .NET's default round-trip formatting.** Unformatted `double` values use .NET's standard formatting, which produces the shortest round-trippable decimal representation. Check `Value.Type` if you need to flag a result as approximate.
-- **Radix strings and `MachineReadable` never depend on culture.**
+- **Human-facing defaults use current culture.** `Calculator` resolves it per call. New options and engines, including each access to their `Default` properties, capture it at creation; existing instances stay stable.
+- **Results retain their formatting policy.** `PrimaryDisplay`, `FormatResult()`, `ToString`, and span formatting use captured settings. Explicit options and culture override independently; null means retain the existing setting. Results without options fall back to library display defaults and current culture.
+- **Engine formatting deliberately selects the receiving engine's policy.** Use `engine.FormatResult(value)` for raw values or `engine.FormatResult(result)` to reformat under that engine's settings. `Calculator.FormatResult` is removed, and the standalone formatter is internal.
+- **Display text is grouped by default.** Set `ResultFormatOptions.GroupDigits` to false to disable grouping. Matching cultures avoids separator-related misinterpretation, but display rounding can still change the numerical value.
+- **Display rounding is distinct from calculation accuracy.** `IsDisplayRounded` describes presentation; `Accuracy` describes known exactness. Neither storage type nor a lack of display rounding proves calculation accuracy.
+- **Radix strings and `MachineReadable` never depend on culture.** Use an explicitly invariant engine to evaluate machine text; use serialization to preserve storage and metadata as well as value.
+
+Numeric output limits and eager generation of alternatives are unchanged. Display-width fitting is a separate, deferred feature.
 
 ---
 

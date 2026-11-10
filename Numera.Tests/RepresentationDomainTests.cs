@@ -7,6 +7,118 @@ namespace Numera.Tests;
 public sealed class RepresentationDomainTests
 {
     [TestMethod]
+    [DataRow("42", MathValue.DataType.Integer)]
+    [DataRow("0", MathValue.DataType.Integer)]
+    [DataRow("42.0", MathValue.DataType.Decimal)]
+    [DataRow("0.0", MathValue.DataType.Decimal)]
+    [DataRow("1/2", MathValue.DataType.Rational)]
+    [DataRow("hypot(0,42)", MathValue.DataType.Double)]
+    [DataRow("ln(1)", MathValue.DataType.Double)]
+    public void MismatchedStorageAccessorsThrowAcrossPublicSurfaces(string expression, MathValue.DataType kind)
+    {
+        var result = Calculator.Evaluate(expression);
+        var value = result.Value;
+        var variable = new Variable("x", value);
+        Assert.AreEqual(kind, value.Kind);
+
+        if (kind != MathValue.DataType.Integer)
+        {
+            Assert.ThrowsExactly<InvalidOperationException>(() => _ = value.IntegerValue);
+            Assert.ThrowsExactly<InvalidOperationException>(() => _ = result.IntegerValue);
+            Assert.ThrowsExactly<InvalidOperationException>(() => _ = variable.IntegerValue);
+        }
+
+        if (kind != MathValue.DataType.Decimal)
+        {
+            Assert.ThrowsExactly<InvalidOperationException>(() => _ = value.DecimalValue);
+            Assert.ThrowsExactly<InvalidOperationException>(() => _ = result.DecimalValue);
+            Assert.ThrowsExactly<InvalidOperationException>(() => _ = variable.DecimalValue);
+        }
+
+        if (kind != MathValue.DataType.Double)
+        {
+            Assert.ThrowsExactly<InvalidOperationException>(() => _ = value.DoubleValue);
+            Assert.ThrowsExactly<InvalidOperationException>(() => _ = result.DoubleValue);
+            Assert.ThrowsExactly<InvalidOperationException>(() => _ = variable.DoubleValue);
+        }
+
+        if (kind != MathValue.DataType.Rational)
+        {
+            Assert.ThrowsExactly<InvalidOperationException>(() => _ = value.Numerator);
+            Assert.ThrowsExactly<InvalidOperationException>(() => _ = value.Denominator);
+        }
+    }
+
+    [TestMethod]
+    public void MatchingStorageAccessorsReturnStoredValuesAcrossPublicSurfaces()
+    {
+        var integer = Calculator.Evaluate("42");
+        Assert.AreEqual(new BigInteger(42), integer.Value.IntegerValue);
+        Assert.AreEqual(new BigInteger(42), integer.IntegerValue);
+        Assert.AreEqual(new BigInteger(42), new Variable("x", integer.Value).IntegerValue);
+
+        var dec = Calculator.Evaluate("42.00");
+        Assert.AreEqual(42m, dec.Value.DecimalValue);
+        Assert.AreEqual(42m, dec.DecimalValue);
+        Assert.AreEqual(42m, new Variable("x", dec.Value).DecimalValue);
+
+        var floating = Calculator.Evaluate("hypot(0,42)");
+        Assert.AreEqual(42.0, floating.Value.DoubleValue);
+        Assert.AreEqual(42.0, floating.DoubleValue);
+        Assert.AreEqual(42.0, new Variable("x", floating.Value).DoubleValue);
+
+        var half = Calculator.Evaluate("1/2").Value;
+        Assert.AreEqual(BigInteger.One, half.Numerator);
+        Assert.AreEqual(new BigInteger(2), half.Denominator);
+    }
+
+    [TestMethod]
+    public void DefaultIntegerZeroAndDoubleSpecialValuesKeepTheirStoredValues()
+    {
+        var zero = default(MathValue);
+        Assert.AreEqual(BigInteger.Zero, zero.IntegerValue);
+        Assert.AreEqual(BigInteger.Zero, new EvaluationResult(zero, EvaluationContext.Empty).IntegerValue);
+        Assert.AreEqual(BigInteger.Zero, new Variable("x", zero).IntegerValue);
+        Assert.ThrowsExactly<InvalidOperationException>(() => _ = zero.DecimalValue);
+        Assert.ThrowsExactly<InvalidOperationException>(() => _ = zero.DoubleValue);
+
+        foreach (double input in new[] { 0.0, -0.0, double.NaN, double.PositiveInfinity, double.NegativeInfinity })
+        {
+            var value = new MathValue(input);
+            var result = new EvaluationResult(value, EvaluationContext.Empty);
+            var variable = new Variable("x", value);
+            long expectedBits = BitConverter.DoubleToInt64Bits(input);
+            Assert.AreEqual(expectedBits, BitConverter.DoubleToInt64Bits(value.DoubleValue));
+            Assert.AreEqual(expectedBits, BitConverter.DoubleToInt64Bits(result.DoubleValue));
+            Assert.AreEqual(expectedBits, BitConverter.DoubleToInt64Bits(variable.DoubleValue));
+            Assert.ThrowsExactly<InvalidOperationException>(() => _ = value.IntegerValue);
+            Assert.ThrowsExactly<InvalidOperationException>(() => _ = value.DecimalValue);
+        }
+    }
+
+    [TestMethod]
+    public void ExplicitConversionsRemainIndependentOfStorageAccessors()
+    {
+        foreach (var value in new[] { new MathValue(42), new MathValue(42m), new MathValue(42.0) })
+        {
+            var result = new EvaluationResult(value, EvaluationContext.Empty);
+            Assert.AreEqual(42.0, value.AsDouble());
+            Assert.AreEqual(42m, value.ToDecimal());
+            Assert.IsTrue(value.TryGetInteger(out var integer));
+            Assert.AreEqual(new BigInteger(42), integer);
+            Assert.AreEqual(42, (int)result);
+            Assert.AreEqual(42m, (decimal)result);
+            Assert.AreEqual(42.0, (double)result);
+        }
+
+        var half = Calculator.Evaluate("1/2");
+        Assert.AreEqual(0.5, half.AsDouble());
+        Assert.AreEqual(0.5m, (decimal)half);
+        Assert.ThrowsExactly<InvalidCastException>(() => _ = (int)half);
+        Assert.AreEqual(MathValue.DataType.Rational, half.Type);
+    }
+
+    [TestMethod]
     [DataRow("1/2", MathValue.DataType.Rational, 1, 2)]
     [DataRow("1/3", MathValue.DataType.Rational, 1, 3)]
     [DataRow("71/9", MathValue.DataType.Rational, 71, 9)]

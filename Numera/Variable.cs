@@ -88,18 +88,24 @@ public readonly record struct Variable
     }
 
     /// <summary>
-    /// Gets the decimal value of the variable's <see cref="MathValue"/>. 
+    /// Gets the stored decimal without converting other storage types.
     /// </summary>
+    /// <exception cref="InvalidOperationException">The number is not stored as Decimal.
+    /// </exception>
     public decimal DecimalValue => Value.DecimalValue;
 
     /// <summary>
-    /// Gets the integer value of the variable's <see cref="MathValue"/>.
+    /// Gets the stored integer without converting other storage types.
     /// </summary>
+    /// <exception cref="InvalidOperationException">The number is not stored as Integer.
+    /// </exception>
     public BigInteger IntegerValue => Value.IntegerValue;
 
     /// <summary>
-    /// Gets the double value of the variable's <see cref="MathValue"/>.
+    /// Gets the stored double without converting other storage types.
     /// </summary>
+    /// <exception cref="InvalidOperationException">The number is not stored as Double.
+    /// </exception>
     public double DoubleValue => Value.DoubleValue;
 
     /// <summary>

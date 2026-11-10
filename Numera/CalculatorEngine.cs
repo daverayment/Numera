@@ -8,7 +8,8 @@ namespace Numera;
 /// A long-lived, thread-safe calculator bound to one <see cref="CalculatorOptions"/>.
 /// Options are validated once at construction, and the same
 /// <see cref="CalculatorOptions.Culture"/> is used to interpret input and to format
-/// results, so a displayed value can be typed back in.
+/// results, avoiding culture-related changes when reading displayed text. Display
+/// rounding can still change the value; use machine-readable text for lossless transfer.
 /// </summary>
 /// <remarks>
 /// The engine holds no per-evaluation state: variables and <c>ans</c> travel in an
@@ -27,10 +28,10 @@ namespace Numera;
 public sealed class CalculatorEngine
 {
     /// <summary>
-    /// Gets the shared, default calculator engine using
-    /// <see cref="CalculatorOptions.Default"/>.
+    /// Creates a default engine capturing the current culture. Keep the returned engine
+    /// to reuse that culture and configuration across calls.
     /// </summary>
-    public static CalculatorEngine Default { get; } = new();
+    public static CalculatorEngine Default => new();
 
     /// <summary>
     /// Creates a new engine configured for the specified culture, using default limits
@@ -131,7 +132,7 @@ public sealed class CalculatorEngine
     /// </summary>
     /// <param name="options">The options to use; <c>null</c> selects
     /// <see cref="CalculatorOptions.Default"/>
-    /// (invariant culture, radians, normalization on).</param>
+    /// (current culture captured at construction, radians, normalization on).</param>
     /// <exception cref="ArgumentOutOfRangeException">Thrown if the options contain
     /// out-of-range values, such as an undefined angle unit or limits outside the
     /// supported ranges.</exception>
@@ -493,30 +494,14 @@ public sealed class CalculatorEngine
     /// <returns>A <see cref="FormattedCalculation"/> holding the original value, the
     /// display text in the specified culture, an invariant-culture string for machine
     /// use, and hex, binary and octal forms.</returns>
+    /// <remarks>Uses this engine's defaults, not the result's captured settings. Use
+    /// <see cref="EvaluationResult.FormatResult(ResultFormatOptions?, CultureInfo?, bool)"/>
+    /// to retain the result's policy. Non-null options and culture override independently.</remarks>
     public FormattedCalculation FormatResult(
-        EvaluationResult result, ResultFormatOptions? options, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
+        EvaluationResult result, ResultFormatOptions? options = null, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
         ResultFormatter.Format(
             result,
             options ?? Options.ResultFormat,
-            culture ?? Options.Culture,
-            prefixRadixOutput);
-
-    /// <summary>
-    /// Formats an evaluation result into a structured, presentation-ready card using the
-    /// engine's culture, or the caller-specified culture.
-    /// </summary>
-    /// <param name="result">The evaluation result to format.</param>
-    /// <param name="culture">The culture to use for formatting.</param>
-    /// <param name="prefixRadixOutput">Whether to prefix hexadecimal, binary, and octal
-    /// outputs with their respective radix indicators.</param>
-    /// <returns>A <see cref="FormattedCalculation"/> holding the original value, the
-    /// display text in the specified culture, an invariant-culture string for machine
-    /// use, and hex, binary and octal forms.</returns>
-    public FormattedCalculation FormatResult(
-        EvaluationResult result, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
-        ResultFormatter.Format(
-            result,
-            Options.ResultFormat,
             culture ?? Options.Culture,
             prefixRadixOutput);
 
@@ -533,50 +518,10 @@ public sealed class CalculatorEngine
     /// display text in the specified culture, an invariant-culture string for machine
     /// use, and prefixed hex, binary and octal forms.</returns>
     public FormattedCalculation FormatResult(
-        MathValue value, ResultFormatOptions? options, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
+        MathValue value, ResultFormatOptions? options = null, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
         ResultFormatter.Format(
             value,
             options ?? Options.ResultFormat,
             culture ?? Options.Culture,
             prefixRadixOutput);
-
-    /// <summary>
-    /// Formats a calculation value into a structured presentation-ready card using the
-    /// engine's culture, or the caller-specified culture.
-    /// </summary>
-    /// <param name="value">The calculation value to format.</param>
-    /// <param name="culture">The culture to use for formatting.</param>
-    /// <param name="prefixRadixOutput">Whether to prefix hexadecimal, binary, and octal
-    /// outputs with their respective radix indicators.</param>
-    /// <returns>A <see cref="FormattedCalculation"/> holding the original value, the
-    /// display text in the specified culture, an invariant-culture string for machine
-    /// use, and prefixed hex, binary and octal forms.</returns>
-    public FormattedCalculation FormatResult(
-        MathValue value, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
-        ResultFormatter.Format(
-            value,
-            Options.ResultFormat,
-            culture ?? Options.Culture,
-            prefixRadixOutput);
-
-    /// <summary>
-    /// Formats a result for display using this engine's culture, the same one used to
-    /// read input, so the displayed text can be typed back in.
-    /// </summary>
-    /// <param name="result">The evaluated result to format.</param>
-    /// <returns>A <see cref="FormattedCalculation"/> holding the original value, the
-    /// display text in this engine's culture, an invariant-culture string for machine
-    /// use, and prefixed hex, binary and octal forms.</returns>
-    public FormattedCalculation FormatResult(EvaluationResult result)
-        => FormatResult(result, Options.Culture);
-
-    /// <summary>
-    /// Formats a calculation value using this engine's culture.
-    /// </summary>
-    /// <param name="value">Calculation value to format.</param>
-    /// <returns>A <see cref="FormattedCalculation"/> holding the original value, the
-    /// display text in this engine's culture, an invariant-culture string for machine
-    /// use, and prefixed hex, binary and octal forms.</returns>
-    public FormattedCalculation FormatResult(MathValue value) =>
-        FormatResult(value, Options.Culture);
 }

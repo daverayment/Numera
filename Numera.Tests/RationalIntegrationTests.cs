@@ -68,7 +68,7 @@ public sealed class RationalIntegrationTests
     public void MachineReadableAndSerializationHaveDifferentContracts()
     {
         var value = MathValue.FromFraction(1, 3).WithAccuracy(CalculationAccuracy.Unverified);
-        var card = Calculator.FormatResult(value, CultureInfo.InvariantCulture);
+        var card = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture).FormatResult(value);
         Assert.AreEqual("1/3", card.MachineReadable);
         Assert.IsNull(card.FractionRepresentation);
         Assert.AreEqual(CalculationAccuracy.Exact, Calculator.Evaluate(card.MachineReadable).Accuracy);
@@ -102,7 +102,7 @@ public sealed class RationalIntegrationTests
     public void LosslessHugeIntegerOutputIsIndependentOfRoundedDisplay()
     {
         var value = new MathValue(BigInteger.One << 100);
-        var card = Calculator.FormatResult(value, CultureInfo.InvariantCulture);
+        var card = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture).FormatResult(value);
         Assert.AreEqual("1267650600228229401496703205376", card.MachineReadable);
         Assert.AreEqual(card.MachineReadable, card.FractionRepresentation);
         Assert.IsTrue(card.IsDisplayRounded);
@@ -127,10 +127,11 @@ public sealed class RationalIntegrationTests
     [TestMethod]
     public void TrustedExactDoubleCanOfferItsFractionWithoutCertifyingOrdinaryDoubles()
     {
+        var engine = new CalculatorEngine();
         var ordinary = new MathValue(0.5);
-        Assert.IsNull(Calculator.FormatResult(ordinary).FractionRepresentation);
+        Assert.IsNull(engine.FormatResult(ordinary).FractionRepresentation);
         var trusted = ordinary.WithAccuracy(CalculationAccuracy.Exact);
-        Assert.AreEqual("1/2", Calculator.FormatResult(trusted).FractionRepresentation);
+        Assert.AreEqual("1/2", engine.FormatResult(trusted).FractionRepresentation);
         Assert.IsTrue(new EvaluationResult(trusted, EvaluationContext.Empty).HasExactFraction);
         Assert.AreEqual(CalculationAccuracy.Unverified, (trusted + new MathValue(1)).Accuracy);
     }

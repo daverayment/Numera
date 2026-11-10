@@ -97,16 +97,17 @@ public class LanguageTests
     }
 
     [TestMethod]
-    public void InvariantSyntaxDoesNotDependOnCurrentCulture()
+    public void ExplicitInvariantSyntaxDoesNotDependOnCurrentCulture()
     {
         var original = CultureInfo.CurrentCulture;
         try
         {
-            // A comma-decimal culture must not change the core grammar: dots remain
-            // decimal points and commas remain function argument separators.
+            // Explicit invariant input keeps dots as decimal points and commas as
+            // argument separators, even in a comma-decimal calling context.
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
-            Assert.AreEqual(1.75m, Calculator.Evaluate("min(2.5,1.75,3)").DecimalValue);
-            Assert.IsFalse(Calculator.TryEvaluate("1,75", out _, out _));
+            var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+            Assert.AreEqual(1.75m, engine.Evaluate("min(2.5,1.75,3)").DecimalValue);
+            Assert.IsFalse(engine.TryEvaluate("1,75", out _, out _));
         }
         finally
         {

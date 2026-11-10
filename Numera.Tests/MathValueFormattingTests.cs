@@ -118,10 +118,10 @@ public sealed class MathValueFormattingTests
     }
 
     [TestMethod]
-    public void CalculatorFormatResultProducesStructuredCard()
+    public void EvaluationResultFormattingProducesStructuredCard()
     {
         var intResult = Calculator.Evaluate("1092");
-        var formattedInt = Calculator.FormatResult(intResult, CultureInfo.InvariantCulture);
+        var formattedInt = intResult.FormatResult(culture: CultureInfo.InvariantCulture);
 
         Assert.AreEqual(intResult, formattedInt.Value);
         Assert.AreEqual("1,092", formattedInt.PrimaryDisplay);
@@ -131,7 +131,7 @@ public sealed class MathValueFormattingTests
         Assert.AreEqual("0o2104", formattedInt.OctalRepresentation);
 
         var decResult = Calculator.Evaluate("194.40");
-        var formattedDec = Calculator.FormatResult(decResult, CultureInfo.InvariantCulture);
+        var formattedDec = decResult.FormatResult(culture: CultureInfo.InvariantCulture);
 
         Assert.AreEqual(decResult, formattedDec.Value);
         Assert.AreEqual("194.40", formattedDec.PrimaryDisplay);

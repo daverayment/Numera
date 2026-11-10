@@ -6,17 +6,21 @@ namespace Numera;
 /// Formats calculation results and math values into presentation-ready structured
 /// outputs, numbers, and strings according to configurable formatting options and culture.
 /// </summary>
-public static class ResultFormatter
+internal static class ResultFormatter
 {
     /// <summary>
     /// Formats an evaluation result into a presentation-ready <see cref="FormattedCalculation"/>
     /// using the specified options and culture.
     /// </summary>
     /// <param name="result">The evaluation result to format.</param>
-    /// <param name="options">The formatting options to use, or <see langword="null"/> for defaults.</param>
-    /// <param name="culture">The culture to use, or <see langword="null"/> for invariant culture.</param>
-    /// <param name="prefixRadixOutput">Whether to include radix prefixes ("0x", "0b", "0o").</param>
-    /// <returns>A <see cref="FormattedCalculation"/> holding the formatted representations.</returns>
+    /// <param name="options">The formatting options to use, or null to retain the
+    /// result's options.</param>
+    /// <param name="culture">The culture to use, or null to retain the result's culture.
+    /// </param>
+    /// <param name="prefixRadixOutput">Whether to include radix prefixes ("0x", "0b",
+    /// "0o").</param>
+    /// <returns>A <see cref="FormattedCalculation"/> holding the formatted
+    /// representations.</returns>
     public static FormattedCalculation Format(
         EvaluationResult result,
         ResultFormatOptions? options = null,
@@ -26,7 +30,7 @@ public static class ResultFormatter
         return FormatCore(
             result.Value,
             options ?? result.FormatOptions ?? ResultFormatOptions.Default,
-            culture ?? CultureInfo.InvariantCulture,
+            culture ?? result.Culture ?? CultureInfo.CurrentCulture,
             result.HasAssignments ? result.AssignedVariables : null,
             prefixRadixOutput);
     }
@@ -36,10 +40,13 @@ public static class ResultFormatter
     /// using the specified options and culture.
     /// </summary>
     /// <param name="value">The math value to format.</param>
-    /// <param name="options">The formatting options to use, or <see langword="null"/> for defaults.</param>
-    /// <param name="culture">The culture to use, or <see langword="null"/> for invariant culture.</param>
-    /// <param name="prefixRadixOutput">Whether to include radix prefixes ("0x", "0b", "0o").</param>
-    /// <returns>A <see cref="FormattedCalculation"/> holding the formatted representations.</returns>
+    /// <param name="options">The formatting options to use, or <see langword="null"/> for
+    /// defaults.</param>
+    /// <param name="culture">The culture to use, or null for current culture.</param>
+    /// <param name="prefixRadixOutput">Whether to include radix prefixes ("0x", "0b",
+    /// "0o").</param>
+    /// <returns>A <see cref="FormattedCalculation"/> holding the formatted
+    /// representations.</returns>
     public static FormattedCalculation Format(
         MathValue value,
         ResultFormatOptions? options = null,
@@ -49,7 +56,7 @@ public static class ResultFormatter
         return FormatCore(
             value,
             options ?? ResultFormatOptions.Default,
-            culture ?? CultureInfo.InvariantCulture,
+            culture ?? CultureInfo.CurrentCulture,
             null,
             prefixRadixOutput);
     }
@@ -81,7 +88,8 @@ public static class ResultFormatter
             FractionRepresentation: fraction,
             IsDisplayRounded: isRounded);
 
-        // Guard against any representation exceeding the configured maximum character limit.
+        // Guard against any representation exceeding the configured maximum character
+        // limit.
         foreach (var representation in new[]
         {
             formatted.PrimaryDisplay,

@@ -353,13 +353,13 @@ public sealed class RationalResultFormattingTests
     [TestMethod]
     public void StructuredResultExposesNumericAndExactFractionViews()
     {
-        var formatted = Calculator.FormatResult(Calculator.Evaluate("2 / 6"), CultureInfo.InvariantCulture);
+        var formatted = Calculator.Evaluate("2 / 6").FormatResult(culture: CultureInfo.InvariantCulture);
         Assert.AreEqual("0.333333333333333333333333", formatted.PrimaryDisplay);
         Assert.IsTrue(formatted.IsDisplayRounded);
         Assert.AreEqual("1/3", formatted.FractionRepresentation);
         Assert.AreEqual("1/3", formatted.MachineReadable);
 
-        var unverified = Calculator.FormatResult(new MathValue(0.5), CultureInfo.InvariantCulture);
+        var unverified = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture).FormatResult(new MathValue(0.5));
         Assert.IsFalse(unverified.IsDisplayRounded);
         Assert.IsNull(unverified.FractionRepresentation);
     }

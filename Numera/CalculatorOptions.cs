@@ -11,20 +11,21 @@ namespace Numera;
 public sealed record CalculatorOptions
 {
     /// <summary>
-    /// Default options: culture-invariant, radians, with standard human-input
-    /// normalization enabled. The instance is immutable and shared.
+    /// Creates default options capturing the current culture, with radians and standard
+    /// human-input normalization enabled. Each access returns a new immutable instance.
     /// </summary>
-    public static CalculatorOptions Default { get; } = new();
+    public static CalculatorOptions Default => new();
 
     // Culture and Environment.
 
     /// <summary>
     /// The culture used both to interpret typed input (decimal and grouping separators,
     /// argument delimiters) and to format results. Sharing one culture for both
-    /// directions is what keeps a displayed result re-parseable. Defaults to
-    /// <see cref="CultureInfo.InvariantCulture"/>.
+    /// directions avoids culture-related changes when reading displayed text. Captures
+    /// <see cref="CultureInfo.CurrentCulture"/> when the options are created. Set
+    /// <see cref="CultureInfo.InvariantCulture"/> explicitly for machine-authored input.
     /// </summary>
-    public CultureInfo Culture { get; init; } = CultureInfo.InvariantCulture;
+    public CultureInfo Culture { get; init; } = CultureInfo.CurrentCulture;
 
     /// <summary>
     /// The angular measurement unit applied to trigonometric functions. Defaults to

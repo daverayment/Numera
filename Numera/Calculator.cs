@@ -5,20 +5,15 @@ using Numera.Ast;
 namespace Numera;
 
 /// <summary>
-/// Static convenience facade for quick scripts, one-liners and tests. It delegates to a
-/// shared <see cref="CalculatorEngine"/> built from
-/// <see cref="CalculatorOptions.Default"/>: invariant culture, radians, and human-input
-/// normalization (launcher equals, Unicode operators, division colons) enabled.
-/// Applications that need another culture, angle unit or limits, or that want results
-/// formatted in the user's culture, should create their own
-/// <see cref="CalculatorEngine"/>.
+/// Static convenience facade for quick scripts, one-liners and tests. Each call uses
+/// the current culture, radians, and standard human-input normalization. Create a
+/// <see cref="CalculatorEngine"/> to reuse a stable culture or customize other settings.
 /// </summary>
 /// <remarks>
-/// Input is always read with invariant-culture rules here, so <c>1.5</c> is one and a
-/// half and a comma as an argument separator.
-/// <see cref="FormatResult(MathValue, CultureInfo?)"/>, however, defaults to the current
-/// culture for display, so a displayed result may not be re-parseable by this facade. A
-/// <see cref="CalculatorEngine"/> avoids that by using one culture in both directions.
+/// Results retain the culture used to read input, even if the current culture later
+/// changes. Use <see cref="EvaluationResult.PrimaryDisplay"/> for display text or
+/// <see cref="EvaluationResult.FormatResult(ResultFormatOptions?, CultureInfo?, bool)"/>
+/// for a formatted result with alternatives.
 /// Session state (variables and <c>ans</c>) is supplied per call through
 /// <see cref="EvaluationContext"/>; the facade itself holds none and is thread-safe.
 /// <code>
@@ -182,54 +177,4 @@ public static class Calculator
     /// limits.</exception>
     public static string FormatExpression(ExpressionNode node, ExpressionFormatOptions? options = null) =>
         CalculatorEngine.Default.FormatExpression(node, options);
-
-    /// <summary>
-    /// Formats a calculated <see cref="MathValue"/> into a structured
-    /// <see cref="FormattedCalculation"/>, providing primary user-facing localized text,
-    /// invariant machine-readable text, and radix representations (hexadecimal, binary,
-    /// octal) for integer results.
-    /// </summary>
-    /// <param name="value">The evaluated calculation result.</param>
-    /// <param name="culture">The culture for the primary display; defaults to
-    /// <see cref="CultureInfo.CurrentCulture"/>. A <see cref="CalculatorEngine"/> formats
-    /// with its own culture instead, which keeps display and input symmetrical.</param>
-    /// <returns>A <see cref="FormattedCalculation"/> holding the original value, the
-    /// culture-specific display text, an invariant-culture string safe for machine use,
-    /// and prefixed hex, binary and octal forms.</returns>
-    public static FormattedCalculation FormatResult(MathValue value, CultureInfo? culture = null) =>
-        ResultFormatter.Format(value, options: null, culture: culture ?? CultureInfo.CurrentCulture);
-
-    /// <summary>
-    /// Formats a calculated <see cref="MathValue"/> into a structured
-    /// <see cref="FormattedCalculation"/> with specified format options and optional culture.
-    /// </summary>
-    /// <param name="value">The evaluated calculation value.</param>
-    /// <param name="options">The formatting options.</param>
-    /// <param name="culture">Culture used for formatting, or current culture if null.</param>
-    /// <returns>A formatted calculation result.</returns>
-    public static FormattedCalculation FormatResult(MathValue value, ResultFormatOptions options, CultureInfo? culture = null) =>
-        ResultFormatter.Format(value, options, culture: culture ?? CultureInfo.CurrentCulture);
-
-    /// <summary>
-    /// Formats an evaluation result for display using the specified culture, and
-    /// preserves assigned variables when present.
-    /// </summary>
-    /// <param name="result">Evaluation output to format, including the computed value and
-    /// assignment metadata.</param>
-    /// <param name="culture">Culture used for formatting. If null, the current culture is
-    /// used.</param>
-    /// <returns>A formatted calculation that contains the formatted value and any
-    /// assigned variables from the evaluation result.</returns>
-    public static FormattedCalculation FormatResult(EvaluationResult result, CultureInfo? culture = null) =>
-        ResultFormatter.Format(result, options: null, culture: culture ?? CultureInfo.CurrentCulture);
-
-    /// <summary>
-    /// Formats an evaluation result for display using the specified format options and optional culture.
-    /// </summary>
-    /// <param name="result">Evaluation output to format.</param>
-    /// <param name="options">The formatting options.</param>
-    /// <param name="culture">Culture used for formatting, or current culture if null.</param>
-    /// <returns>A formatted calculation result.</returns>
-    public static FormattedCalculation FormatResult(EvaluationResult result, ResultFormatOptions options, CultureInfo? culture = null) =>
-        ResultFormatter.Format(result, options, culture: culture ?? CultureInfo.CurrentCulture);
 }
