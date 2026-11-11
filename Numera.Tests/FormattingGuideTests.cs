@@ -350,6 +350,142 @@ public sealed class FormattingGuideTests
     }
 
     [TestMethod]
+    public void FacadeResultFormattingUsesFreshDefaultsWithoutChangingCapturedSettings()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            var origin = new CalculatorEngine(new CalculatorOptions
+            {
+                Culture = German,
+                ResultFormat = new ResultFormatOptions { SignificantDigits = 3, GroupDigits = false }
+            });
+            var result = origin.Evaluate("amount=1234,5");
+            var captured = result.FormatResult();
+            var context = result.Context;
+            var options = result.Options;
+            (string Culture, string Expected)[] cases =
+            [
+                ("en-US", "1,234.5"),
+                ("de-DE", "1.234,5")
+            ];
+
+            foreach (var (culture, expected) in cases)
+            {
+                CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
+                var formatted = Calculator.FormatResult(result);
+                var raw = Calculator.FormatResult(result.Value);
+                Assert.AreEqual(expected, formatted.PrimaryDisplay);
+                Assert.AreEqual(expected, raw.PrimaryDisplay);
+                Assert.AreEqual("1234.5", formatted.MachineReadable);
+                Assert.AreEqual("1234.5", raw.MachineReadable);
+                Assert.IsFalse(formatted.IsDisplayRounded);
+                Assert.AreSame(result.AssignedVariables, formatted.AssignedVariables);
+                Assert.AreEqual(result.AssignedVariables.FormatSummary(CultureInfo.CurrentCulture), formatted.AssignmentSummary);
+                Assert.IsNotNull(formatted.AssignmentSummary);
+                Assert.IsNull(raw.AssignedVariables);
+                Assert.IsNull(raw.AssignmentSummary);
+                Assert.AreEqual(CalculatorEngine.Default.FormatResult(result), formatted);
+                Assert.AreEqual(CalculatorEngine.Default.FormatResult(result.Value), raw);
+                Assert.AreEqual(formatted, Calculator.FormatResult(result, null, null));
+                Assert.AreEqual(raw, Calculator.FormatResult(result.Value, null, null));
+            }
+
+            Assert.AreEqual("1230", captured.PrimaryDisplay);
+            Assert.IsTrue(captured.IsDisplayRounded);
+            Assert.AreEqual(captured, result.FormatResult());
+            Assert.AreSame(context, result.Context);
+            Assert.AreSame(options, result.Options);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [TestMethod]
+    public void FacadeResultFormattingOverridesOptionsAndCultureIndependently()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
+            var origin = new CalculatorEngine(new CalculatorOptions
+            {
+                Culture = German,
+                ResultFormat = new ResultFormatOptions { SignificantDigits = 3 }
+            });
+            var result = origin.Evaluate("amount=12,345");
+            var custom = new ResultFormatOptions { SignificantDigits = 4, GroupDigits = false };
+            (ResultFormatOptions? Options, CultureInfo? Culture, string Expected)[] cases =
+            [
+                (null, null, "12.345"),
+                (custom, null, "12.34"),
+                (null, German, "12,345"),
+                (custom, German, "12,34")
+            ];
+
+            foreach (var (options, culture, expected) in cases)
+            {
+                var formatted = Calculator.FormatResult(result, options, culture);
+                var raw = Calculator.FormatResult(result.Value, options, culture);
+                Assert.AreEqual(expected, formatted.PrimaryDisplay);
+                Assert.AreEqual(expected, raw.PrimaryDisplay);
+                Assert.AreEqual("12.345", formatted.MachineReadable);
+                Assert.AreEqual("2469/200", formatted.FractionRepresentation);
+                Assert.AreEqual(formatted.FractionRepresentation, raw.FractionRepresentation);
+                Assert.AreSame(result.AssignedVariables, formatted.AssignedVariables);
+                Assert.AreEqual(result.AssignedVariables.FormatSummary(culture ?? CultureInfo.CurrentCulture), formatted.AssignmentSummary);
+                Assert.IsNull(raw.AssignedVariables);
+                Assert.IsNull(raw.AssignmentSummary);
+                Assert.AreEqual(CalculatorEngine.Default.FormatResult(result, options, culture), formatted);
+                Assert.AreEqual(CalculatorEngine.Default.FormatResult(result.Value, options, culture), raw);
+                Assert.AreEqual(result.Value.Serialize(), formatted.Value.Serialize());
+                Assert.AreEqual(result.Value.Serialize(), raw.Value.Serialize());
+            }
+
+            Assert.AreEqual("12,3", result.PrimaryDisplay);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [TestMethod]
+    [DataRow(true, "0x2A", "0b101010", "0o52")]
+    [DataRow(false, "2A", "101010", "52")]
+    public void FacadeResultFormattingForwardsRadixPrefixChoice(bool prefixes, string hex, string binary, string octal)
+    {
+        var result = Calculator.Evaluate("n=42");
+        var formatted = Calculator.FormatResult(result, prefixRadixOutput: prefixes);
+        var raw = Calculator.FormatResult(result.Value, prefixRadixOutput: prefixes);
+
+        foreach (var card in new[] { formatted, raw })
+        {
+            Assert.AreEqual(hex, card.HexRepresentation);
+            Assert.AreEqual(binary, card.BinaryRepresentation);
+            Assert.AreEqual(octal, card.OctalRepresentation);
+            Assert.AreEqual("42", card.MachineReadable);
+            Assert.AreEqual("42", card.FractionRepresentation);
+        }
+
+        Assert.AreSame(result.AssignedVariables, formatted.AssignedVariables);
+        Assert.IsNull(raw.AssignedVariables);
+    }
+
+    [TestMethod]
+    public void FacadeResultFormattingRejectsInvalidDisplayOptions()
+    {
+        var result = Calculator.Evaluate("42");
+        var invalid = new ResultFormatOptions { SignificantDigits = 0 };
+        var withResult = Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => Calculator.FormatResult(result, invalid));
+        var withValue = Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => Calculator.FormatResult(result.Value, invalid));
+        Assert.AreEqual("SignificantDigits", withResult.ParamName);
+        Assert.AreEqual("SignificantDigits", withValue.ParamName);
+    }
+
+    [TestMethod]
     public void DoubleResults_UseRoundTripPrecision()
     {
         var value = new MathValue(0.1 + 0.2);

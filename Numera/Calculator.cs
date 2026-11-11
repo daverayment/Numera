@@ -5,15 +5,18 @@ using Numera.Ast;
 namespace Numera;
 
 /// <summary>
-/// Static convenience facade for quick scripts, one-liners and tests. Each call uses
-/// the current culture, radians, and standard human-input normalization. Create a
-/// <see cref="CalculatorEngine"/> to reuse a stable culture or customize other settings.
+/// Static convenience facade for quick scripts, one-liners and tests. By default, each
+/// call uses the current culture, radians, and standard human-input normalization. Create
+/// a <see cref="CalculatorEngine"/> to reuse a stable culture or customize other
+/// settings.
 /// </summary>
 /// <remarks>
 /// Results retain the culture used to read input, even if the current culture later
 /// changes. Use <see cref="EvaluationResult.PrimaryDisplay"/> for display text or
 /// <see cref="EvaluationResult.FormatResult(ResultFormatOptions?, CultureInfo?, bool)"/>
-/// for a formatted result with alternatives.
+/// for a formatted result with alternatives retaining those settings. In contrast,
+/// this facade's FormatResult methods use library display defaults and current culture
+/// at call time, unless explicitly overridden.
 /// Session state (variables and <c>ans</c>) is supplied per call through
 /// <see cref="EvaluationContext"/>; the facade itself holds none and is thread-safe.
 /// <code>
@@ -184,4 +187,58 @@ public static class Calculator
     /// limits.</exception>
     public static string FormatExpression(ExpressionNode node, ExpressionFormatOptions? options = null) =>
         CalculatorEngine.Default.FormatExpression(node, options);
+
+    /// <summary>
+    /// Formats a result using library display defaults and current culture at call time,
+    /// rather than the result's captured formatting policy.
+    /// </summary>
+    /// <param name="result">The evaluation result, including assignment metadata.</param>
+    /// <param name="options">Display options, or null for library defaults.</param>
+    /// <param name="culture">Display culture, or null for current culture at call time.
+    /// </param>
+    /// <param name="prefixRadixOutput">Whether to include hexadecimal, binary, and octal
+    /// prefixes.</param>
+    /// <returns>A fully prepared snapshot containing all applicable representations.
+    /// </returns>
+    /// <remarks>
+    /// Options and culture override independently. Use
+    /// <see cref="EvaluationResult.FormatResult(ResultFormatOptions?, CultureInfo?, bool)"/>
+    /// instead to retain the result's captured settings, as for calculator history.
+    /// Formatting preserves the value and assignments without re-evaluating the
+    /// expression.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">A display option is invalid.
+    /// </exception>
+    /// <exception cref="CalculationLimitException">A numerical formatting limit is
+    /// exceeded.</exception>
+    public static FormattedCalculation FormatResult(
+        EvaluationResult result,
+        ResultFormatOptions? options = null,
+        CultureInfo? culture = null,
+        bool prefixRadixOutput = true) =>
+        CalculatorEngine.Default.FormatResult(result, options, culture, prefixRadixOutput);
+
+    /// <summary>
+    /// Formats a value using library display defaults and current culture at call time.
+    /// </summary>
+    /// <param name="value">The value to format.</param>
+    /// <param name="options">Display options, or null for library defaults.</param>
+    /// <param name="culture">Display culture, or null for current culture at call time.
+    /// </param>
+    /// <param name="prefixRadixOutput">Whether to include hexadecimal, binary, and octal
+    /// prefixes.</param>
+    /// <returns>A fully prepared snapshot containing all applicable representations, with
+    /// no assignment metadata.</returns>
+    /// <remarks>Options and culture override independently. The stored value and its
+    /// exactness are not changed.</remarks>
+    /// <exception cref="ArgumentOutOfRangeException">A display option is invalid.
+    /// </exception>
+    /// <exception cref="CalculationLimitException">A numerical formatting limit is
+    /// exceeded.</exception>
+    public static FormattedCalculation FormatResult(
+        MathValue value,
+        ResultFormatOptions? options = null,
+        CultureInfo? culture = null,
+        bool prefixRadixOutput = true) =>
+        CalculatorEngine.Default.FormatResult(value, options, culture, prefixRadixOutput);
 }

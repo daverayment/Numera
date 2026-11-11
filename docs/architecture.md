@@ -318,7 +318,7 @@ if (value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCultu
 
 | Property | Culture | Use it for |
 | :--- | :--- | :--- |
-| `PrimaryDisplay` | The result's captured culture, unless explicitly overridden | Showing the result to the user |
+| `PrimaryDisplay` | Selected by the formatting entry point, unless explicitly overridden | Showing the result to the user |
 | `MachineReadable` | Always invariant | Clipboard, logs, storage, other programs |
 
 ```csharp
@@ -336,14 +336,20 @@ The culture rules to be aware of:
 
 - **Human-facing defaults use current culture.** `Calculator` resolves it per call. New options and engines, including each access to their `Default` properties, capture it at creation; existing instances stay stable.
 - **Results retain their formatting policy.** `PrimaryDisplay`, `FormatResult()`, `ToString`, and span formatting use captured settings. Explicit options and culture override independently; null means retain the existing setting. Results without options fall back to library display defaults and current culture.
-- **Engine formatting deliberately selects the receiving engine's policy.** Use `engine.FormatResult(value)` for raw values or `engine.FormatResult(result)` to reformat under that engine's settings. `Calculator.FormatResult` is removed, and the standalone formatter is internal.
+- **Engine formatting deliberately selects the receiving engine's policy.** Use `engine.FormatResult(value)` for raw values or `engine.FormatResult(result)` to reformat under that engine's settings.
+- **Facade formatting selects fresh defaults and current culture.** `Calculator.FormatResult(result)` and `Calculator.FormatResult(value)` delegate to `CalculatorEngine.Default`, ignoring any result's captured formatting policy. Explicit options and culture override independently; null selects library display defaults or current culture, respectively. Prefer `result.FormatResult()` for saved history whose originating settings should be retained. The standalone formatter remains internal.
 - **Display text is grouped by default.** Set `ResultFormatOptions.GroupDigits` to false to disable grouping. Matching cultures avoids separator-related misinterpretation, but display rounding can still change the numerical value.
 - **Display rounding is distinct from calculation exactness.** Use `IsDisplayRounded` to explain a shortened representation and `Exactness` to explain established exactness. `1/3` needs the former despite being Exact; `ln(1)` remains Unverified without it. Neither storage type nor a lack of display rounding establishes exactness.
 - **Radix strings and `MachineReadable` never depend on culture.** Use an explicitly invariant engine to evaluate machine text; use serialization to preserve storage and metadata as well as value.
 
 ### Complete Presentation Snapshots
 
-`result.FormatResult()` and both engine formatting routes return an immutable `FormattedCalculation`. All representations and summaries are prepared before returning. `PrimaryDisplay` and `MachineReadable` are non-null, and `IsDisplayRounded` is a boolean. Alternatives are null only when unavailable for the value, such as binary for a third or an exact fraction for an Unverified result. Reading properties, caching the snapshot, or switching views does not trigger formatting or new formatting exceptions.
+`result.FormatResult()` and the engine and facade formatting routes return an immutable `FormattedCalculation`. All representations and summaries are prepared before returning. `PrimaryDisplay` and `MachineReadable` are non-null, and `IsDisplayRounded` is a boolean. Alternatives are null only when unavailable for the value, such as binary for a third or an exact fraction for an Unverified result. Reading properties, caching the snapshot, or switching views does not trigger formatting or new formatting exceptions.
+
+Both engine and facade provide separate `EvaluationResult` and `MathValue` overloads.
+Passing a result preserves its assignment metadata and prepares the assignment summary
+in the selected culture. Passing `.Value` formats only the number, without assignments.
+Neither route changes the source value, its exactness, or its captured settings.
 
 `AssignmentSummary` is prepared using the selected culture and native value formatting, including existing definition text. It is null when there are no assignments. Its text, like the numeric presentations, is unaffected by subsequent current-culture changes.
 
