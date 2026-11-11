@@ -42,11 +42,18 @@ Fluent chained registration is also supported:
 
 ```csharp
 var functions = CustomFunctionCollection.Empty
-	.Add("double", (MathValue x) => x * new MathValue(2m))
-	.Add("addThree", (MathValue a, MathValue b, MathValue c) => a + b + c);
+	.SetItem("answer", () => new MathValue(42), "A zero-argument function")
+	.SetItem("double", (MathValue x) => x * new MathValue(2m))
+	.SetItem("addThree", (MathValue a, MathValue b, MathValue c) => a + b + c);
 
 var engine = new CalculatorEngine(new CalculatorOptions { CustomFunctions = functions });
+var answer = engine.Evaluate("answer()"); // 42
 ```
+
+`SetItem` supports zero, one, two, or three arguments and variadic handlers. It returns
+a new collection; replacing a case-insensitively matching name preserves its registration
+position without changing the original collection. Zero-argument callbacks run when
+evaluated, not when registered, and must be called with empty parentheses.
 
 ---
 

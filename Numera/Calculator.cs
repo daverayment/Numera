@@ -153,14 +153,21 @@ public static class Calculator
     /// <param name="expression">The expression to format.</param>
     /// <param name="options">Rendering style; defaults to
     /// <see cref="ExpressionFormatOptions.Typographic"/>.</param>
+    /// <param name="context">Optional variables and previous answer for identifier
+    /// recognition during parsing; their values are not substituted.</param>
     /// <returns>The rendered expression text.</returns>
+    /// <remarks>Variables and ans remain symbolic, including unbound variables.
+    /// Assignments and functions are not executed.</remarks>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
     /// null.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown if the rendering options are invalid.</exception>
     /// <exception cref="NumeraException">Thrown if the expression cannot be normalized or
     /// parsed.</exception>
-    public static string FormatExpression(string expression, ExpressionFormatOptions? options = null) =>
-        CalculatorEngine.Default.FormatExpression(expression, options);
+    public static string FormatExpression(
+        string expression,
+        ExpressionFormatOptions? options = null,
+        EvaluationContext? context = null) =>
+        CalculatorEngine.Default.FormatExpression(expression, options, context);
 
     /// <summary>
     /// Renders an existing expression tree. Unknown function names are tolerated so

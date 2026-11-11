@@ -468,6 +468,20 @@ flowchart TD
 
 Expression formatting validates `ExpressionFormatOptions` before rendering, regardless of the input's magnitude or representation. `MaxFixedDigits` must be between 1 and 1,000 and controls only the notation threshold for Integer, Decimal, and Rational nodes; scientific formatting retains the default 24-significant-digit precision. Double nodes retain their native general-format notation. Undefined rendering styles and multiplication or division symbols throw `ArgumentOutOfRangeException`.
 
+Both `Calculator.FormatExpression(string, options, context)` and the corresponding engine
+method accept an optional context for identifier recognition during parsing. Variables
+and `ans` remain symbolic: their values are not substituted, assignments are not executed,
+and captured expressions or callbacks are not replayed. Unbound variable names are also
+accepted for symbolic formatting. The facade uses current culture for input, while an
+engine uses its captured culture. The existing-AST overloads need no context because
+parsing has already happened.
+
+```csharp
+var context = new EvaluationContext([new Variable("x", 7)], previousResult: 11);
+string formula = Calculator.FormatExpression("x+ans", ExpressionFormatOptions.Ascii, context);
+// "x + ans", not "7 + 11" or "18".
+```
+
 Assignments have lower precedence than arithmetic, comparisons, and logical operators. Renderers preserve grouping around nested assignments, including function arguments, while leaving right-associative chains such as `a = b = 2` unwrapped. MathJax fraction and root structures provide their own visual grouping. Normalized ASCII output preserves assignment evaluation order and assigned values when re-evaluated; typographic and MathJax output are presentation formats, not guaranteed parser input.
 
 ---

@@ -459,12 +459,15 @@ public sealed class CalculatorEngine
     /// <param name="expression">The expression to format.</param>
     /// <param name="options">Rendering style; defaults to
     /// <see cref="ExpressionFormatOptions.Typographic"/>.</param>
-    /// <param name="context">Optional variables, so variable names parse as identifiers.
-    /// </param>
+    /// <param name="context">Optional variables and previous answer for identifier
+    /// recognition during parsing; their values are not substituted.</param>
     /// <returns>The rendered expression text.</returns>
+    /// <remarks>Variables and ans remain symbolic, including unbound variables.
+    /// Assignments and functions are not executed.</remarks>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
     /// null.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown if the rendering options are invalid.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if the rendering options are
+    /// invalid.</exception>
     /// <exception cref="NumeraException">Thrown if the expression cannot be normalized or
     /// parsed.</exception>
     public string FormatExpression(

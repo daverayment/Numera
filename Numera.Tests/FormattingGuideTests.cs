@@ -179,6 +179,82 @@ public sealed class FormattingGuideTests
     }
 
     [TestMethod]
+    [DataRow("en-US", "x(2+3)+ans/2.5")]
+    [DataRow("de-DE", "x(2+3)+ans/2,5")]
+    public void ExpressionFormattingWithContextMatchesEngineAndKeepsValuesSymbolic(string culture, string input)
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
+            var engine = new CalculatorEngine();
+            var context = new EvaluationContext([new Variable("x", 7)], 11);
+            ExpressionFormatOptions[] styles =
+            [
+                ExpressionFormatOptions.Ascii,
+                ExpressionFormatOptions.Typographic,
+                ExpressionFormatOptions.LaTeX
+            ];
+            foreach (var style in styles)
+            {
+                Assert.AreEqual(engine.FormatExpression(input, style, context),
+                    Calculator.FormatExpression(input, style, context));
+            }
+
+            Assert.AreEqual("x * (2 + 3) + ans / 2.5",
+                Calculator.FormatExpression(input, ExpressionFormatOptions.Ascii, context));
+            Assert.AreEqual(engine.FormatExpression(input, context: context),
+                Calculator.FormatExpression(input, context: context));
+            Assert.AreEqual(engine.FormatExpression(input), Calculator.FormatExpression(input));
+            Assert.AreEqual(Calculator.FormatExpression(input),
+                Calculator.FormatExpression(input, options: null, context: null));
+            Assert.AreEqual(new MathValue(7), context.Variables["x"].Value);
+            Assert.AreEqual(new MathValue(11), context.PreviousResult);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [TestMethod]
+    public void ExpressionFormattingWithContextDoesNotEvaluateAssignmentsOrDivision()
+    {
+        var context = new EvaluationContext([new Variable("x", 7)], 11);
+        var variables = context.Variables;
+        const string input = "x=(ans+1)/0";
+        const string expected = "x = (ans + 1) / 0";
+
+        Assert.AreEqual(expected, Calculator.FormatExpression(input, ExpressionFormatOptions.Ascii, context));
+        Assert.AreEqual(expected, CalculatorEngine.Default.FormatExpression(input, ExpressionFormatOptions.Ascii, context));
+        Assert.AreSame(variables, context.Variables);
+        Assert.AreEqual(new MathValue(7), context.Variables["x"].Value);
+        Assert.AreEqual(new MathValue(11), context.PreviousResult);
+    }
+
+    [TestMethod]
+    public void ExpressionFormattingWithContextDoesNotReplayCapturedCallbacks()
+    {
+        int calls = 0;
+        var engine = new CalculatorEngine(new CalculatorOptions
+        {
+            CustomFunctions = CustomFunctionCollection.Empty.SetItem("tick", () => new MathValue(++calls))
+        });
+        var captured = engine.Evaluate("x=tick()");
+        var expression = captured.Context.PreviousExpression;
+        Assert.AreEqual(1, calls);
+
+        Assert.AreEqual("x + ans", Calculator.FormatExpression("x+ans", ExpressionFormatOptions.Ascii, captured.Context));
+        Assert.AreEqual(engine.FormatExpression("x+ans", context: captured.Context),
+            Calculator.FormatExpression("x+ans", context: captured.Context));
+        Assert.AreEqual("x = ans + 1", Calculator.FormatExpression("x=ans+1", context: captured.Context));
+        Assert.AreEqual(1, calls);
+        Assert.AreSame(expression, captured.Context.PreviousExpression);
+        Assert.AreEqual(MathValue.One, captured.Context.Variables["x"].Value);
+        Assert.AreEqual(MathValue.One, captured.Context.PreviousResult);
+    }
+
+    [TestMethod]
     public void ExplicitNumericFormatsAndSpansRetainResultCultureUnlessOverridden()
     {
         var original = CultureInfo.CurrentCulture;
