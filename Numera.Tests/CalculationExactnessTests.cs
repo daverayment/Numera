@@ -8,6 +8,111 @@ namespace Numera.Tests;
 public sealed class CalculationExactnessTests
 {
     [TestMethod]
+    public void ZeroAndOneAreExactIntegersWithExactFractions()
+    {
+        (MathValue Value, BigInteger Expected)[] constants =
+        [
+            (MathValue.Zero, BigInteger.Zero),
+            (MathValue.One, BigInteger.One)
+        ];
+
+        foreach (var (value, expected) in constants)
+        {
+            Assert.AreEqual(MathValue.DataType.Integer, value.Kind);
+            Assert.AreEqual(expected, value.IntegerValue);
+            Assert.AreEqual(CalculationExactness.Exact, value.Exactness);
+            Assert.IsTrue(value.IsFinite);
+            Assert.IsFalse(value.IsNaN);
+            Assert.IsTrue(value.TryGetExactFraction(out var numerator, out var denominator));
+            Assert.AreEqual(expected, numerator);
+            Assert.AreEqual(BigInteger.One, denominator);
+            Assert.AreEqual((expected, BigInteger.One), value.GetExactFraction());
+            Assert.AreEqual(value, value + MathValue.Zero);
+            Assert.AreEqual(CalculationExactness.Exact, (value + MathValue.Zero).Exactness);
+            Assert.AreEqual(value, value * MathValue.One);
+            Assert.AreEqual(CalculationExactness.Exact, (value * MathValue.One).Exactness);
+
+            var restored = MathValue.Deserialize(value.Serialize());
+            Assert.AreEqual(expected, restored.IntegerValue);
+            Assert.AreEqual(CalculationExactness.Exact, restored.Exactness);
+        }
+    }
+
+    [TestMethod]
+    public void DefaultZeroIsNumericallyEqualButDoesNotAssertExactness()
+    {
+        var value = default(MathValue);
+        Assert.AreEqual(MathValue.DataType.Integer, value.Kind);
+        Assert.AreEqual(BigInteger.Zero, value.IntegerValue);
+        Assert.AreEqual(CalculationExactness.Unverified, value.Exactness);
+        Assert.IsTrue(value == MathValue.Zero);
+        Assert.AreEqual(value.GetHashCode(), MathValue.Zero.GetHashCode());
+        Assert.IsFalse(value.TryGetExactFraction(out var numerator, out var denominator));
+        Assert.AreEqual(BigInteger.Zero, numerator);
+        Assert.AreEqual(BigInteger.Zero, denominator);
+        Assert.IsNull(value.ExactFraction);
+        Assert.IsFalse(EvaluationResultComparers.Content.Equals(
+            new EvaluationResult(value, EvaluationContext.Empty),
+            new EvaluationResult(MathValue.Zero, EvaluationContext.Empty)));
+
+        var unverifiedCopy = MathValue.Zero.WithExactness(CalculationExactness.Unverified);
+        Assert.AreEqual(CalculationExactness.Unverified, unverifiedCopy.Exactness);
+        Assert.AreEqual(CalculationExactness.Exact, MathValue.Zero.Exactness);
+        Assert.AreEqual(CalculationExactness.Exact, MathValue.One.Exactness);
+    }
+
+    [TestMethod]
+    public void NonfiniteConstantsAreUnverifiedDoublesWithoutExactFractions()
+    {
+        (MathValue Value, double Expected)[] constants =
+        [
+            (MathValue.NaN, double.NaN),
+            (MathValue.PositiveInfinity, double.PositiveInfinity),
+            (MathValue.NegativeInfinity, double.NegativeInfinity)
+        ];
+
+        foreach (var (value, expected) in constants)
+        {
+            Assert.AreEqual(MathValue.DataType.Double, value.Kind);
+            Assert.AreEqual(BitConverter.DoubleToInt64Bits(expected), BitConverter.DoubleToInt64Bits(value.DoubleValue));
+            Assert.AreEqual(CalculationExactness.Unverified, value.Exactness);
+            Assert.IsFalse(value.IsFinite);
+            Assert.AreEqual(double.IsNaN(expected), value.IsNaN);
+            Assert.IsFalse(value.TryGetExactFraction(out var numerator, out var denominator));
+            Assert.AreEqual(BigInteger.Zero, numerator);
+            Assert.AreEqual(BigInteger.Zero, denominator);
+            Assert.IsNull(value.ExactFraction);
+            Assert.ThrowsExactly<InvalidOperationException>(() => value.GetExactFraction());
+            Assert.ThrowsExactly<ArgumentException>(() => value.WithExactness(CalculationExactness.Exact));
+            Assert.AreEqual(new MathValue(expected), value);
+
+            var restored = MathValue.Deserialize(value.Serialize());
+            Assert.AreEqual(value, restored);
+            Assert.AreEqual(MathValue.DataType.Double, restored.Kind);
+            Assert.AreEqual(CalculationExactness.Unverified, restored.Exactness);
+        }
+    }
+
+    [TestMethod]
+    public void ConstantsDoNotCertifyUnverifiedZeroResults()
+    {
+        var result = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture).Evaluate("ln(1)");
+        Assert.IsTrue(result.Value == MathValue.Zero);
+        Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
+        Assert.AreEqual(CalculationExactness.Unverified, (result + MathValue.Zero).Exactness);
+        Assert.AreEqual(CalculationExactness.Unverified, (MathValue.One * result).Exactness);
+        Assert.IsFalse(result.HasExactFraction);
+
+        var unverifiedOne = MathValue.One.WithExactness(CalculationExactness.Unverified);
+        var zero = unverifiedOne - MathValue.One;
+        Assert.AreEqual(MathValue.DataType.Integer, zero.Kind);
+        Assert.IsTrue(zero == MathValue.Zero);
+        Assert.AreEqual(CalculationExactness.Unverified, zero.Exactness);
+        Assert.AreEqual(CalculationExactness.Unverified, (MathValue.Zero + default(MathValue)).Exactness);
+        Assert.AreEqual(CalculationExactness.Exact, MathValue.Zero.Exactness);
+    }
+
+    [TestMethod]
     [DataRow("1/3", CalculationExactness.Exact, true, true)]
     [DataRow("1/8", CalculationExactness.Exact, false, true)]
     [DataRow("sqrt(4)", CalculationExactness.Exact, false, true)]

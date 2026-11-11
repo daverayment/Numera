@@ -131,4 +131,7 @@ public sealed record FormattedCalculation
         octalRepresentation = OctalRepresentation;
         assignedVariables = AssignedVariables;
     }
+
+    /// <inheritdoc/>
+    override public string ToString() => PrimaryDisplay;
 }

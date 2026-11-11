@@ -29,8 +29,9 @@ namespace Numera;
 /// <para>
 /// Comparisons with <see cref="MathValue"/> compare numbers, ignoring other result
 /// details. They treat two NaNs as equal and sort NaN before other values, unlike
-/// comparisons within evaluated expressions. Equality between two results also considers
-/// their context, assignments, and options.
+/// comparisons within evaluated expressions. Equality between two results likewise uses
+/// only their numeric values. Use <see cref="EvaluationResultComparers.Content"/> to
+/// compare stored values, context, assignments, and options instead.
 /// </para>
 /// <para>
 /// Use the constructor when creating a result yourself. A default-initialized result has
@@ -38,6 +39,9 @@ namespace Numera;
 /// </para>
 /// </remarks>
 public readonly record struct EvaluationResult :
+    IComparable<EvaluationResult>,
+    IComparable<MathValue>,
+    IComparable,
     IEquatable<MathValue>,
     IFormattable,
     ISpanFormattable,
@@ -165,7 +169,7 @@ public readonly record struct EvaluationResult :
     /// </summary>
     /// <remarks>The storage type alone does not tell you whether the result is exact.
     /// </remarks>
-    public MathValue.DataType Type => Value.Kind;
+    public MathValue.DataType Kind => Value.Kind;
 
     /// <summary>
     /// Gets the exact fraction in lowest terms, or <see langword="null"/> if unavailable.
@@ -188,6 +192,10 @@ public readonly record struct EvaluationResult :
     /// <exception cref="InvalidOperationException">The value is not finite or is not
     /// marked <see cref="CalculationExactness.Exact"/>.</exception>
     public (BigInteger Numerator, BigInteger Denominator) GetExactFraction() => Value.GetExactFraction();
+
+    /// <inheritdoc cref="MathValue.TryGetExactFraction"/>
+    public bool TryGetExactFraction(out BigInteger num, out BigInteger den) =>
+        Value.TryGetExactFraction(out num, out den);
 
     /// <summary>
     /// Gets the stored integer without converting other storage types.
@@ -215,6 +223,12 @@ public readonly record struct EvaluationResult :
     /// <exception cref="InvalidOperationException">The number is not stored as Double.
     /// </exception>
     public double DoubleValue => Value.DoubleValue;
+
+    /// <inheritdoc cref="MathValue.Numerator"/>
+    public BigInteger Numerator => Value.Numerator;
+
+    /// <inheritdoc cref="MathValue.Denominator"/>
+    public BigInteger Denominator => Value.Denominator;
 
     /// <summary>
     /// Gets whether the value is neither NaN nor positive or negative infinity.
@@ -255,13 +269,22 @@ public readonly record struct EvaluationResult :
     /// </remarks>
     public CalculationExactness Exactness => Value.Exactness;
 
+    /// <inheritdoc cref="MathValue.ToDouble"/>
+    public double ToDouble() => Value.ToDouble();
+
     /// <summary>
-    /// Converts the result to a double. Precision may be lost.
+    /// Alias for <see cref="ToDouble"/>.
     /// </summary>
-    /// <returns>The converted value, which may underflow to zero or overflow to infinity.
-    /// </returns>
-    /// <remarks>Does not change the stored value or its exactness status.</remarks>
-    public double AsDouble() => Value.AsDouble();
+    public double AsDouble() => ToDouble();
+
+    /// <inheritdoc cref="MathValue.ToDecimal"/>
+    public decimal ToDecimal() => Value.ToDecimal();
+
+    /// <inheritdoc cref="MathValue.ToBigInteger"/>
+    public BigInteger ToBigInteger() => Value.ToBigInteger();
+
+    /// <inheritdoc cref="MathValue.TryGetInteger"/>
+    public bool TryGetInteger(out BigInteger value) => Value.TryGetInteger(out value);
 
     /// <summary>
     /// Extracts the calculated value without changing its storage type or exactness
@@ -281,6 +304,57 @@ public readonly record struct EvaluationResult :
     /// <remarks>Unlike comparisons in evaluated expressions, this method treats NaN as
     /// equal to NaN.</remarks>
     public bool Equals(MathValue other) => Value.Equals(other);
+
+    /// <summary>
+    /// Compares the numeric values, ignoring representation, exactness, context,
+    /// assignments, and options. Two NaNs compare equal.
+    /// </summary>
+    /// <param name="other">The result to compare.</param>
+    /// <returns>Whether the numeric values are equal.</returns>
+    /// <remarks>Use <see cref="EvaluationResultComparers.Content"/> for content equality.</remarks>
+    public bool Equals(EvaluationResult other) => Value.Equals(other.Value);
+
+    /// <summary>
+    /// Compares the result's numerical value with another result.
+    /// </summary>
+    /// <param name="other">The result to compare.</param>
+    /// <returns>
+    /// A signed number indicating the relative values of this instance and
+    /// <paramref name="other"/>. Less than zero if this instance is less than
+    /// <paramref name="other"/>; zero if they are equal; greater than zero if this
+    /// instance is greater than <paramref name="other"/>.
+    /// </returns>
+    /// <remarks>NaN sorts before every other value; two NaNs compare equal.</remarks>
+    public int CompareTo(EvaluationResult other) => Value.CompareTo(other.Value);
+
+    /// <summary>
+    /// Compares the result's numerical value with a math value.
+    /// </summary>
+    /// <param name="other">The value to compare.</param>
+    /// <returns>
+    /// A signed number indicating the relative values of this instance and
+    /// <paramref name="other"/>. Less than zero if this instance is less than
+    /// <paramref name="other"/>; zero if they are equal; greater than zero if this
+    /// instance is greater than <paramref name="other"/>.
+    /// </returns>
+    /// <remarks>NaN sorts before every other value; two NaNs compare equal.</remarks>
+    public int CompareTo(MathValue other) => Value.CompareTo(other);
+
+    /// <inheritdoc />
+    int IComparable.CompareTo(object? obj)
+    {
+        if (obj is null)
+        {
+            return 1;
+        }
+
+        if (obj is EvaluationResult result)
+        {
+            return CompareTo(result);
+        }
+
+        throw new ArgumentException("Object must be an EvaluationResult.", nameof(obj));
+    }
 
     // Operator overloads.
 
@@ -637,6 +711,48 @@ public readonly record struct EvaluationResult :
     /// <remarks>NaN sorts before every other value; two NaNs compare equal.</remarks>
     public static bool operator <=(MathValue left, EvaluationResult right) => left <= right.Value;
 
+    /// <summary>
+    /// Tests whether one result's value is greater than another result's value.
+    /// </summary>
+    /// <param name="left">The first result to compare.</param>
+    /// <param name="right">The second result to compare.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> has a greater value
+    /// than <paramref name="right"/>; otherwise, <see langword="false"/>.</returns>
+    /// <remarks>NaN sorts before every other value; two NaNs compare equal.</remarks>
+    public static bool operator >(EvaluationResult left, EvaluationResult right) => left.Value > right.Value;
+
+    /// <summary>
+    /// Tests whether one result's value is less than another result's value.
+    /// </summary>
+    /// <param name="left">The first result to compare.</param>
+    /// <param name="right">The second result to compare.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> has a smaller value
+    /// than <paramref name="right"/>; otherwise, <see langword="false"/>.</returns>
+    /// <remarks>NaN sorts before every other value; two NaNs compare equal.</remarks>
+    public static bool operator <(EvaluationResult left, EvaluationResult right) => left.Value < right.Value;
+
+    /// <summary>
+    /// Tests whether one result's value is greater than or equal to another result's
+    /// value.
+    /// </summary>
+    /// <param name="left">The first result to compare.</param>
+    /// <param name="right">The second result to compare.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> has a value greater
+    /// than or equal to <paramref name="right"/>; otherwise, <see langword="false"/>.
+    /// </returns>
+    /// <remarks>NaN sorts before every other value; two NaNs compare equal.</remarks>
+    public static bool operator >=(EvaluationResult left, EvaluationResult right) => left.Value >= right.Value;
+
+    /// <summary>
+    /// Tests whether one result's value is less than or equal to another result's value.
+    /// </summary>
+    /// <param name="left">The first result to compare.</param>
+    /// <param name="right">The second result to compare.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> has a value less than
+    /// or equal to <paramref name="right"/>; otherwise, <see langword="false"/>.</returns>
+    /// <remarks>NaN sorts before every other value; two NaNs compare equal.</remarks>
+    public static bool operator <=(EvaluationResult left, EvaluationResult right) => left.Value <= right.Value;
+
     // Explicit conversions.
 
     /// <summary>
@@ -648,7 +764,7 @@ public readonly record struct EvaluationResult :
     /// decimal conversion.</remarks>
     /// <exception cref="OverflowException">The value is not finite or is outside the
     /// decimal range.</exception>
-    public static explicit operator decimal(EvaluationResult result) => result.Value.ToDecimal();
+    public static explicit operator decimal(EvaluationResult result) => (decimal)result.Value;
 
     /// <summary>
     /// Converts a whole-number result to a <see cref="BigInteger"/> without rounding.
@@ -657,7 +773,7 @@ public readonly record struct EvaluationResult :
     /// <returns>The integer value.</returns>
     /// <exception cref="InvalidCastException">The value is not finite or has a fractional
     /// part.</exception>
-    public static explicit operator BigInteger(EvaluationResult result) => GetInteger(result.Value);
+    public static explicit operator BigInteger(EvaluationResult result) => (BigInteger)result.Value;
 
     /// <summary>
     /// Converts a whole-number result to a 32-bit signed integer without rounding.
@@ -668,7 +784,7 @@ public readonly record struct EvaluationResult :
     /// part.</exception>
     /// <exception cref="OverflowException">The value is outside the <see cref="int"/>
     /// range.</exception>
-    public static explicit operator int(EvaluationResult result) => (int)GetInteger(result.Value);
+    public static explicit operator int(EvaluationResult result) => (int)result.Value;
 
     /// <summary>
     /// Converts a whole-number result to a 64-bit signed integer without rounding.
@@ -679,7 +795,7 @@ public readonly record struct EvaluationResult :
     /// part.</exception>
     /// <exception cref="OverflowException">The value is outside the <see cref="long"/>
     /// range.</exception>
-    public static explicit operator long(EvaluationResult result) => (long)GetInteger(result.Value);
+    public static explicit operator long(EvaluationResult result) => (long)result.Value;
 
     /// <summary>
     /// Converts the result to a double, as <see cref="AsDouble"/> does. Precision may be
@@ -688,7 +804,7 @@ public readonly record struct EvaluationResult :
     /// <param name="result">The result to convert.</param>
     /// <returns>The converted value, which may underflow to zero or overflow to infinity.
     /// </returns>
-    public static explicit operator double(EvaluationResult result) => result.Value.AsDouble();
+    public static explicit operator double(EvaluationResult result) => (double)result.Value;
 
     // Radix representations.
 
@@ -947,11 +1063,6 @@ public readonly record struct EvaluationResult :
 
     private ExpressionNode GetExpressionNode() =>
         Context.PreviousExpression ?? new NumberNode(Value);
-
-    private static BigInteger GetInteger(MathValue value) =>
-        value.TryGetInteger(out var integer)
-            ? integer
-            : throw new InvalidCastException("The value is not an integer.");
 
     private static EvaluationResult Combine(
         EvaluationResult left, EvaluationResult right, BinaryOperator op)

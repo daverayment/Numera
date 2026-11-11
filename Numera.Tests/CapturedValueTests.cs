@@ -270,4 +270,105 @@ public sealed class CapturedValueTests
         Assert.IsTrue((combined + new MathValue(double.PositiveInfinity)).Value.DoubleValue
             == double.PositiveInfinity);
     }
+
+    [TestMethod]
+    public void RelationalOperatorsBetweenResults_EvaluateCorrectlyWithoutAmbiguity()
+    {
+        var five = Calculator.Evaluate("5");
+        var ten = Calculator.Evaluate("10");
+        var anotherFive = Calculator.Evaluate("2 + 3");
+
+        // < and >
+        Assert.IsTrue(five < ten);
+        Assert.IsFalse(ten < five);
+        Assert.IsFalse(five < anotherFive);
+
+        Assert.IsTrue(ten > five);
+        Assert.IsFalse(five > ten);
+        Assert.IsFalse(five > anotherFive);
+
+        // <= and >=
+        Assert.IsTrue(five <= ten);
+        Assert.IsTrue(five <= anotherFive);
+        Assert.IsFalse(ten <= five);
+
+        Assert.IsTrue(ten >= five);
+        Assert.IsTrue(five >= anotherFive);
+        Assert.IsFalse(five >= ten);
+    }
+
+    [TestMethod]
+    public void CompareTo_BetweenResultsAndMathValues_ComparesNumerically()
+    {
+        var small = Calculator.Evaluate("1/4");
+        var large = Calculator.Evaluate("1/2");
+        var equalSmall = Calculator.Evaluate("0.25");
+
+        // CompareTo(EvaluationResult)
+        Assert.IsTrue(small.CompareTo(large) < 0);
+        Assert.IsTrue(large.CompareTo(small) > 0);
+        Assert.AreEqual(0, small.CompareTo(equalSmall));
+
+        // CompareTo(MathValue)
+        Assert.IsTrue(small.CompareTo(new MathValue(0.5m)) < 0);
+        Assert.IsTrue(large.CompareTo(new MathValue(0.25m)) > 0);
+        Assert.AreEqual(0, small.CompareTo(new MathValue(0.25m)));
+
+        // Results with distinct context and assignments compare equal numerically
+        var assigned = Calculator.Evaluate("x = 10");
+        var bare = Calculator.Evaluate("10");
+        Assert.AreEqual(assigned, bare);
+        Assert.AreEqual(0, assigned.CompareTo(bare));
+        Assert.IsTrue(assigned <= bare);
+        Assert.IsTrue(assigned >= bare);
+        Assert.IsFalse(assigned < bare);
+        Assert.IsFalse(assigned > bare);
+    }
+
+    [TestMethod]
+    public void IComparable_ExplicitImplementation_HandlesObjectsCorrectly()
+    {
+        var result = Calculator.Evaluate("42");
+        IComparable comparable = result;
+
+        // Comparing with another EvaluationResult
+        var otherResult = Calculator.Evaluate("100");
+        Assert.IsTrue(comparable.CompareTo(otherResult) < 0);
+        Assert.IsTrue(comparable.CompareTo(Calculator.Evaluate("42")) == 0);
+
+        Assert.Throws<ArgumentException>(() => comparable.CompareTo(new MathValue(42)));
+
+        // Comparing with null returns 1 by .NET convention
+        Assert.AreEqual(1, comparable.CompareTo(null));
+
+        // Incompatible object throws ArgumentException
+        Assert.Throws<ArgumentException>(() => comparable.CompareTo("not a number"));
+        Assert.Throws<ArgumentException>(() => comparable.CompareTo(42));
+    }
+
+    [TestMethod]
+    public void Sorting_EvaluationResults_SortsCorrectly()
+    {
+        EvaluationResult[] results =
+        [
+            Calculator.Evaluate("10"),
+            Calculator.Evaluate("0 * exp(1000)"),  // NaN
+            Calculator.Evaluate("-5"),
+            Calculator.Evaluate("exp(1000)"),      // Positive Infinity
+            Calculator.Evaluate("0"),
+            Calculator.Evaluate("-exp(1000)"),     // Negative Infinity
+            Calculator.Evaluate("2.5")
+        ];
+
+        Array.Sort(results);
+
+        // NaN sorts first, then -Infinity, -5, 0, 2.5, 10, +Infinity
+        Assert.IsTrue(results[0].IsNaN);
+        Assert.AreEqual(double.NegativeInfinity, results[1].DoubleValue);
+        Assert.AreEqual(new MathValue(-5), results[2].Value);
+        Assert.AreEqual(new MathValue(0), results[3].Value);
+        Assert.AreEqual(new MathValue(2.5m), results[4].Value);
+        Assert.AreEqual(new MathValue(10), results[5].Value);
+        Assert.AreEqual(double.PositiveInfinity, results[6].DoubleValue);
+    }
 }

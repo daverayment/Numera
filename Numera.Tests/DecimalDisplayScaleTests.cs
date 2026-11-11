@@ -83,7 +83,7 @@ public sealed class DecimalDisplayScaleTests
 
         Assert.IsTrue(result.IsZero);
         Assert.AreEqual(expectedScale, result.Value.DecimalDisplayScale);
-        Assert.AreEqual(expectedType, result.Type);
+        Assert.AreEqual(expectedType, result.Kind);
         Assert.AreEqual(CalculationExactness.Exact, result.Exactness);
         Assert.AreEqual((BigInteger.Zero, BigInteger.One), result.GetExactFraction());
     }

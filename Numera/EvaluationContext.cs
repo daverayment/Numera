@@ -22,12 +22,16 @@ namespace Numera;
 /// Equality is by value: two contexts are equal if they define the same variables (names
 /// compared case-insensitively) and the same previous result.
 /// </para>
+/// <para>
+/// <b>Example</b>
 /// <code>
-/// var context = new EvaluationContext(
-///     new Dictionary&lt;string, MathValue&gt; { ["x"] = new(3m) },
-///     new MathValue(10m));
-/// MathValue result = Calculator.Evaluate("x * ans", context);   // 30
+///   var ctx = new EvaluationContext(new[]
+///   {
+///       new Variable("x", 3)
+///   });
+///   MathValue result = Calculator.Evaluate("x * 2", ctx);   // 6
 /// </code>
+/// </para>
 /// </remarks>
 public sealed record EvaluationContext
 {

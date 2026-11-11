@@ -16,7 +16,7 @@ Numera instead takes a hybrid approach:
 * **No Floating-Point Surprises:** `0.3 / 0.1` is `3`. `3033554.11 - 3033359.71` is exactly `194.40`, not `194.3999999999`.
 * **Exact Integers and Fractions:** `2^100` preserves all 31 digits internally, and `(1/3)*3` stays exactly `1` without replaying old expressions. Default display is rounded independently of storage.
 * **Understands Human Desktop Input:** Copes with Swiss thousands (`1'000'000`), European comma decimals (`1.000,50`), percentages (`100 + 15%`, `15% of 200`), postfix factorials (`5!`), copied Unicode operators (`×`, `÷`, `−`), and more.
-* **Clean Angle Displays:** In degrees mode, special cases give clean numeric results such as `sin(180) = 0`, `cos(90) = 0`, and `tan(45) = 1`. Floating-point function results still carry Unverified accuracy, not a symbolic exactness guarantee.
+* **Clean Angle Displays:** In degrees mode, special cases give clean numeric results such as `sin(180) = 0`, `cos(90) = 0`, and `tan(45) = 1`. Floating-point function results still carry Unverified exactness, not a symbolic exactness guarantee.
 * **LaTeX and Typographic Output:** Formats expressions directly into MathJax (`\frac{a}{b}`) or rich typography (`2 × π × √(16)`) ideal for tooltips.
 * **Fast and AOT-Ready:** Pure recursive-descent evaluation with zero AST allocations on the fast path.
 
@@ -26,7 +26,7 @@ Numera instead takes a hybrid approach:
 | What You Enter | What Happens | Result |
 | :--- | :--- | :--- |
 | `3033554.11 - 3033359.71` | Exact 128-bit decimal arithmetic | `194.40` |
-| `2^100` | Exact arbitrary-precision integer, rounded display | `1.267650600228229 × 10^30` |
+| `2^100` | Exact arbitrary-precision integer, rounded display | `1.2676506002282294014967e30` |
 | `1/3 + 0.5` | Exact Rational, optional fraction view | `0.8333333333333333` or `5/6` |
 | `1'000'000.50 + 15% of 200` | Swiss grouping + prepositional percent | `1000030.50` |
 | `200 + 15%` | Consumer additive percentage markup | `230` |
@@ -53,14 +53,8 @@ using System.Globalization;
 Console.Write("Enter an expression: ");
 string input = Console.ReadLine() ?? "";
 
-// (Optional.) Normalize human input, e.g. '= 1.000,50 × 5! + 15% ='
-string clean = ExpressionNormalizer.Normalize(input, new NormalizationOptions
-{
-    Culture = CultureInfo.CurrentCulture
-});
-
-// Evaluate safely
-if (!Calculator.TryEvaluate(clean, out var result, out var diagnostic))
+// Human input is normalized automatically using the current culture.
+if (!Calculator.TryEvaluate(input, out var result, out var diagnostic))
 {
     Console.WriteLine($"Error at position {diagnostic.Position}: {diagnostic.Code} - {diagnostic.Message}");
     return;
@@ -74,9 +68,11 @@ if (!result.IsFinite)
 }
 
 // Use the readable result display; exact values remain available separately
-var card = Calculator.FormatResult(result);
+var card = result.FormatResult();
 Console.WriteLine($"Result: {card.PrimaryDisplay} ({result.Type}) | Hex: {card.HexRepresentation}");
 ```
+
+The examples below use decimal-point cultures. Enter decimal and argument separators according to your current culture, or create an engine with an explicit culture.
 
 Try entering:
 * `3033554.11 - 3033359.71` *(Exact decimal arithmetic: `194.40`)*
@@ -90,27 +86,52 @@ Try entering:
 
 When `TryEvaluate` succeeds, it returns an `EvaluationResult` containing a `MathValue`. You have a few clean ways to work with it:
 
-### Exact Fractions, Accuracy, and Display
+Result equality and ordering compare numeric values, ignoring context and metadata.
+Use `EvaluationResultComparers.Content` for stored values, ordered variables and
+assignments, expressions, and options. See [result comparison](docs/architecture.md#result-equality-and-content-comparison)
+for examples and the distinction from history-entry identity or persistence.
+
+### Culture and Formatting Policy
+
+`Calculator` uses `CultureInfo.CurrentCulture` at each call. `new CalculatorEngine()` and `new CalculatorOptions()` capture the current culture when created; `CalculatorEngine.Default` and `CalculatorOptions.Default` also return fresh instances capturing the culture at access time. Reuse an engine to keep its culture and configuration stable.
+
+Use record `with` expressions to derive reusable options, or fluent `engine.WithCulture(...)`, `WithAngleUnit(...)`, and `WithOptions(...)` to create a differently configured engine without changing the original. `WithOptions(transform)` starts from existing settings; `WithOptions(options)` replaces the whole configuration. Required nulls and null transform results are rejected, not replaced with defaults. See [immutable configuration](docs/architecture.md#immutable-configuration) for examples and the intentionally optional null settings.
+
+Results retain their originating settings. Use `result.PrimaryDisplay` for text or `result.FormatResult()` for text, rounding information, and alternatives. Explicit options and culture override independently; omitted or null arguments retain the result's settings:
+
+```csharp
+var formatted = result.FormatResult(culture: CultureInfo.InvariantCulture);
+```
+
+`engine.FormatResult(result)` deliberately uses the receiving engine's settings instead. It also accepts raw `MathValue` values. `Calculator.FormatResult` has been removed; use these result or engine methods instead.
+
+`FormattedCalculation` is an immutable, fully prepared snapshot: reading properties or switching views does not perform more formatting. `PrimaryDisplay` and `MachineReadable` are always present; null alternatives mean that view is unavailable for the value. Text has no character ceiling, so even long exact fractions and radix strings remain accessible. The default is still 24 significant digits, not 24 characters. Callers can check `.Length` to decide what fits their UI; see [representation lengths](docs/architecture.md#representation-lengths) for sizing guidance. Invalid options and numerical safety violations still throw when formatting, not when reading the snapshot.
+
+For deterministic machine-authored input, explicitly use `CalculatorEngine.ForCulture(CultureInfo.InvariantCulture)`. `MachineReadable` and serialization remain invariant. Matching input and display cultures avoids separator-related misinterpretation, but rounded display text does not preserve the original value. Evaluate machine-readable expressions with an invariant-culture engine. Manually constructed results without options use current culture when formatted.
+
+### Exact Fractions, Exactness, and Display
 
 ```csharp
 var thirds = Calculator.Evaluate("1/3");
 var card = thirds.FormatResult();
-Console.WriteLine(card.PrimaryDisplay);         // 0.3333333333333333
+Console.WriteLine(card.PrimaryDisplay);         // 0.333333333333333333333333
 Console.WriteLine(card.FractionRepresentation); // 1/3
 Console.WriteLine(card.IsDisplayRounded);       // True
-Console.WriteLine(thirds.Accuracy);             // Exact
+Console.WriteLine(thirds.Exactness);            // Exact
 Console.WriteLine((thirds * 3).Value);           // 1, without re-evaluation
 ```
 
-`FormatResult().PrimaryDisplay` uses 16 significant digits and fixed notation for rounded decimal exponents -4 through 15 inclusive. Configure `CalculatorOptions.ResultFormat` to change precision or notation. Representation-native `ToString` formatting remains separate: Integer and Decimal retain their .NET formatting behavior, while Rational uses a numeric general format by default.
+`FormatResult().PrimaryDisplay` uses at most 24 significant digits and fixed notation for rounded decimal exponents -24 through 23 inclusive. Scientific displays default to compact lowercase e-notation, such as `1e-400`. Configure `CalculatorOptions.ResultFormat` to change precision, notation, or style; set `ExponentMarker = ExponentMarker.Uppercase` for `1E-400`. Marker casing affects only compact numeric displays, not expression identifiers or machine-readable output. Typographic Unicode and MathJax remain explicit result-style choices; expression formatting still defaults to typographic Unicode. Representation-native `ToString` formatting remains separate: Integer and Decimal retain their .NET formatting behavior, while Rational uses a numeric general format by default.
 
-Fixed, unrounded displays preserve a bounded decimal-scale hint from literals and exact arithmetic: `194.40 - 100` displays `94.40`. Non-whole values preserve scales up to four decimal places; whole values preserve up to two. Larger scales normalize away trailing zeros. Padding never exceeds the significant-digit budget and is omitted for scientific or rounded displays. The hint survives captured values and serialization without changing the exact value, fraction alternate, equality, or accuracy.
+Fixed, unrounded displays preserve a bounded decimal-scale hint from literals and exact arithmetic: `194.40 - 100` displays `94.40`. Non-whole values preserve scales up to four decimal places; whole values preserve up to two. Larger scales normalize away trailing zeros. Padding never exceeds the significant-digit budget and is omitted for scientific or rounded displays. The hint survives captured values and serialization without changing the exact value, fraction alternate, equality, or exactness.
 
 Default `EvaluationResult.ToString()`, interpolation, and span formatting use that same numeric display policy. For example, `Calculator.Evaluate("194.40-100").ToString()` returns `"94.40"`. Explicit format strings still use the underlying value's native formatting; `result.Value.ToString(...)` and lossless value expressions remain separate from the user-facing display.
 
-`CalculationAccuracy.Exact` and `Unverified` describe calculation provenance; `IsDisplayRounded` describes formatting separately. Absence of display rounding is not proof of calculation accuracy. `HasExactFraction` allows a fraction toggle only for verified-exact finite results, including terminating decimals and integers. Fractions use reduced slash notation, never Unicode fraction characters. Caller-asserted Exact Doubles can expose their stored binary fraction; ordinary Doubles remain Unverified.
+Use `result.Exactness` (`CalculationExactness.Exact` or `Unverified`) to guide your UI: an Exact `1/3` can show a rounded-display indicator and an exact-fraction button, while Unverified `ln(1)` should not acquire an exactness claim merely because it displays `0` without rounding. The status also helps recognize a calculation path that encountered an unverified input or operation; it is not an error estimate or a complete provenance trail. [The exactness guide](docs/exactness.md) gives UI, propagation, and imported-value examples.
 
-Finite decimal literals and Integer/Decimal/Rational arithmetic are exact within configured limits. Double mixing and ordinary approximate function results propagate Unverified. Representation alone does not establish accuracy.
+`HasExactFraction` allows a fraction toggle for known or caller-asserted Exact finite results, including terminating decimals and integers. Fractions use reduced slash notation, never Unicode fraction characters. Caller-asserted Exact Doubles expose their stored binary fraction, not a corrected decimal value; ordinary Doubles remain Unverified. NaN and infinities cannot be marked Exact.
+
+Finite decimal literals and Integer/Decimal/Rational arithmetic on Exact inputs retain Exact within configured limits. Double mixing and ordinary approximate function results propagate Unverified. Representation alone does not establish exactness.
 
 Representation follows the arithmetic domain rather than whether a fraction happens to terminate: `1/2` and `1/3` are Rational, while `10/2` is Integer. Decimal literals such as `0.5` and `1.00` are Decimal when exactly representable. Integer/Decimal arithmetic stays Decimal even for integral answers (`0.5 + 0.5`), while arithmetic involving Rational stays Rational until its denominator reduces to one. If a Decimal-domain answer cannot fit Decimal exactly, its value is retained as Rational or Integer, never rounded to fit.
 
@@ -122,18 +143,26 @@ if (result.ExactFraction is (var numerator, var denominator))
 {
     Console.WriteLine($"{numerator}/{denominator}"); // 1/1
 }
-var fraction = result.GetExactFraction(); // Throws only when verified exact fraction availability is absent
+var fraction = result.GetExactFraction(); // Throws when known/asserted exact fraction availability is absent
 ```
 
-Both `MathValue` and `EvaluationResult` expose `ExactFraction` and `GetExactFraction()`. `TryGetExactFraction` remains available on `MathValue`. Storage getters `Numerator` and `Denominator` remain Rational-only; none of these convenience APIs infer accuracy from a clean numeric display.
+Both `MathValue` and `EvaluationResult` expose `ExactFraction`, `GetExactFraction()`, and `TryGetExactFraction(...)`. Storage getters (`IntegerValue`, `DecimalValue`, `DoubleValue`, and Rational-only `Numerator`/`Denominator`) throw `InvalidOperationException` for a mismatched storage type rather than converting or returning zero. The forwarded getters on `EvaluationResult` and `Variable` follow the same rule. None of these convenience APIs infer exactness from a clean numeric display.
 
-`MachineReadable` and `MathValue.ToInvariantExpression()` preserve the numeric value separately from the rounded display, retaining decimal scale where an invariant decimal literal can express it (`194.40 - 100` yields `"94.40"`). They never apply the display's significant-digit rounding or trailing-zero limits. Exact slash fractions are used when needed; representation, accuracy, and all display metadata are not guaranteed to survive re-evaluation. `MathValue.Serialize()` / `Deserialize()` preserve that full metadata.
+Both types also provide `ToDecimal()`, `ToDouble()` (with `AsDouble()` as an alias),
+`ToBigInteger()`, and explicit casts to `decimal`, `double`, `BigInteger`, `int`, and
+`long`. Integer conversions require a finite whole number and never truncate;
+`TryGetInteger(...)` tests that requirement without throwing. Decimal and Double
+conversions can round. These operations do not change the stored value or exactness.
+See [conversion contracts](docs/architecture.md#inspection--conversion) for range and
+rounding behavior.
+
+`MachineReadable` and `MathValue.ToInvariantExpression()` preserve the numeric value separately from the rounded display, retaining decimal scale where an invariant decimal literal can express it (`194.40 - 100` yields `"94.40"`). They never apply the display's significant-digit rounding or trailing-zero limits. Exact slash fractions are used when needed; representation, exactness, and all display metadata are not guaranteed to survive re-evaluation. `MathValue.Serialize()` / `Deserialize()` preserve that full metadata.
 
 ### 1. Formatted Display (`IFormattable`)
-`MathValue` implements `IFormattable`, so string interpolation and standard format strings work naturally with the current culture:
+`EvaluationResult` implements `IFormattable`, so string interpolation and standard format strings use the result's captured culture unless explicitly overridden. Raw `MathValue` formatting uses the usual .NET culture defaults:
 
 ```csharp
-// Interpolates directly using CurrentCulture:
+// Uses the result's captured culture:
 Console.WriteLine($"Result: {result}");
 
 // Supports standard numeric format specifiers:
@@ -145,11 +174,11 @@ string output = result.ToString(CultureInfo.InvariantCulture);
 *(When formatting `double` values, Numera uses .NET's default round-trip formatting if no custom format is supplied.)*
 
 ### 2. Inspecting the Underlying Value
-If your application needs the raw numeric value rather than formatted text, inspect `result.Type` to read the active property:
+If your application needs the raw numeric value rather than formatted text, inspect `result.Kind` to read the active property:
 
 ```csharp
 // Use a switch statement to route the exact underlying type safely:
-switch (result.Type)
+switch (result.Kind)
 {
     case MathValue.DataType.Integer:
         ProcessExactInteger(result.IntegerValue);
@@ -158,7 +187,7 @@ switch (result.Type)
         ProcessExactDecimal(result.DecimalValue);
         break;
     case MathValue.DataType.Rational:
-        ProcessExactFraction(result.Value.Numerator, result.Value.Denominator);
+        ProcessExactFraction(result.Numerator, result.Denominator);
         break;
     case MathValue.DataType.Double:
         ProcessFloatingPoint(result.DoubleValue);
@@ -210,23 +239,25 @@ catch (NumeraException ex)
     Console.WriteLine($"Error ({ex.Diagnostic.Code}): {ex.Message}");
 }
 ```
-*(Standard developer errors, such as passing a `null` expression or an invalid `EvaluationOptions`, continue to throw `ArgumentNullException` and `ArgumentOutOfRangeException`.)*
+*(Standard developer errors, such as passing a `null` expression or invalid `CalculatorOptions`, continue to throw `ArgumentNullException` and `ArgumentOutOfRangeException`.)*
 
 ### 5. Configuring Angle Modes (Degrees, Radians, Gradians)
-By default, trigonometric functions operate in radians (`AngleUnit.Radians`). If your application or UI calculator operates in degrees or gradians, configure `EvaluationOptions.AngleUnit`:
+By default, trigonometric functions operate in radians (`AngleUnit.Radians`). If your application or UI calculator operates in degrees or gradians, derive an engine with the desired angle setting:
 
 ```csharp
-var options = new EvaluationOptions { AngleUnit = AngleUnit.Degrees };
+var engine = new CalculatorEngine().WithAngleUnit(AngleUnit.Degrees);
 
-// Degree calculations use .NET IEEE 754 pi-scaled intrinsics, giving exact cardinal results:
-var sin90 = Calculator.Evaluate("sin(90)", options);    // 1.0 (exact)
-var sin180 = Calculator.Evaluate("sin(180)", options);  // 0.0 (exact, not 1.22e-16)
-var cos90 = Calculator.Evaluate("cos(90)", options);    // 0.0 (exact)
-var tan45 = Calculator.Evaluate("tan(45)", options);    // 1.0 (exact)
+// Degree calculations use .NET IEEE 754 pi-scaled intrinsics for clean cardinal values:
+var sin90 = engine.Evaluate("sin(90)");    // 1
+var sin180 = engine.Evaluate("sin(180)");  // 0, not 1.22e-16
+var cos90 = engine.Evaluate("cos(90)");    // 0
+var tan45 = engine.Evaluate("tan(45)");    // 1
 
 // Inverse trigonometric functions also return results in the configured unit:
-var angle = Calculator.Evaluate("arcsin(1)", options);  // 90.0 (exact)
+var angle = engine.Evaluate("arcsin(1)");  // 90
 ```
+
+These floating-point function results remain Unverified; clean cardinal displays do not establish calculation exactness.
 
 Supported units are:
 * `AngleUnit.Radians` (default)
@@ -252,24 +283,22 @@ Your application can inspect `result.Type` to distinguish provably exact answers
 
 ## Normalizing Human Input
 
-Numera's core evaluator expects clean, culture-invariant syntax (`.` decimal points, `,` argument commas, standard ASCII operators). 
+Numera normalizes human input automatically before passing culture-invariant syntax to its core parser. The static facade uses current culture; an engine uses its captured culture.
 
-For interactive desktop applications, launchers (such as PowerToys Run or Raycast), or search boxes, use **`ExpressionNormalizer`** to preprocess human quirks—including leading/trailing equals, European decimal commas, digit grouping, percentage idioms (`15% of 200`, `100 + 20%`), postfix factorials (`5!`), and implicit multiplication (`2pi`, `2(3+4)`):
+For interactive desktop applications, launchers, or search boxes, evaluate the original input directly. To select a particular culture:
 
 ```csharp
 using Numera;
 using System.Globalization;
 
-var options = new NormalizationOptions { Culture = new CultureInfo("de-DE") };
+var engine = CalculatorEngine.ForCulture(new CultureInfo("de-DE"));
 string raw = "= 1.000,50 × (2 + 3)! + 15% of 200 =";
 
-if (ExpressionNormalizer.TryNormalize(raw, out var clean, options))
-{
-    // clean: "1000.50 * factorial(2 + 3) + (15 / 100) * 200"
-    var result = Calculator.Evaluate(clean);
-    Console.WriteLine($"Result: {result}");
-}
+var result = engine.Evaluate(raw);
+Console.WriteLine($"Result: {result}");
 ```
+
+`ExpressionNormalizer` remains available for standalone text cleanup. Do not normalize cultured input separately and then pass the invariant output into a human-input engine: that would normalize it twice. See [Expression Normalization](docs/normalization.md) for per-pass settings and raw-input mode.
 
 ---
 
@@ -340,7 +369,8 @@ For comprehensive guides and references, see the documentation in [`docs/`](docs
 - **[Calculation Examples](docs/examples.md)**: End-user examples across the engine's feature families, exactness and display rounding, and qualified comparisons with Double-based arithmetic.
 - **[Syntax & Functions Reference](docs/syntax.md)**: Full catalog of operators, precedence rules, constants, literals, and all 60+ built-in functions (trigonometric, hyperbolic, combinatorics, number theory, probability, bitwise).
 - **[Expression Normalization Guide](docs/normalization.md)**: Detailed breakdown of the normalization pipeline, culture options, and percentage/factorial/implicit-multiplication rules.
-- **[Numerical Architecture & Type Model](docs/architecture.md)**: Canonical Integer/Decimal/Rational values, Double boundaries, accuracy provenance, captured-value evaluation, and result formatting.
+- **[Exactness for Application UIs](docs/exactness.md)**: Indicators, fraction toggles, interpreting calculation paths, and caller-supplied values.
+- **[Numerical Architecture & Type Model](docs/architecture.md)**: Canonical Integer/Decimal/Rational values, Double boundaries, exactness metadata, captured-value evaluation, and result formatting.
 - **[Safety Limits & Error Diagnostics](docs/safety-and-limits.md)**: Resource ceilings (`CalculationLimits`), recursion depth, memory protections, exception hierarchy, and diagnostic codes.
 
 ---

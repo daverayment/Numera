@@ -151,12 +151,12 @@ public sealed class IntegrationAndArchitectureTests
 
         // Sum of two decimal.MaxValue operands.
         var sumResult = Calculator.Evaluate($"{maxStr} + {maxStr}");
-        Assert.AreEqual(MathValue.DataType.Integer, sumResult.Type);
+        Assert.AreEqual(MathValue.DataType.Integer, sumResult.Kind);
         Assert.AreEqual(expectedSum, sumResult.IntegerValue);
 
         // Multiply decimal.MaxValue by 2.0 (whole decimal).
         var mulResult = Calculator.Evaluate($"{maxStr} * 2.0");
-        Assert.AreEqual(MathValue.DataType.Integer, mulResult.Type);
+        Assert.AreEqual(MathValue.DataType.Integer, mulResult.Kind);
         Assert.AreEqual(expectedSum, mulResult.IntegerValue);
     }
 
@@ -166,7 +166,7 @@ public sealed class IntegrationAndArchitectureTests
         string maxStr = decimal.MaxValue.ToString(CultureInfo.InvariantCulture);
 
         var fracSum = Calculator.Evaluate($"{maxStr} + 0.5");
-        Assert.AreEqual(MathValue.DataType.Rational, fracSum.Type);
+        Assert.AreEqual(MathValue.DataType.Rational, fracSum.Kind);
         Assert.AreEqual(new BigInteger(decimal.MaxValue) * 2 + 1, fracSum.Value.Numerator);
         Assert.AreEqual(new BigInteger(2), fracSum.Value.Denominator);
         Assert.AreEqual(CalculationExactness.Exact, fracSum.Exactness);
@@ -182,12 +182,12 @@ public sealed class IntegrationAndArchitectureTests
 
         // r1 * 9 in C# code should reduce to exact 71 (Integer).
         EvaluationResult r2 = r1 * 9;
-        Assert.AreEqual(MathValue.DataType.Integer, r2.Type);
+        Assert.AreEqual(MathValue.DataType.Integer, r2.Kind);
         Assert.AreEqual(new BigInteger(71), r2.IntegerValue);
 
         // Chained C# operations.
         EvaluationResult r3 = (Calculator.Evaluate("1 / 3") * 6) / 2;
-        Assert.AreEqual(MathValue.DataType.Integer, r3.Type);
+        Assert.AreEqual(MathValue.DataType.Integer, r3.Kind);
         Assert.AreEqual(BigInteger.One, r3.IntegerValue);
 
         // Comparison in C#.

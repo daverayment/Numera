@@ -13,7 +13,8 @@ namespace Numera;
 /// </summary>
 /// <remarks>
 /// The default instance is integer zero with
-/// <see cref="CalculationExactness.Unverified"/> exactness.
+/// <see cref="CalculationExactness.Unverified"/> exactness. Use <see cref="Zero"/>
+/// for an Exact Integer zero.
 /// <para>
 /// <b>Exactness.</b> <see cref="Exactness"/> helps callers label results and recognize an
 /// unverified calculation path, but does not record individual steps or estimate error.
@@ -26,9 +27,10 @@ namespace Numera;
 /// NaN semantics.
 /// </para>
 /// <para>
-/// <b>Conversion.</b>Representation getters do not convert values. Use explicit conversion
-/// methods to convert between representations, like <see cref="ToDouble"/> and
-/// <see cref="ToDecimal"/>.
+/// <b>Conversion.</b>Representation getters do not convert values. Use explicit casts or
+/// methods such as <see cref="ToDouble"/>, <see cref="ToDecimal"/>, and
+/// <see cref="ToBigInteger"/>. Integer conversions require a finite whole number rather
+/// than truncating. Conversions do not change the stored value or its exactness.
 /// </para>
 /// </remarks>
 public readonly partial struct MathValue :
@@ -80,6 +82,31 @@ public readonly partial struct MathValue :
     private static readonly BigInteger MaxDecimalMantissa = (BigInteger.One << 96) - 1;
 
     /// <summary>
+    /// Gets an Exact Integer zero, unlike the Unverified zero of a default instance.
+    /// </summary>
+    public static MathValue Zero { get; } = new(0);
+
+    /// <summary>
+    /// Gets an Exact Integer one.
+    /// </summary>
+    public static MathValue One { get; } = new(1);
+
+    /// <summary>
+    /// Gets a Double NaN with Unverified exactness and no exact fraction.
+    /// </summary>
+    public static MathValue NaN { get; } = new(double.NaN);
+
+    /// <summary>
+    /// Gets positive Double infinity with Unverified exactness and no exact fraction.
+    /// </summary>
+    public static MathValue PositiveInfinity { get; } = new(double.PositiveInfinity);
+
+    /// <summary>
+    /// Gets negative Double infinity with Unverified exactness and no exact fraction.
+    /// </summary>
+    public static MathValue NegativeInfinity { get; } = new(double.NegativeInfinity);
+
+    /// <summary>
     /// The active representation.
     /// </summary>
     public DataType Kind { get; }
@@ -99,6 +126,8 @@ public readonly partial struct MathValue :
     /// <summary>
     /// Gets the stored integer without converting other storage types.
     /// </summary>
+    /// <remarks>Use <see cref="ToBigInteger"/> or an explicit cast to convert a whole
+    /// number from another representation.</remarks>
     /// <exception cref="InvalidOperationException"><see cref="Kind"/> is not Integer.
     /// </exception>
     public BigInteger IntegerValue => Kind == DataType.Integer ?
@@ -108,6 +137,8 @@ public readonly partial struct MathValue :
     /// <summary>
     /// Gets the stored decimal without converting other storage types.
     /// </summary>
+    /// <remarks>Use <see cref="ToDecimal"/> or an explicit cast to convert instead.
+    /// </remarks>
     /// <exception cref="InvalidOperationException"><see cref="Kind"/> is not Decimal.
     /// </exception>
     public decimal DecimalValue => Kind == DataType.Decimal ?
@@ -117,6 +148,8 @@ public readonly partial struct MathValue :
     /// <summary>
     /// Gets the stored double without converting other storage types.
     /// </summary>
+    /// <remarks>Use <see cref="ToDouble"/> or an explicit cast to convert instead.
+    /// </remarks>
     /// <exception cref="InvalidOperationException"><see cref="Kind"/> is not Double.
     /// </exception>
     public double DoubleValue => Kind == DataType.Double ?
@@ -413,8 +446,9 @@ public readonly partial struct MathValue :
 
     /// <summary>
     /// Converts to a double. Non-Double values are rounded once, to nearest even, and may
-    /// overflow to infinity.
+    /// underflow to zero or overflow to infinity.
     /// </summary>
+    /// <remarks>Does not change the stored value or its exactness status.</remarks>
     public double ToDouble() =>
         TryToRational(this, out var n, out var d) ? DivideIntegersAsDouble(n, d) : DoubleValue;
 
@@ -427,6 +461,8 @@ public readonly partial struct MathValue :
     /// Converts to a decimal. Fractions that are not exactly representable round
     /// midpoint-to-even.
     /// </summary>
+    /// <remarks>Doubles use the standard .NET decimal conversion. Does not change the
+    /// stored value or its exactness status.</remarks>
     /// <exception cref="OverflowException">The value is outside the decimal range, or is
     /// NaN or infinite.</exception>
     public decimal ToDecimal()
@@ -468,6 +504,24 @@ public readonly partial struct MathValue :
         }
 
         throw new OverflowException("Value exceeds the decimal range.");
+    }
+
+    /// <summary>
+    /// Converts a finite whole number to a <see cref="BigInteger"/> without rounding.
+    /// </summary>
+    /// <returns>The integer value.</returns>
+    /// <remarks>Works across storage types, regardless of exactness. Does not change the
+    /// stored value or its exactness status.</remarks>
+    /// <exception cref="InvalidCastException">The value is not finite or has a fractional
+    /// part.</exception>
+    public BigInteger ToBigInteger()
+    {
+        if (TryGetInteger(out var integer))
+        {
+            return integer;
+        }
+
+        throw new InvalidCastException("The value is not an integer.");
     }
 
     /// <summary>
@@ -1672,6 +1726,54 @@ public readonly partial struct MathValue :
     /// Converts a double to an unverified value.
     /// </summary>
     public static implicit operator MathValue(double value) => new(value);
+
+    /// <summary>
+    /// Converts to a decimal, rounding if necessary, as <see cref="ToDecimal"/> does.
+    /// </summary>
+    /// <param name="value">The value to convert.</param>
+    /// <returns>The decimal value.</returns>
+    /// <exception cref="OverflowException">The value is not finite or is outside the
+    /// decimal range.</exception>
+    public static explicit operator decimal(MathValue value) => value.ToDecimal();
+
+    /// <summary>
+    /// Converts to a double, as <see cref="ToDouble"/> does. Precision may be lost.
+    /// </summary>
+    /// <param name="value">The value to convert.</param>
+    /// <returns>The converted value, which may underflow to zero or overflow to infinity.
+    /// </returns>
+    public static explicit operator double(MathValue value) => value.ToDouble();
+
+    /// <summary>
+    /// Converts a finite whole number to a <see cref="BigInteger"/> without rounding.
+    /// </summary>
+    /// <param name="value">The value to convert.</param>
+    /// <returns>The integer value.</returns>
+    /// <exception cref="InvalidCastException">The value is not finite or has a fractional
+    /// part.</exception>
+    public static explicit operator BigInteger(MathValue value) => value.ToBigInteger();
+
+    /// <summary>
+    /// Converts a finite whole number to a 32-bit signed integer without rounding.
+    /// </summary>
+    /// <param name="value">The value to convert.</param>
+    /// <returns>The integer value.</returns>
+    /// <exception cref="InvalidCastException">The value is not finite or has a fractional
+    /// part.</exception>
+    /// <exception cref="OverflowException">The value is outside the <see cref="int"/>
+    /// range.</exception>
+    public static explicit operator int(MathValue value) => (int)value.ToBigInteger();
+
+    /// <summary>
+    /// Converts a finite whole number to a 64-bit signed integer without rounding.
+    /// </summary>
+    /// <param name="value">The value to convert.</param>
+    /// <returns>The integer value.</returns>
+    /// <exception cref="InvalidCastException">The value is not finite or has a fractional
+    /// part.</exception>
+    /// <exception cref="OverflowException">The value is outside the <see cref="long"/>
+    /// range.</exception>
+    public static explicit operator long(MathValue value) => (long)value.ToBigInteger();
 
     /// <summary>
     /// Throws <see cref="CalculationLimitException"/> if the value needs more than

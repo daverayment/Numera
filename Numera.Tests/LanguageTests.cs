@@ -137,7 +137,7 @@ public class LanguageTests
     public void ConstantsAreCaseInsensitive(string constantName, double expectedDouble, string expectedDecimal)
     {
         var result = Calculator.Evaluate(constantName);
-        Assert.AreEqual(MathValue.DataType.Decimal, result.Type);
+        Assert.AreEqual(MathValue.DataType.Decimal, result.Kind);
         Assert.AreEqual(decimal.Parse(expectedDecimal, CultureInfo.InvariantCulture), result.DecimalValue);
         Assert.AreEqual(expectedDouble, result.AsDouble(), 1e-15);
     }
@@ -358,7 +358,7 @@ public class LanguageTests
     {
         // Scientific literals stay exact even below the IEEE 754 double range.
         var tiny = Calculator.Evaluate("1e-999");
-        Assert.AreEqual(MathValue.DataType.Rational, tiny.Type);
+        Assert.AreEqual(MathValue.DataType.Rational, tiny.Kind);
         Assert.AreEqual(BigInteger.One, tiny.Value.Numerator);
         Assert.AreEqual(BigInteger.Pow(10, 999), tiny.Value.Denominator);
         Assert.AreEqual(tiny.Value, ((NumberNode)Calculator.Parse("1e-999")).Value);
@@ -370,8 +370,8 @@ public class LanguageTests
         // Authored decimal notation retains Decimal even for integral values.
         var sci1e5 = Calculator.Evaluate("1e5");
         var dec100k = Calculator.Evaluate("100000.0");
-        Assert.AreEqual(MathValue.DataType.Integer, sci1e5.Type);
-        Assert.AreEqual(MathValue.DataType.Decimal, dec100k.Type);
+        Assert.AreEqual(MathValue.DataType.Integer, sci1e5.Kind);
+        Assert.AreEqual(MathValue.DataType.Decimal, dec100k.Kind);
         Assert.AreEqual(new BigInteger(100000), sci1e5.IntegerValue);
         Assert.AreEqual(100000.0m, dec100k.DecimalValue);
         Assert.AreEqual(sci1e5.GetExactFraction(), dec100k.GetExactFraction());

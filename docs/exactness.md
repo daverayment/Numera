@@ -124,6 +124,28 @@ Callbacks receive evaluated values. An Unverified argument conservatively keeps 
 function result Unverified even if the callback returns a newly constructed exact
 Integer. See [custom functions](custom-functions.md) for registration and evaluation rules.
 
+## "I need common values, including an exact zero"
+
+Use the static `MathValue` properties for explicitly supplied common values:
+
+| Property | Representation | Exactness | Exact fraction |
+| --- | --- | --- | --- |
+| `MathValue.Zero` | Integer 0 | Exact | `0/1` |
+| `MathValue.One` | Integer 1 | Exact | `1/1` |
+| `MathValue.NaN` | Double NaN | Unverified | Unavailable |
+| `MathValue.PositiveInfinity` | Double positive infinity | Unverified | Unavailable |
+| `MathValue.NegativeInfinity` | Double negative infinity | Unverified | Unavailable |
+
+`default(MathValue)` remains a valid Integer zero with Unverified exactness, whereas
+`MathValue.Zero` and `new MathValue(0)` explicitly supply an Exact zero. They are
+numerically equal and have equal numeric hash codes, but their metadata and exact-fraction
+availability differ. Use `MathValue.Zero` when initializing an explicitly exact accumulator;
+an Unverified input will still propagate Unverified through subsequent arithmetic.
+
+These properties do not change calculation results or certify a zero merely because it
+equals `MathValue.Zero`: `ln(1)` still yields an Unverified zero. Changing a copy's
+exactness does not modify the static property.
+
 ## "I want to keep this information in history or transfer it"
 
 Keep the `EvaluationResult` or `MathValue` when continuing calculations; keep a

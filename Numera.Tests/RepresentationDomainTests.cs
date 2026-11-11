@@ -46,6 +46,8 @@ public sealed class RepresentationDomainTests
         {
             Assert.ThrowsExactly<InvalidOperationException>(() => _ = value.Numerator);
             Assert.ThrowsExactly<InvalidOperationException>(() => _ = value.Denominator);
+            Assert.ThrowsExactly<InvalidOperationException>(() => _ = result.Numerator);
+            Assert.ThrowsExactly<InvalidOperationException>(() => _ = result.Denominator);
         }
     }
 
@@ -67,7 +69,9 @@ public sealed class RepresentationDomainTests
         Assert.AreEqual(42.0, floating.DoubleValue);
         Assert.AreEqual(42.0, new Variable("x", floating.Value).DoubleValue);
 
-        var half = Calculator.Evaluate("1/2").Value;
+        var half = Calculator.Evaluate("1/2");
+        Assert.AreEqual(BigInteger.One, half.Value.Numerator);
+        Assert.AreEqual(new BigInteger(2), half.Value.Denominator);
         Assert.AreEqual(BigInteger.One, half.Numerator);
         Assert.AreEqual(new BigInteger(2), half.Denominator);
     }
@@ -115,7 +119,7 @@ public sealed class RepresentationDomainTests
         Assert.AreEqual(0.5, half.AsDouble());
         Assert.AreEqual(0.5m, (decimal)half);
         Assert.ThrowsExactly<InvalidCastException>(() => _ = (int)half);
-        Assert.AreEqual(MathValue.DataType.Rational, half.Type);
+        Assert.AreEqual(MathValue.DataType.Rational, half.Kind);
     }
 
     [TestMethod]
@@ -177,7 +181,7 @@ public sealed class RepresentationDomainTests
         string expression, MathValue.DataType kind, int numerator, int denominator)
     {
         var result = Calculator.Evaluate(expression);
-        Assert.AreEqual(kind, result.Type, expression);
+        Assert.AreEqual(kind, result.Kind, expression);
 
         var expected = (new BigInteger(numerator), new BigInteger(denominator));
         Assert.AreEqual(expected, result.GetExactFraction(), expression);
@@ -258,11 +262,11 @@ public sealed class RepresentationDomainTests
         Assert.AreEqual(CalculationExactness.Exact, fractional.Exactness);
 
         var tiny = Calculator.Evaluate("1e-400");
-        Assert.AreEqual(MathValue.DataType.Rational, tiny.Type);
+        Assert.AreEqual(MathValue.DataType.Rational, tiny.Kind);
         Assert.AreEqual((BigInteger.One, BigInteger.Pow(10, 400)), tiny.GetExactFraction());
 
         var longLiteral = Calculator.Evaluate("0.123456789012345678901234567890123456789");
-        Assert.AreEqual(MathValue.DataType.Rational, longLiteral.Type);
+        Assert.AreEqual(MathValue.DataType.Rational, longLiteral.Kind);
         Assert.AreEqual(BigInteger.Parse("123456789012345678901234567890123456789"), longLiteral.GetExactFraction().Numerator);
         Assert.AreEqual(BigInteger.Pow(10, 39), longLiteral.GetExactFraction().Denominator);
     }
@@ -272,14 +276,14 @@ public sealed class RepresentationDomainTests
     {
         var engine = new CalculatorEngine();
         var captured = engine.Evaluate("amount=194.40");
-        Assert.AreEqual(MathValue.DataType.Decimal, engine.Evaluate("amount-100", captured.Context).Type);
-        Assert.AreEqual(MathValue.DataType.Decimal, (captured - 100).Type);
+        Assert.AreEqual(MathValue.DataType.Decimal, engine.Evaluate("amount-100", captured.Context).Kind);
+        Assert.AreEqual(MathValue.DataType.Decimal, (captured - 100).Kind);
         Assert.AreEqual("94.40", (captured - 100).ToString());
         Assert.AreEqual("94.40", (captured - 100).MachineReadable);
 
         var half = engine.Evaluate("1/2");
-        Assert.AreEqual(MathValue.DataType.Rational, (half + new MathValue(0.25m)).Type);
-        Assert.AreEqual(MathValue.DataType.Integer, (half + new MathValue(0.5m)).Type);
+        Assert.AreEqual(MathValue.DataType.Rational, (half + new MathValue(0.25m)).Kind);
+        Assert.AreEqual(MathValue.DataType.Integer, (half + new MathValue(0.5m)).Kind);
         foreach (var value in new[] { captured.Value, half.Value, engine.Evaluate("0.5+0.5").Value })
         {
             var restored = MathValue.Deserialize(value.Serialize());

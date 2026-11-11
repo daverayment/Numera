@@ -212,7 +212,7 @@ public sealed class RationalEvaluationTests
         var expected = Calculator.Evaluate(expectedExpression).GetExactFraction();
         var result = Calculator.Evaluate(expression);
 
-        Assert.AreEqual(expectedType, result.Type);
+        Assert.AreEqual(expectedType, result.Kind);
         AssertFraction(result.Value, expected.Numerator, expected.Denominator);
     }
 
@@ -253,7 +253,7 @@ public sealed class RationalEvaluationTests
         foreach (var (expression, expected) in cases)
         {
             var result = Calculator.Evaluate(expression);
-            Assert.AreEqual(MathValue.DataType.Double, result.Type, expression);
+            Assert.AreEqual(MathValue.DataType.Double, result.Kind, expression);
             Assert.AreEqual(CalculationExactness.Unverified, result.Exactness, expression);
             Assert.IsFalse(result.HasExactFraction, expression);
             Assert.AreEqual(expected, result.AsDouble(), Math.Abs(expected) * 3e-15, expression);
@@ -268,7 +268,7 @@ public sealed class RationalEvaluationTests
         var result = Calculator.Evaluate(expression);
 
         Assert.AreEqual(Math.ScaleB(1, expectedExponent), result.AsDouble());
-        Assert.AreEqual(MathValue.DataType.Double, result.Type);
+        Assert.AreEqual(MathValue.DataType.Double, result.Kind);
         Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.IsFalse(result.HasExactFraction);
     }
@@ -283,7 +283,7 @@ public sealed class RationalEvaluationTests
         var result = Calculator.Evaluate(expression);
 
         Assert.AreEqual(expected, result.AsDouble(), expected * 3e-15);
-        Assert.AreEqual(MathValue.DataType.Double, result.Type);
+        Assert.AreEqual(MathValue.DataType.Double, result.Kind);
         Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.IsFalse(result.HasExactFraction);
     }
@@ -296,7 +296,7 @@ public sealed class RationalEvaluationTests
         var result = Calculator.Evaluate(expression);
 
         Assert.AreEqual(expected, result.AsDouble());
-        Assert.AreEqual(MathValue.DataType.Double, result.Type);
+        Assert.AreEqual(MathValue.DataType.Double, result.Kind);
         Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.IsFalse(result.HasExactFraction);
     }
@@ -330,7 +330,7 @@ public sealed class RationalEvaluationTests
         };
 
         var result = Calculator.Evaluate("sqrt(x)", context);
-        Assert.AreEqual(MathValue.DataType.Double, result.Type);
+        Assert.AreEqual(MathValue.DataType.Double, result.Kind);
         Assert.AreEqual(0.5, result.AsDouble());
         Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.AreEqual(long.MinValue, BitConverter.DoubleToInt64Bits(Calculator.Evaluate("sqrt(negativeZero)", context).AsDouble()));

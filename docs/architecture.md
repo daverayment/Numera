@@ -97,6 +97,35 @@ switch (result.Kind)
 
 Representation access and conversion are distinct. Storage getters (`IntegerValue`, `DecimalValue`, `DoubleValue`, `Numerator`, and `Denominator`) throw `InvalidOperationException` if the storage type does not match; they never convert or return a placeholder zero. The same applies to the forwarded getters on `EvaluationResult` and `Variable`. Use `ToDouble()` (or `AsDouble()`) for an explicit, potentially lossy scalar conversion and `ToDecimal()` for an explicit Decimal conversion. `TryGetExactFraction` extracts a known or asserted exact fraction across finite representations, including caller-marked Exact Doubles. Supplied exact inputs assert their value, not the exactness of any calculation performed before supplying them.
 
+`MathValue` and `EvaluationResult` expose the same conversion surface. Result members
+delegate to the value's implementation; extracting `.Value` does not change conversion
+rules:
+
+| Target | Named conversion on either type | Explicit cast | Contract |
+| --- | --- | --- | --- |
+| Double | `ToDouble()`; `AsDouble()` is an alias | `(double)` | May lose precision, underflow to signed zero, or overflow to infinity; stored Doubles retain their bits. |
+| Decimal | `ToDecimal()` | `(decimal)` | Exact when representable; fractions round midpoint-to-even, Doubles use the .NET conversion. Nonfinite or out-of-range values throw `OverflowException`. |
+| BigInteger | `ToBigInteger()` | `(BigInteger)` | Requires a finite whole number; otherwise throws `InvalidCastException`, never truncates. |
+| Int32 / Int64 | Use the explicit cast | `(int)` / `(long)` | Same whole-number requirement, with `OverflowException` outside the target range. |
+
+```csharp
+var result = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture).Evaluate("42.00");
+MathValue value = result.Value;
+BigInteger first = result.ToBigInteger(); // 42
+BigInteger second = (BigInteger)value;   // 42
+decimal third = result.ToDecimal();      // 42.00
+// result.IntegerValue throws: the value is stored as Decimal, not Integer.
+```
+
+Both types expose `TryGetInteger(out BigInteger)` for a non-throwing whole-number test,
+regardless of exactness, and `TryGetExactFraction(out BigInteger, out BigInteger)` for
+finite Exact values. These `Try` methods return false and zero outputs when unavailable.
+All conversions leave the source value, representation, exactness, display scale, and
+result context unchanged. Rational-only `Numerator` and `Denominator` are available on
+both types, even for Unverified Rational storage; they do not project Integer, Decimal,
+or Double values into fractions. Use the exact-fraction APIs for representation-independent
+access subject to the exactness requirement.
+
 For callers who do not need storage details, `MathValue.ExactFraction` and `EvaluationResult.ExactFraction` return a nullable named tuple `(BigInteger Numerator, BigInteger Denominator)` in lowest terms. `GetExactFraction()` returns the same tuple or throws `InvalidOperationException` when a finite Exact value is unavailable. Thus `1/3 + 2/3` exposes `(1, 1)` without requiring a Rational representation. The strict Rational-only storage getters remain unchanged. Caller-asserted Exact Doubles expose their stored binary fraction; ordinary Doubles and Unverified values do not qualify.
 
 Representation selection is centralized after bounded fraction arithmetic; Decimal-domain operations do not use rounded native Decimal arithmetic. Exact Decimal conversion work also obeys intermediate limits. Numeric rounding helpers retain the input's exact domain, while boolean, sign, bitwise, and number-theory results use their integral result representations. Recognized perfect roots of Decimal inputs retain Decimal when exactly representable rather than becoming approximate solely because the input was stored as Decimal. Double inputs remain approximate through root evaluation, and recognized roots of Unverified inputs do not acquire Exact status.
@@ -116,6 +145,57 @@ Representation selection is centralized after bounded fraction arithmetic; Decim
 - **Exactness**: Numeric equality and hashing ignore `Exactness`; inspect it separately for UI guidance. For example, an Exact Decimal `0.5` and an Unverified Double `0.5` compare equal but do not offer the same exactness claim.
 - **Probable Primality**: `isprime` is deterministic through the unsigned 64-bit range. Positive results above that range are Unverified; a composite witness remains conclusive. Factorization-dependent `divcount`, `sigma`, and `totient` results above that input range are conservatively Unverified, even if a particular factorization happens to be correct.
 - **Explicit Double Conversion**: Integer `DivRem` rounding implements midpoint-to-even, including direct rounding to the subnormal grid. Conversion does not retroactively certify an approximate calculation.
+
+### Result Equality and Content Comparison
+
+`EvaluationResult` equality, hashing, and ordering use only the numeric value, with the
+same rules as `MathValue`. Expression, representation, exactness, context, assignments,
+and options do not affect default result equality:
+
+```csharp
+var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+var assigned = engine.Evaluate("x=4");
+var bare = engine.Evaluate("4.0");
+
+bool sameNumber = assigned == bare; // true
+bool sameContent = EvaluationResultComparers.Content.Equals(assigned, bare); // false
+```
+
+Default dictionaries and hash sets treat these results as the same key, as do sorted
+sets. This is not history-entry identity: use application-defined identifiers when
+repeated calculations must remain distinct. Numeric equality does not imply matching
+exactness claims, formatting, or subsequent percentage behavior.
+
+Use the content comparer when those distinctions matter, including with collection APIs:
+
+```csharp
+var distinctContent = results.Distinct(EvaluationResultComparers.Content);
+var historyLookup = new Dictionary<EvaluationResult, string>(EvaluationResultComparers.Content);
+```
+
+The comparer includes:
+
+- Stored values: representation, exactness, and decimal display scale, including values
+  in variables and `ans`. Decimal and Double storage is compared bit-for-bit, so signed
+  zero and different Double NaN payloads can differ despite numeric equality.
+- Context variables and assignments by contents and order, not collection identity.
+  Variable names and original definition text are ordinal and case-sensitive, even
+  though evaluation looks up names case-insensitively.
+- Previous results and expressions, plus variable expressions. ASTs retain their
+  existing structural equality rules, which ignore source spans and compare numeric
+  literals numerically. Original variable definition text is compared separately.
+- Options using existing record equality. Custom-function collections retain identity
+  equality; callbacks are not executed or compared for behavioral equivalence.
+
+Default-initialized results can be compared and hashed, but this does not make their
+missing context or assignment collection usable. Content equality distinguishes missing
+state from present, empty state. Neither comparer supplies persistent identifiers or
+guarantees identical serialized bytes. Serialization remains a separate contract.
+
+Strongly typed comparisons support both results and `MathValue`. Boxed equality remains
+same-type: a boxed result is not equal to a boxed `MathValue`. Non-generic `IComparable`
+likewise accepts only its own type (and `null`, which sorts before an instance).
+Comparing a boxed result to a boxed `MathValue`, or vice versa, throws `ArgumentException`.
 
 ---
 

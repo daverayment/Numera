@@ -180,7 +180,7 @@ public sealed class PrematureDoubleConversionTests
 
     private static void AssertApproximation(EvaluationResult result, double expected, double tolerance)
     {
-        Assert.AreEqual(MathValue.DataType.Double, result.Type);
+        Assert.AreEqual(MathValue.DataType.Double, result.Kind);
         Assert.AreEqual(expected, result.DoubleValue, tolerance);
         Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.IsFalse(result.HasExactFraction);

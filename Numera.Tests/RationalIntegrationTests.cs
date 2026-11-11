@@ -32,7 +32,7 @@ public sealed class RationalIntegrationTests
         Assert.AreEqual("5/6", exact.FormatResult().FractionRepresentation);
 
         var approximate = exact + new MathValue(0.5);
-        Assert.AreEqual(MathValue.DataType.Double, approximate.Type);
+        Assert.AreEqual(MathValue.DataType.Double, approximate.Kind);
         Assert.AreEqual(CalculationExactness.Unverified, approximate.Exactness);
         Assert.IsFalse(approximate.HasExactFraction);
         Assert.IsNull(approximate.FormatResult().FractionRepresentation);
