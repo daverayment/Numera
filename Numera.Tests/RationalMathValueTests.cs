@@ -13,7 +13,7 @@ public sealed class RationalMathValueTests
         Assert.AreEqual(MathValue.DataType.Rational, third.Kind);
         Assert.AreEqual(BigInteger.One, third.Numerator);
         Assert.AreEqual(new BigInteger(3), third.Denominator);
-        Assert.AreEqual(CalculationAccuracy.Exact, third.Accuracy);
+        Assert.AreEqual(CalculationExactness.Exact, third.Exactness);
         Assert.AreEqual(MathValue.DataType.Integer, MathValue.FromFraction(6, 3).Kind);
         Assert.AreEqual(MathValue.DataType.Integer, MathValue.FromFraction(0, -3).Kind);
         Assert.AreEqual(MathValue.DataType.Rational, MathValue.FromFraction(1, 8).Kind);
@@ -69,7 +69,7 @@ public sealed class RationalMathValueTests
         Assert.AreEqual(BigInteger.Pow(10, 1000), small.Denominator);
         var approximate = MathValue.Pow(new MathValue(2), MathValue.FromFraction(1, 2));
         Assert.AreEqual(MathValue.DataType.Double, approximate.Kind);
-        Assert.AreEqual(CalculationAccuracy.Unverified, approximate.Accuracy);
+        Assert.AreEqual(CalculationExactness.Unverified, approximate.Exactness);
         Assert.ThrowsExactly<DivideByZeroException>(() => MathValue.Pow(new MathValue(0), new MathValue(-1)));
         Assert.ThrowsExactly<CalculationLimitException>(() => MathValue.Pow(new MathValue(10), new MathValue(-10000)));
         Assert.ThrowsExactly<CalculationLimitException>(() => MathValue.Pow(new MathValue(1), new MathValue(10001)));
@@ -112,25 +112,25 @@ public sealed class RationalMathValueTests
 
             Assert.AreEqual(Math.Pow(-2, exponent), result.AsDouble());
             Assert.AreEqual(MathValue.DataType.Double, result.Kind);
-            Assert.AreEqual(CalculationAccuracy.Unverified, result.Accuracy);
+            Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         }
     }
 
     [TestMethod]
-    public void AccuracyIsIndependentOfRepresentationAndPoisonsReachedOperations()
+    public void ExactnessIsIndependentOfRepresentationAndPropagatesThroughReachedOperations()
     {
-        Assert.AreEqual(CalculationAccuracy.Unverified, default(MathValue).Accuracy);
-        Assert.AreEqual(CalculationAccuracy.Exact, new MathValue(1).Accuracy);
-        Assert.AreEqual(CalculationAccuracy.Exact, new MathValue(1m).Accuracy);
-        Assert.AreEqual(CalculationAccuracy.Unverified, new MathValue(1.0).Accuracy);
+        Assert.AreEqual(CalculationExactness.Unverified, default(MathValue).Exactness);
+        Assert.AreEqual(CalculationExactness.Exact, new MathValue(1).Exactness);
+        Assert.AreEqual(CalculationExactness.Exact, new MathValue(1m).Exactness);
+        Assert.AreEqual(CalculationExactness.Unverified, new MathValue(1.0).Exactness);
         var precise = MathValue.FromFraction(1, 3);
-        var unknown = precise.WithAccuracy(CalculationAccuracy.Unverified);
+        var unknown = precise.WithExactness(CalculationExactness.Unverified);
         Assert.IsTrue(precise.TryGetExactFraction(out _, out _));
         Assert.IsFalse(unknown.TryGetExactFraction(out _, out _));
-        Assert.IsTrue(new MathValue(0.5).WithAccuracy(CalculationAccuracy.Exact).TryGetExactFraction(out var trustedNum, out var trustedDen));
+        Assert.IsTrue(new MathValue(0.5).WithExactness(CalculationExactness.Exact).TryGetExactFraction(out var trustedNum, out var trustedDen));
         Assert.AreEqual(BigInteger.One, trustedNum);
         Assert.AreEqual(new BigInteger(2), trustedDen);
-        Assert.IsFalse(new MathValue(double.PositiveInfinity).WithAccuracy(CalculationAccuracy.Exact).TryGetExactFraction(out _, out _));
+        Assert.IsFalse(new MathValue(double.PositiveInfinity).TryGetExactFraction(out _, out _));
         Assert.IsTrue(MathValue.TryToRational(unknown, out var n, out var d));
         Assert.AreEqual(BigInteger.One, n);
         Assert.AreEqual(new BigInteger(3), d);
@@ -143,10 +143,10 @@ public sealed class RationalMathValueTests
             MathValue.LogicalXor(unknown, precise), MathValue.LogicalNot(unknown),
         })
         {
-            Assert.AreEqual(CalculationAccuracy.Unverified, value.Accuracy);
+            Assert.AreEqual(CalculationExactness.Unverified, value.Exactness);
         }
 
-        var integral = new MathValue(6).WithAccuracy(CalculationAccuracy.Unverified);
+        var integral = new MathValue(6).WithExactness(CalculationExactness.Unverified);
         foreach (var value in new[]
         {
             MathValue.BitwiseAnd(integral, new MathValue(3)),
@@ -157,12 +157,12 @@ public sealed class RationalMathValueTests
             MathValue.ShiftRight(integral, new MathValue(1)),
         })
         {
-            Assert.AreEqual(CalculationAccuracy.Unverified, value.Accuracy);
+            Assert.AreEqual(CalculationExactness.Unverified, value.Exactness);
         }
 
         Assert.AreEqual(precise, unknown);
         Assert.AreEqual(precise.GetHashCode(), unknown.GetHashCode());
-        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => precise.WithAccuracy((CalculationAccuracy)20));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => precise.WithExactness((CalculationExactness)20));
     }
 
     [TestMethod]
@@ -179,7 +179,7 @@ public sealed class RationalMathValueTests
         foreach (var value in new[] { third + rounded, third - rounded, third * rounded, third / rounded, third % rounded })
         {
             Assert.AreEqual(MathValue.DataType.Double, value.Kind);
-            Assert.AreEqual(CalculationAccuracy.Unverified, value.Accuracy);
+            Assert.AreEqual(CalculationExactness.Unverified, value.Exactness);
         }
         Assert.AreEqual(new MathValue(double.NaN), new MathValue(double.NaN));
         Assert.IsTrue(MathValue.AreEqual(new MathValue(double.NaN), new MathValue(double.NaN)).IsZero);
@@ -237,19 +237,19 @@ public sealed class RationalMathValueTests
     }
 
     [TestMethod]
-    public void SerializationPreservesKindValueAndProvenance()
+    public void SerializationPreservesKindValueAndExactness()
     {
         foreach (var value in new[]
         {
             default(MathValue), new MathValue(12), new MathValue(12.30m), new MathValue(0.1),
             new MathValue(-0.0), new MathValue(double.NaN), new MathValue(double.PositiveInfinity),
-            MathValue.FromFraction(-123, 7), MathValue.FromFraction(1, 3).WithAccuracy(CalculationAccuracy.Unverified),
+            MathValue.FromFraction(-123, 7), MathValue.FromFraction(1, 3).WithExactness(CalculationExactness.Unverified),
         })
         {
             var restored = MathValue.Deserialize(value.Serialize());
             Assert.AreEqual(value, restored);
             Assert.AreEqual(value.Kind, restored.Kind);
-            Assert.AreEqual(value.Accuracy, restored.Accuracy);
+            Assert.AreEqual(value.Exactness, restored.Exactness);
             Assert.AreEqual(value.ToInvariantExpression(), restored.ToInvariantExpression());
             if (value.Kind == MathValue.DataType.Double && value.IsZero)
             {
@@ -257,19 +257,19 @@ public sealed class RationalMathValueTests
             }
         }
         Assert.ThrowsExactly<CalculationLimitException>(() => MathValue.Deserialize(new MathValue(65536).Serialize(), maxIntegerBits: 16));
-        Assert.ThrowsExactly<FormatException>(() => MathValue.Deserialize("{\"Kind\":1,\"Accuracy\":1,\"Value\":\"0.123456789012345678901234567891\"}"));
+        Assert.ThrowsExactly<FormatException>(() => MathValue.Deserialize("{\"Kind\":1,\"Exactness\":1,\"Value\":\"0.123456789012345678901234567891\"}"));
         Assert.ThrowsExactly<CalculationLimitException>(() => MathValue.Deserialize(new string('1', 25001)));
         Assert.ThrowsExactly<System.Text.Json.JsonException>(() => MathValue.Deserialize("{"));
         Assert.ThrowsExactly<FormatException>(() => MathValue.Deserialize("null"));
-        Assert.ThrowsExactly<System.Text.Json.JsonException>(() => MathValue.Deserialize("{\"Kind\":0,\"Accuracy\":1}"));
-        Assert.ThrowsExactly<System.Text.Json.JsonException>(() => MathValue.Deserialize("{\"Accuracy\":1,\"Value\":\"1\"}"));
+        Assert.ThrowsExactly<System.Text.Json.JsonException>(() => MathValue.Deserialize("{\"Kind\":0,\"Exactness\":1}"));
+        Assert.ThrowsExactly<System.Text.Json.JsonException>(() => MathValue.Deserialize("{\"Exactness\":1,\"Value\":\"1\"}"));
         Assert.ThrowsExactly<System.Text.Json.JsonException>(() => MathValue.Deserialize("{\"Kind\":0,\"Value\":\"1\"}"));
-        Assert.ThrowsExactly<FormatException>(() => MathValue.Deserialize("{\"Kind\":0,\"Accuracy\":1,\"Value\":null}"));
-        Assert.ThrowsExactly<FormatException>(() => MathValue.Deserialize("{\"Kind\":100,\"Accuracy\":1,\"Value\":\"1\"}"));
-        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => MathValue.Deserialize("{\"Kind\":0,\"Accuracy\":100,\"Value\":\"1\"}"));
-        Assert.ThrowsExactly<DivideByZeroException>(() => MathValue.Deserialize("{\"Kind\":3,\"Accuracy\":1,\"Value\":\"1/0\",\"Numerator\":\"1\",\"Denominator\":\"0\"}"));
-        Assert.ThrowsExactly<FormatException>(() => MathValue.Deserialize("{\"Kind\":3,\"Accuracy\":1,\"Value\":\"2/6\",\"Numerator\":\"2\",\"Denominator\":\"6\"}"));
-        Assert.ThrowsExactly<CalculationLimitException>(() => MathValue.Deserialize("{\"Kind\":0,\"Accuracy\":1,\"Value\":\"" + new string('9', 10000) + "\"}"));
+        Assert.ThrowsExactly<FormatException>(() => MathValue.Deserialize("{\"Kind\":0,\"Exactness\":1,\"Value\":null}"));
+        Assert.ThrowsExactly<FormatException>(() => MathValue.Deserialize("{\"Kind\":100,\"Exactness\":1,\"Value\":\"1\"}"));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => MathValue.Deserialize("{\"Kind\":0,\"Exactness\":100,\"Value\":\"1\"}"));
+        Assert.ThrowsExactly<DivideByZeroException>(() => MathValue.Deserialize("{\"Kind\":3,\"Exactness\":1,\"Value\":\"1/0\",\"Numerator\":\"1\",\"Denominator\":\"0\"}"));
+        Assert.ThrowsExactly<FormatException>(() => MathValue.Deserialize("{\"Kind\":3,\"Exactness\":1,\"Value\":\"2/6\",\"Numerator\":\"2\",\"Denominator\":\"6\"}"));
+        Assert.ThrowsExactly<CalculationLimitException>(() => MathValue.Deserialize("{\"Kind\":0,\"Exactness\":1,\"Value\":\"" + new string('9', 10000) + "\"}"));
     }
 
     [TestMethod]

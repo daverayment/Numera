@@ -31,6 +31,23 @@ public sealed class CalculatorOptionsTests
         Assert.Throws<ArgumentNullException>(() => CalculatorOptions.ForCulture(null!));
 
     [TestMethod]
+    public void RequiredOptionsRejectNullDuringValidationAndEngineConstruction()
+    {
+        (CalculatorOptions Options, string Parameter)[] cases =
+        [
+            (new CalculatorOptions { Culture = null! }, nameof(CalculatorOptions.Culture)),
+            (new CalculatorOptions { CustomFunctions = null! }, nameof(CalculatorOptions.CustomFunctions)),
+            (new CalculatorOptions { ResultFormat = null! }, nameof(CalculatorOptions.ResultFormat))
+        ];
+
+        foreach (var (options, parameter) in cases)
+        {
+            Assert.AreEqual(parameter, Assert.ThrowsExactly<ArgumentNullException>(options.Validate).ParamName);
+            Assert.AreEqual(parameter, Assert.ThrowsExactly<ArgumentNullException>(() => new CalculatorEngine(options)).ParamName);
+        }
+    }
+
+    [TestMethod]
     public void Defaults_CaptureCurrentCultureWithNormalizationEnabled()
     {
         var original = CultureInfo.CurrentCulture;

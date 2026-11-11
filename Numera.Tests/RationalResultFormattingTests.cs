@@ -157,7 +157,7 @@ public sealed class RationalResultFormattingTests
     }
 
     [TestMethod]
-    public void DoubleRoundingDescribesTheStoredBinaryValueNotItsAccuracy()
+    public void DoubleRoundingDescribesTheStoredBinaryValueNotItsExactness()
     {
         Assert.AreEqual(("0.100000000000000005551115", true), Format(new MathValue(0.1)));
         Assert.AreEqual(("0.1", true), Format(new MathValue(0.1), digits: 16));

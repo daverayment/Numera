@@ -182,7 +182,7 @@ public sealed class PrematureDoubleConversionTests
     {
         Assert.AreEqual(MathValue.DataType.Double, result.Type);
         Assert.AreEqual(expected, result.DoubleValue, tolerance);
-        Assert.AreEqual(CalculationAccuracy.Unverified, result.Accuracy);
+        Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.IsFalse(result.HasExactFraction);
         Assert.IsNull(result.FormatResult().FractionRepresentation);
     }

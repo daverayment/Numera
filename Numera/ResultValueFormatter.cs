@@ -58,7 +58,8 @@ internal static class ResultValueFormatter
 
     /// <summary>
     /// Formats the exact fractional representation of a math value (e.g. "1/3" or "5/4"),
-    /// or returns <see langword="null"/> if the value has no verified exact fraction.
+    /// or returns <see langword="null"/> if the value has no known or asserted exact
+    /// fraction.
     /// </summary>
     internal static string? FormatExactFraction(MathValue value)
     {
@@ -230,7 +231,7 @@ internal static class ResultValueFormatter
 
         BigInteger coefficient = BigInteger.DivRem(scaledNumerator, scaledDenominator, out var remainder);
 
-        // This records display loss relative to storage, not calculation accuracy.
+        // This records display loss relative to storage, not calculation exactness.
         // An Unverified value may display without rounding and still be approximate.
         bool isRounded = !remainder.IsZero;
 

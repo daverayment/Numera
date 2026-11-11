@@ -13,11 +13,12 @@ requires more than 24 integer digits or 24 fractional decimal places.
 
 ## Reading the answers
 
-Numera distinguishes **calculation accuracy** from **display rounding**:
+Use **calculation exactness** to guide a user's understanding of the answer, separately
+from an indicator that its **display is rounded**:
 
-- **Exact** means the calculation retained an exact value. A displayed decimal
+- **Exact** means the finite value is known or asserted to be exact. A displayed decimal
   can still be rounded; an optional fraction view shows the exact answer.
-- **Unverified** means Numera does not certify the result as exact. This includes
+- **Unverified** means Numera has not established exactness. This includes
   ordinary floating-point functions and calculations involving approximate inputs.
   A neat-looking answer such as `1` does not change that status.
 
@@ -33,8 +34,11 @@ They do not replace the familiar numeric display by default.
 | `1e-400` | `1e-400` | `1/10^400`, written out as a slash fraction | No |
 
 All four calculations are Exact, regardless of whether their displays round.
-In contrast, `sqrt(2)` is Unverified and has no certified exact-fraction alternate.
-Absence of a display-rounding indicator is **not** a guarantee of calculation accuracy.
+In contrast, `sqrt(2)` is Unverified and has no exact-fraction alternate. `ln(1)` is
+also Unverified despite displaying `0` without rounding, so your UI should not turn
+the absence of a rounded-display indicator into an exactness claim.
+The [exactness guide](exactness.md) shows UI labels, path interpretation, and caller
+assertions with examples and counterexamples.
 
 Fixed, unrounded displays also preserve bounded decimal places: `194.40 - 100`
 displays `94.40`, and `100.00` keeps its two decimal places. Non-whole values
@@ -184,7 +188,7 @@ evaluation. The examples above use moderate arguments.
 
 ## Lists, statistics, and counting
 
-| Try this | Answer | Accuracy |
+| Try this | Answer | Exactness |
 | --- | --- | --- |
 | `min(7,2,9)` | `2` | Exact |
 | `max(7,2,9)` | `9` | Exact |
@@ -267,7 +271,7 @@ Short-circuiting skips unnecessary **evaluation**, not syntax validation.
 
 ## Random values and application-defined functions
 
-- `rand()` draws a floating-point number in `[0,1)`; its accuracy is Unverified.
+- `rand()` draws a floating-point number in `[0,1)`; its exactness is Unverified.
 - `randi(6) + 1` draws an exact integer from `1` through `6`.
 - In a session, `r = rand()` captures one draw. `r - r` gives `0` without drawing
   again, but remains Unverified because it used an Unverified input.
@@ -277,7 +281,8 @@ Short-circuiting skips unnecessary **evaluation**, not syntax validation.
 These random functions are not a source of cryptographic secrets.
 Applications can register additional named functions, such as a unit conversion
 or business calculation. Such names are not built-ins unless the host registers
-them; their accuracy depends on their *returned* values.
+them; their exactness depends on their *returned* values and conservatively propagates
+Unverified evaluated arguments.
 See [custom functions](custom-functions.md).
 
 ## Where exact arithmetic helps compared with Double-based evaluators
@@ -334,7 +339,7 @@ Ordinary floating-point functions can still produce non-finite results.
 
 An application's rounded display is not a lossless save format. Numera also
 provides lossless invariant value expressions and serialization; serialization
-additionally preserves representation and accuracy. Transfer text and a user's
+additionally preserves representation and exactness. Transfer text and a user's
 input-length limit are separate concerns.
 See [safety and limits](safety-and-limits.md) and [architecture](architecture.md).
 

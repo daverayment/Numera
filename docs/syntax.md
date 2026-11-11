@@ -24,7 +24,10 @@ Numera's grammar is deliberately small and unambiguous: a recursive-descent pars
 ## Constants
 
 Numera provides these constants (case-insensitive). The transcendental constants
-are Decimal approximations with Unverified accuracy, not exact symbolic values:
+are Decimal approximations with Unverified exactness, not exact symbolic values.
+Use that status for UI guidance rather than the number's appearance: `floor(pi)`
+still has Unverified exactness even though it displays `3`. See the
+[exactness guide](exactness.md) for interpreting a calculation path.
 
 | Constant | Aliases | Description | Underlying Type |
 | :--- | :--- | :--- | :--- |
@@ -131,8 +134,12 @@ Trigonometric routines operate in radians by default, or in degrees/gradians whe
 | `log10(x)` | Base-10 logarithm |
 | `log2(x)` | Base-2 logarithm |
 | `logn(x, base)` | Logarithm of $x$ to an arbitrary base |
-| `log1p(x)` | $\ln(1 + x)$, evaluated through the runtime's Double implementation; accuracy is Unverified |
-| `expm1(x)` | $e^x - 1$, evaluated through the runtime's Double implementation; accuracy is Unverified |
+| `log1p(x)` | $\ln(1 + x)$, producing a Double with Unverified exactness |
+| `expm1(x)` | $e^x - 1$, producing a Double with Unverified exactness |
+
+Unverified describes what the application can claim, not how many digits are wrong.
+For example, `ln(1)` displays `0` without rounding but is still Unverified, while
+the recognized root `sqrt(4)` is Exact. Keep exactness and display indicators separate.
 
 ### Combinatorics & Number Theory
 *(These functions require exact integer arguments and evaluate via arbitrary-precision integers)*
@@ -144,7 +151,7 @@ Trigonometric routines operate in radians by default, or in degrees/gradians whe
 | `lcm(...values)` | | Least common multiple across one or more integers (variadic) |
 | `comb(n, k)` | `nCr`, `choose`, `binomial` | Binomial coefficient $\binom{n}{k}$ |
 | `perm(n, k)` | `nPr` | Permutations $P(n, k) = \frac{n!}{(n-k)!}$ |
-| `isprime(n)` | | Primality test (deterministic through unsigned 64-bit inputs; larger positive results are probable-prime results with Unverified accuracy; bounded by `MaxPrimalityBits = 2048`) |
+| `isprime(n)` | | Primality test (deterministic through unsigned 64-bit inputs; larger positive results are probable-prime results with Unverified exactness; bounded by `MaxPrimalityBits = 2048`) |
 | `divcount(n)` | `divisorcount` | Number of positive divisors $d(n)$ |
 | `sigma(n[, k])` | `divsum` | Divisor sum $\sigma(n)$ or sum of $k$-th powers $\sigma_k(n)$ |
 | `totient(n)` | `phi`, `eulerphi` | Euler's totient function $\phi(n)$ |

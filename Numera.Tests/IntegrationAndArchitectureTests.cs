@@ -139,7 +139,7 @@ public sealed class IntegrationAndArchitectureTests
         Assert.AreEqual(MathValue.DataType.Integer, r3.Value.Kind);
         Assert.AreEqual("2", r3.PrimaryDisplay);
         Assert.AreEqual(new BigInteger(2), r3.Value.IntegerValue);
-        Assert.AreEqual(CalculationAccuracy.Exact, r3.Accuracy);
+        Assert.AreEqual(CalculationExactness.Exact, r3.Exactness);
     }
 
     [TestMethod]
@@ -169,7 +169,7 @@ public sealed class IntegrationAndArchitectureTests
         Assert.AreEqual(MathValue.DataType.Rational, fracSum.Type);
         Assert.AreEqual(new BigInteger(decimal.MaxValue) * 2 + 1, fracSum.Value.Numerator);
         Assert.AreEqual(new BigInteger(2), fracSum.Value.Denominator);
-        Assert.AreEqual(CalculationAccuracy.Exact, fracSum.Accuracy);
+        Assert.AreEqual(CalculationExactness.Exact, fracSum.Exactness);
         Assert.IsTrue(fracSum.IsFinite);
     }
 

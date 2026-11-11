@@ -50,7 +50,7 @@ public sealed class DecimalDisplayScaleTests
         Assert.AreEqual(expected, card.PrimaryDisplay);
         AssertDefaultDisplay(result, expected);
         Assert.IsFalse(card.IsDisplayRounded);
-        Assert.AreEqual(CalculationAccuracy.Exact, result.Accuracy);
+        Assert.AreEqual(CalculationExactness.Exact, result.Exactness);
         Assert.IsTrue(result.HasExactFraction);
     }
 
@@ -84,7 +84,7 @@ public sealed class DecimalDisplayScaleTests
         Assert.IsTrue(result.IsZero);
         Assert.AreEqual(expectedScale, result.Value.DecimalDisplayScale);
         Assert.AreEqual(expectedType, result.Type);
-        Assert.AreEqual(CalculationAccuracy.Exact, result.Accuracy);
+        Assert.AreEqual(CalculationExactness.Exact, result.Exactness);
         Assert.AreEqual((BigInteger.Zero, BigInteger.One), result.GetExactFraction());
     }
 
@@ -107,7 +107,7 @@ public sealed class DecimalDisplayScaleTests
         {
             var restored = MathValue.Deserialize(stored.Serialize());
             Assert.AreEqual(stored.Kind, restored.Kind);
-            Assert.AreEqual(stored.Accuracy, restored.Accuracy);
+            Assert.AreEqual(stored.Exactness, restored.Exactness);
             Assert.AreEqual(stored.GetExactFraction(), restored.GetExactFraction());
             Assert.AreEqual(stored.DecimalDisplayScale, restored.DecimalDisplayScale);
             Assert.AreEqual(engine.FormatResult(stored).PrimaryDisplay, engine.FormatResult(restored).PrimaryDisplay);
@@ -124,7 +124,7 @@ public sealed class DecimalDisplayScaleTests
         Assert.AreEqual("94.4", engine.FormatResult(new MathValue(94.40000m)).PrimaryDisplay);
         Assert.AreEqual("100.00", engine.FormatResult(new MathValue(100.00m)).PrimaryDisplay);
         Assert.AreEqual("100", engine.FormatResult(new MathValue(100.000m)).PrimaryDisplay);
-        var unverified = new MathValue(94.40m).WithAccuracy(CalculationAccuracy.Unverified);
+        var unverified = new MathValue(94.40m).WithExactness(CalculationExactness.Unverified);
         Assert.AreEqual("94.40", engine.FormatResult(unverified).PrimaryDisplay);
         Assert.IsNull(engine.FormatResult(unverified).FractionRepresentation);
         Assert.AreEqual("0.5", engine.FormatResult(new MathValue(0.5)).PrimaryDisplay);
@@ -166,11 +166,11 @@ public sealed class DecimalDisplayScaleTests
         Assert.AreEqual(BigInteger.One, third.Numerator);
         Assert.AreEqual(new BigInteger(3), third.Denominator);
         Assert.ThrowsExactly<FormatException>(() => MathValue.Deserialize(
-            """{"Kind":0,"Accuracy":1,"Value":"1","DecimalDisplayScale":30}"""));
+            """{"Kind":0,"Exactness":1,"Value":"1","DecimalDisplayScale":30}"""));
         Assert.ThrowsExactly<FormatException>(() => MathValue.Deserialize(
-            """{"Kind":0,"Accuracy":1,"Value":"1","DecimalDisplayScale":-1}"""));
+            """{"Kind":0,"Exactness":1,"Value":"1","DecimalDisplayScale":-1}"""));
         Assert.ThrowsExactly<FormatException>(() => MathValue.Deserialize(
-            """{"Kind":2,"Accuracy":0,"Value":"1","DecimalDisplayScale":2}"""));
+            """{"Kind":2,"Exactness":0,"Value":"1","DecimalDisplayScale":2}"""));
     }
 
     [TestMethod]

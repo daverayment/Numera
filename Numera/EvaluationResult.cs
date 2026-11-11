@@ -171,7 +171,7 @@ public readonly record struct EvaluationResult :
     /// Gets the exact fraction in lowest terms, or <see langword="null"/> if unavailable.
     /// </summary>
     /// <remarks>
-    /// Available for finite values marked <see cref="CalculationAccuracy.Exact"/>,
+    /// Available for finite values marked <see cref="CalculationExactness.Exact"/>,
     /// regardless of storage type. The denominator is positive; whole numbers have
     /// denominator one. For a caller-marked Exact Double, the fraction represents its
     /// stored binary value.
@@ -186,7 +186,7 @@ public readonly record struct EvaluationResult :
     /// <remarks>Use <see cref="ExactFraction"/> if an unavailable fraction should return
     /// null instead.</remarks>
     /// <exception cref="InvalidOperationException">The value is not finite or is not
-    /// marked <see cref="CalculationAccuracy.Exact"/>.</exception>
+    /// marked <see cref="CalculationExactness.Exact"/>.</exception>
     public (BigInteger Numerator, BigInteger Denominator) GetExactFraction() => Value.GetExactFraction();
 
     /// <summary>
@@ -235,22 +235,25 @@ public readonly record struct EvaluationResult :
     /// Gets whether an exact fraction is available for this result.
     /// </summary>
     /// <remarks>
-    /// Requires a finite value marked <see cref="CalculationAccuracy.Exact"/>. Use
+    /// Requires a finite value marked <see cref="CalculationExactness.Exact"/>. Use
     /// <see cref="ExactFraction"/> to read it. Storage type and display rounding do not
-    /// determine availability.
+    /// determine availability. For example, 1/3 enables an exact-fraction toggle even
+    /// when its decimal display rounds; ln(1) does not, despite displaying 0.
     /// </remarks>
     public bool HasExactFraction => Value.TryGetExactFraction(out _, out _);
 
     /// <summary>
-    /// Gets whether the result is known to be exact.
+    /// Gets the known or caller-asserted exactness, for UI guidance and understanding
+    /// whether a calculation path retained established exactness.
     /// </summary>
     /// <remarks>
-    /// Unverified means exactness is not established, not that the result is necessarily
-    /// inaccurate. This status does not measure numerical error or display rounding.
-    /// For caller-supplied values, Exact relies on the caller's assertion.
+    /// For example, 1/3 is Exact despite a rounded decimal display; ln(1) is Unverified
+    /// despite displaying 0 without rounding. Use this status to label an unverified
+    /// answer separately from a rounded display of an exact answer. Unverified does not
+    /// mean wrong, and this status is not an error estimate or a step-by-step history.
+    /// Unverified inputs propagate conservatively; caller-supplied Exact is an assertion.
     /// </remarks>
-    // TODO(v1): Revisit CalculationAccuracy naming: known exactness is distinct from provenance and error estimates.
-    public CalculationAccuracy Accuracy => Value.Accuracy;
+    public CalculationExactness Exactness => Value.Exactness;
 
     /// <summary>
     /// Converts the result to a double. Precision may be lost.

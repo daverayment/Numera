@@ -30,9 +30,9 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         // for direct inspection and linear decimal/integer arithmetic.
         if (ConstantCatalog.TryResolve(node.Name, out var constant, out decimal value))
         {
-            return Guard(node.Span, () => ValidateValue(new MathValue(value).WithAccuracy(
+            return Guard(node.Span, () => ValidateValue(new MathValue(value).WithExactness(
                 constant is ConstantKind.True or ConstantKind.False
-                    ? CalculationAccuracy.Exact : CalculationAccuracy.Unverified)));
+                    ? CalculationExactness.Exact : CalculationExactness.Unverified)));
         }
 
         // Check recent assignments within this evaluation.
@@ -63,7 +63,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         var value = node.Operand.Accept(this);
         try
         {
-            return ValidateValue(PropagateAccuracy(node.Op switch
+            return ValidateValue(PropagateExactness(node.Op switch
             {
                 UnaryOperator.Negate => MathValue.Negate(value),
                 UnaryOperator.Positive => value,
@@ -128,7 +128,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         var right = node.Right.Accept(this);
         bool markup = PercentRules.IsMarkup(node);
         var one = new MathValue(1);
-        return Guard(node.Span, () => ValidateValue(PropagateAccuracy(node.Op switch
+        return Guard(node.Span, () => ValidateValue(PropagateExactness(node.Op switch
         {
             BinaryOperator.Add when markup => Multiply(left, Add(one, right)),
             BinaryOperator.Subtract when markup => Multiply(left, Subtract(one, right)),
@@ -158,25 +158,25 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
     public MathValue Visit(ComparisonChainNode node)
     {
         var left = node.Operands[0].Accept(this);
-        bool exact = left.Accuracy == CalculationAccuracy.Exact;
+        bool exact = left.Exactness == CalculationExactness.Exact;
         for (int i = 0; i < node.Operators.Count; i++)
         {
             // Later operands are skipped once a comparison fails, avoiding needless work
             // and errors.
             var right = node.Operands[i + 1].Accept(this);
-            exact &= right.Accuracy == CalculationAccuracy.Exact;
+            exact &= right.Exactness == CalculationExactness.Exact;
             if (!Guard(node.Span, () => EvaluateComparison(node.Operators[i], left, right)))
             {
-                return new MathValue(BigInteger.Zero).WithAccuracy(
-                    exact ? CalculationAccuracy.Exact : CalculationAccuracy.Unverified);
+                return new MathValue(BigInteger.Zero).WithExactness(
+                    exact ? CalculationExactness.Exact : CalculationExactness.Unverified);
             }
 
             // Reuse the middle operand: a < f() < b must call f() only once.
             left = right;
         }
 
-        return new MathValue(BigInteger.One).WithAccuracy(
-            exact ? CalculationAccuracy.Exact : CalculationAccuracy.Unverified);
+        return new MathValue(BigInteger.One).WithExactness(
+            exact ? CalculationExactness.Exact : CalculationExactness.Unverified);
     }
 
     /// <summary>
@@ -198,7 +198,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
             try
             {
                 var result = customFunction.Implementation(args);
-                return ValidateValue(PropagateAccuracy(result, args));
+                return ValidateValue(PropagateExactness(result, args));
             }
             catch (Exception ex)
             {
@@ -208,7 +208,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
         try
         {
-            return ValidateValue(PropagateAccuracy(EvaluateFunction(node.FunctionName, args), args));
+            return ValidateValue(PropagateExactness(EvaluateFunction(node.FunctionName, args), args));
         }
         catch (Exception ex) when (ex is ExpressionException or CalculationLimitException or DivideByZeroException or OverflowException)
         {
@@ -305,18 +305,18 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
     private MathValue Multiply(MathValue left, MathValue right) => MathValue.Multiply(left, right);
     private MathValue Divide(MathValue left, MathValue right) => MathValue.Divide(left, right);
 
-    // Provenance can only be downgraded here. Exact inputs do not certify an
+    // Exactness can only be downgraded here. Exact inputs do not certify an
     // approximate function result, and integer/boolean outputs do not erase uncertainty.
-    private static MathValue PropagateAccuracy(MathValue value, IReadOnlyList<MathValue> args) =>
-        args.Any(arg => arg.Accuracy != CalculationAccuracy.Exact)
-            ? value.WithAccuracy(CalculationAccuracy.Unverified)
+    private static MathValue PropagateExactness(MathValue value, IReadOnlyList<MathValue> args) =>
+        args.Any(arg => arg.Exactness != CalculationExactness.Exact)
+            ? value.WithExactness(CalculationExactness.Unverified)
             : value;
 
     // Factorization above the deterministic primality range can depend on probable primes.
     private static MathValue FactorizationResult(BigInteger result, BigInteger input) =>
-        new MathValue(result).WithAccuracy(input > ulong.MaxValue
-            ? CalculationAccuracy.Unverified
-            : CalculationAccuracy.Exact);
+        new MathValue(result).WithExactness(input > ulong.MaxValue
+            ? CalculationExactness.Unverified
+            : CalculationExactness.Exact);
 
     private bool EvaluateComparison(ComparisonOperator op, MathValue left, MathValue right)
     {
@@ -758,10 +758,10 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                             EvaluationError.IntegerRequired, "isprime requires an integer argument."));
                     }
                     bool prime = NumberTheory.IsPrime(primeArg);
-                    return new MathValue(prime ? BigInteger.One : BigInteger.Zero).WithAccuracy(
+                    return new MathValue(prime ? BigInteger.One : BigInteger.Zero).WithExactness(
                         prime && primeArg > ulong.MaxValue
-                            ? CalculationAccuracy.Unverified
-                            : CalculationAccuracy.Exact);
+                            ? CalculationExactness.Unverified
+                            : CalculationExactness.Exact);
 
                 case "divcount" or "divisorcount":
                     if (!args[0].TryGetInteger(out var divCountArg))
@@ -1654,7 +1654,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         // values (NaN, infinities) remain Double.
         if (double.IsFinite(roundedValue))
         {
-            return new MathValue((BigInteger)roundedValue).WithAccuracy(CalculationAccuracy.Unverified);
+            return new MathValue((BigInteger)roundedValue).WithExactness(CalculationExactness.Unverified);
         }
 
         return new MathValue(roundedValue);

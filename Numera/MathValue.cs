@@ -9,15 +9,16 @@ namespace Numera;
 
 /// <summary>
 /// A calculator number stored as an arbitrary-precision integer, a decimal, a reduced
-/// fraction, or a double. Provenance is tracked separately from the representation.
+/// fraction, or a double. Known exactness is tracked separately from the representation.
 /// </summary>
 /// <remarks>
-/// The default instance is integer zero with <see cref="CalculationAccuracy.Unverified"/>
-/// provenance.
+/// The default instance is integer zero with
+/// <see cref="CalculationExactness.Unverified"/> exactness.
 /// <para>
-/// <b>Accuracy.</b> <see cref="Accuracy"/> records where a value came from, not whether it
-/// looks exact. Arithmetic is Unverified if either operand is. Display rounding never
-/// changes the stored value or its accuracy. <see cref="ExactFraction"/> and
+/// <b>Exactness.</b> <see cref="Exactness"/> helps callers label results and recognize an
+/// unverified calculation path, but does not record individual steps or estimate error.
+/// Arithmetic is Unverified if either operand is. Display rounding never
+/// changes the stored value or its exactness. <see cref="ExactFraction"/> and
 /// <see cref="TryGetExactFraction"/> are available only for finite, Exact values.
 /// </para>
 /// <para>
@@ -84,9 +85,16 @@ public readonly partial struct MathValue :
     public DataType Kind { get; }
 
     /// <summary>
-    /// The provenance of the calculation, not a guarantee inferred from representation.
+    /// Gets the known or caller-asserted exactness, for UI guidance and interpreting the
+    /// calculation path. This is not inferred from a clean display or storage type.
     /// </summary>
-    public CalculationAccuracy Accuracy { get; }
+    /// <remarks>
+    /// For example, 1/3 is Exact even when its decimal display rounds. A supplied Double
+    /// containing 0.5 is Unverified even when it displays without rounding. Unverified
+    /// inputs conservatively propagate; this status does not identify which step caused
+    /// it.
+    /// </remarks>
+    public CalculationExactness Exactness { get; }
 
     /// <summary>
     /// Gets the stored integer without converting other storage types.
@@ -136,6 +144,11 @@ public readonly partial struct MathValue :
     /// <summary>
     /// Creates an Exact Integer value.
     /// </summary>
+    /// <remarks>
+    /// Exact describes the supplied integer, not calculations done before supplying it.
+    /// If this integer is an estimate, use <see cref="WithExactness"/> with Unverified
+    /// so a UI does not claim that the earlier calculation was exact.
+    /// </remarks>
     /// <exception cref="CalculationLimitException">The value exceeds
     /// <see cref="CalculationLimits.MaxIntegerBits"/>.</exception>
     public MathValue(BigInteger value)
@@ -144,7 +157,7 @@ public readonly partial struct MathValue :
         CheckBits(value, CalculationLimits.MaxIntegerBits);
         Kind = DataType.Integer;
         integerValue = value;
-        Accuracy = CalculationAccuracy.Exact;
+        Exactness = CalculationExactness.Exact;
     }
 
     /// <summary>
@@ -170,17 +183,24 @@ public readonly partial struct MathValue :
     /// <summary>
     /// Creates an Exact Decimal value.
     /// </summary>
+    /// <remarks>
+    /// A supplied 0.1m is exactly 1/10. Converting an approximate square root to Decimal
+    /// first does not make that root exact; mark such imported estimates Unverified with
+    /// <see cref="WithExactness"/> when the distinction matters to callers.
+    /// </remarks>
     public MathValue(decimal value)
     {
         this = default;
         Kind = DataType.Decimal;
         decimalValue = value;
         DecimalDisplayScale = DecomposeDecimal(value).Scale;
-        Accuracy = CalculationAccuracy.Exact;
+        Exactness = CalculationExactness.Exact;
     }
 
     /// <summary>
-    /// Creates a Double value with Unverified provenance.
+    /// Creates a Double value with Unverified exactness, even for exactly representable
+    /// values such as 0.5. Use this status to avoid claiming that a floating-point
+    /// calculation was established to be exact.
     /// </summary>
     public MathValue(double value)
     {
@@ -189,10 +209,10 @@ public readonly partial struct MathValue :
         doubleValue = value;
     }
 
-    private MathValue(MathValue value, CalculationAccuracy accuracy)
+    private MathValue(MathValue value, CalculationExactness exactness)
     {
         this = value;
-        Accuracy = accuracy;
+        Exactness = exactness;
     }
 
     private MathValue(MathValue value, int decimalDisplayScale)
@@ -213,26 +233,35 @@ public readonly partial struct MathValue :
         Kind = DataType.Rational;
         numerator = num;
         denominator = den;
-        Accuracy = CalculationAccuracy.Exact;
+        Exactness = CalculationExactness.Exact;
     }
 
     /// <summary>
-    /// Explicitly assigns trusted calculation provenance without changing representation.
+    /// Changes the exactness metadata without changing the stored value. Use Unverified
+    /// when supplying an approximation; Exact is a trusted caller assertion, not a proof.
     /// </summary>
     /// <remarks>
-    /// Use this only when the caller knows the value is exact. Marking a Double value
-    /// Exact does not make the double itself any more precise.
+    /// Marking a Double containing 0.1 Exact does not produce 1/10: its exact fraction
+    /// remains the stored binary fraction. No calculation is repeated and no lost digits
+    /// are recovered. NaN and infinities cannot be marked Exact.
     /// </remarks>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="accuracy"/> is not a
-    /// defined accuracy.</exception>
-    public MathValue WithAccuracy(CalculationAccuracy accuracy)
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="exactness"/> is not
+    /// a defined exactness status.</exception>
+    /// <exception cref="ArgumentException">Exact was requested for NaN or infinity.
+    /// </exception>
+    public MathValue WithExactness(CalculationExactness exactness)
     {
-        if (accuracy is not CalculationAccuracy.Exact and not CalculationAccuracy.Unverified)
+        if (exactness is not CalculationExactness.Exact and not CalculationExactness.Unverified)
         {
-            throw new ArgumentOutOfRangeException(nameof(accuracy));
+            throw new ArgumentOutOfRangeException(nameof(exactness));
         }
 
-        return new MathValue(this, accuracy);
+        if (exactness == CalculationExactness.Exact && !IsFinite)
+        {
+            throw new ArgumentException("NaN and infinities cannot be marked Exact.", nameof(exactness));
+        }
+
+        return new MathValue(this, exactness);
     }
 
     /// <summary>
@@ -308,29 +337,40 @@ public readonly partial struct MathValue :
     }
 
     /// <summary>
-    /// Gets the reduced verified exact fraction, or <see langword="null"/> when finite
-    /// Exact provenance is unavailable.
+    /// Gets the reduced exact fraction, or <see langword="null"/> when exactness is
+    /// Unverified. Use its presence to offer an exact-fraction view in a calculator UI.
     /// </summary>
+    /// <remarks>
+    /// For example, 1/3 exposes (1, 3) even when its numeric display rounds. A Double
+    /// containing 0.5 has no exact alternate unless the caller asserts Exact; a neat
+    /// display does not establish exactness.
+    /// </remarks>
     public (BigInteger Numerator, BigInteger Denominator)? ExactFraction =>
         TryGetExactFraction(out var num, out var den) ? (num, den) : null;
 
     /// <summary>
     /// Gets the value as a reduced fraction with a positive denominator.
     /// </summary>
-    /// <returns>The verified exact numerator and positive denominator in lowest terms.
+    /// <returns>The known or asserted exact numerator and positive denominator in lowest
+    /// terms.
     /// </returns>
-    /// <exception cref="InvalidOperationException">The value has no verified exact
-    /// fractional representation.</exception>
+    /// <exception cref="InvalidOperationException">The value has no known or asserted
+    /// exact fractional representation.</exception>
     public (BigInteger Numerator, BigInteger Denominator) GetExactFraction() =>
         ExactFraction ?? throw new InvalidOperationException(
-            "The value does not have a verified exact fractional representation.");
+            "The value does not have a known or asserted exact fractional representation.");
 
     /// <summary>
     /// Gets the value as a reduced fraction if it is finite and Exact.
     /// </summary>
+    /// <remarks>
+    /// Use a successful result to enable an exact-fraction view. For example, 1/3
+    /// qualifies despite a rounded decimal display; an ordinary Double containing 0.5
+    /// does not, despite displaying without rounding. See <see cref="Exactness"/>.
+    /// </remarks>
     public bool TryGetExactFraction(out BigInteger num, out BigInteger den)
     {
-        if (Accuracy == CalculationAccuracy.Exact && IsFinite)
+        if (Exactness == CalculationExactness.Exact && IsFinite)
         {
             NumericFraction(this, out num, out den);
             return true;
@@ -342,8 +382,9 @@ public readonly partial struct MathValue :
         return false;
     }
 
-    // Representation access, not an accuracy check: Unverified fractions still qualify.
-    // Double is deliberately excluded so arithmetic does not silently become exact-domain.
+    // Representation access, not an exactness check: Unverified fractions still qualify.
+    // Double is deliberately excluded so arithmetic does not silently become exact-
+    // domain.
     internal static bool TryToRational(
         MathValue value, out BigInteger num, out BigInteger den)
     {
@@ -460,7 +501,7 @@ public readonly partial struct MathValue :
 
     /// <summary>
     /// Gets the value as an integer if it is finite and has no fractional part.
-    /// Provenance is not considered.
+    /// Exactness is not considered.
     /// </summary>
     public bool TryGetInteger(out BigInteger value)
     {
@@ -622,7 +663,7 @@ public readonly partial struct MathValue :
     /// Doubles are written as the exact fraction they store. Decimal display scale is
     /// kept where a decimal literal can express it. NaN and infinities are written as
     /// text that cannot be evaluated again. Use <see cref="Serialize"/> to preserve the
-    /// representation and accuracy as well.
+    /// representation and exactness as well.
     /// </remarks>
     public string ToInvariantExpression()
     {
@@ -794,11 +835,11 @@ public readonly partial struct MathValue :
     }
 
     /// <summary>
-    /// Serializes the representation, value, accuracy and decimal display scale to JSON
+    /// Serializes the representation, value, exactness and decimal display scale to JSON
     /// without losing precision.
     /// </summary>
     public string Serialize() => JsonSerializer.Serialize(new SerializedValue(
-        Kind, Accuracy, InvariantStoredValue(),
+        Kind, Exactness, InvariantStoredValue(),
         Kind == DataType.Rational ? numerator.ToString(CultureInfo.InvariantCulture) : null,
         Kind == DataType.Rational ? denominator.ToString(CultureInfo.InvariantCulture) : null,
         DecimalDisplayScale),
@@ -855,14 +896,19 @@ public readonly partial struct MathValue :
             value = value.WithDecimalDisplayScale(displayScale);
         }
 
-        value = value.WithAccuracy(dto.Accuracy);
+        if (dto.Exactness == CalculationExactness.Exact && !value.IsFinite)
+        {
+            throw new FormatException("NaN and infinities cannot be marked Exact.");
+        }
+
+        value = value.WithExactness(dto.Exactness);
         value.ValidateLimits(maxIntegerBits);
         return value;
     }
 
     private sealed record SerializedValue(
         [property: JsonRequired] DataType Kind,
-        [property: JsonRequired] CalculationAccuracy Accuracy,
+        [property: JsonRequired] CalculationExactness Exactness,
         [property: JsonRequired] string Value,
         string? Numerator,
         string? Denominator,
@@ -885,12 +931,12 @@ public readonly partial struct MathValue :
     }
 
     /// <summary>
-    /// Negates a value, with unchanged provenance.
+    /// Negates a value, with unchanged exactness.
     /// </summary>
     public static MathValue operator -(MathValue value) => Negate(value);
 
     /// <summary>
-    /// Negates a value, with unchanged provenance.
+    /// Negates a value, with unchanged exactness.
     /// </summary>
     /// <exception cref="CalculationLimitException">The value or result is too large.
     /// </exception>
@@ -908,7 +954,7 @@ public readonly partial struct MathValue :
             DataType.Decimal => new MathValue(-value.DecimalValue),
             DataType.Rational => new MathValue(-value.numerator, value.denominator),
             _ => new MathValue(-value.DoubleValue),
-        }).WithAccuracy(value.Accuracy).WithDecimalDisplayScale(value.DecimalDisplayScale);
+        }).WithExactness(value.Exactness).WithDecimalDisplayScale(value.DecimalDisplayScale);
 
         result.ValidateLimits();
 
@@ -1041,7 +1087,7 @@ public readonly partial struct MathValue :
             _ => Math.Max(left.DecimalDisplayScale, right.DecimalDisplayScale),
         };
 
-        return result.WithAccuracy(InheritedAccuracy(left, right))
+        return result.WithExactness(InheritedExactness(left, right))
             .WithDecimalDisplayScale(Math.Max(result.DecimalDisplayScale, scale));
     }
 
@@ -1066,7 +1112,7 @@ public readonly partial struct MathValue :
 
     /// <summary>
     /// Raises a value to a power. Integer exponents of non-Double values are exact;
-    /// otherwise the result is a Double with Unverified accuracy.
+    /// otherwise the result is a Double with Unverified exactness.
     /// </summary>
     /// <exception cref="DivideByZeroException">Zero is raised to a negative power.
     /// </exception>
@@ -1113,7 +1159,7 @@ public readonly partial struct MathValue :
             long scale = exponent.Sign > 0 ? (long)baseVal.DecimalDisplayScale * absoluteExponent : 0;
 
             return result
-                .WithAccuracy(InheritedAccuracy(baseVal, expVal))
+                .WithExactness(InheritedExactness(baseVal, expVal))
                 .WithDecimalDisplayScale(Math.Max(result.DecimalDisplayScale, scale));
         }
 
@@ -1221,7 +1267,7 @@ public readonly partial struct MathValue :
     }
 
     /// <summary>
-    /// Whether the values are numerically equal, ignoring representation and accuracy.
+    /// Whether the values are numerically equal, ignoring representation and exactness.
     /// NaN equals NaN.
     /// </summary>
     public bool Equals(MathValue other) => Compare(this, other) == 0;
@@ -1242,7 +1288,7 @@ public readonly partial struct MathValue :
             return DoubleValue.GetHashCode();
         }
 
-        // Equality ignores representation and provenance, so hashing must use the same
+        // Equality ignores representation and exactness, so hashing must use the same
         // reduced fraction: Integer 1, Decimal 1.0, and Double 1.0 need identical hashes.
         NumericFraction(this, out var n, out var d);
 
@@ -1344,7 +1390,7 @@ public readonly partial struct MathValue :
     public static MathValue LogicalNot(MathValue a)
     {
         a.ValidateLimits();
-        var result = new MathValue(a.IsZero ? 1 : 0).WithAccuracy(a.Accuracy);
+        var result = new MathValue(a.IsZero ? 1 : 0).WithExactness(a.Exactness);
         result.ValidateLimits();
 
         return result;
@@ -1354,14 +1400,16 @@ public readonly partial struct MathValue :
     {
         a.ValidateLimits();
         b.ValidateLimits();
-        var result = new MathValue(value ? 1 : 0).WithAccuracy(InheritedAccuracy(a, b));
+        var result = new MathValue(value ? 1 : 0).WithExactness(InheritedExactness(a, b));
         result.ValidateLimits();
 
         return result;
     }
 
-    private static CalculationAccuracy InheritedAccuracy(MathValue a, MathValue b) =>
-        a.Accuracy == CalculationAccuracy.Exact && b.Accuracy == CalculationAccuracy.Exact ? CalculationAccuracy.Exact : CalculationAccuracy.Unverified;
+    private static CalculationExactness InheritedExactness(MathValue a, MathValue b) =>
+        a.Exactness == CalculationExactness.Exact && b.Exactness == CalculationExactness.Exact ?
+            CalculationExactness.Exact :
+            CalculationExactness.Unverified;
 
     /// <summary>
     /// Bitwise AND of two integral values.
@@ -1440,7 +1488,7 @@ public readonly partial struct MathValue :
         }
 
         CheckIntegerResultBits(resultBits);
-        var result = new MathValue(~n).WithAccuracy(a.Accuracy);
+        var result = new MathValue(~n).WithExactness(a.Exactness);
         result.ValidateLimits();
 
         return result;
@@ -1466,7 +1514,7 @@ public readonly partial struct MathValue :
 
             if (n.IsZero)
             {
-                return new MathValue(0).WithAccuracy(InheritedAccuracy(a, b));
+                return new MathValue(0).WithExactness(InheritedExactness(a, b));
             }
 
             long bits = BigInteger.Abs(n).GetBitLength();
@@ -1516,7 +1564,7 @@ public readonly partial struct MathValue :
         CheckBits(value, CalculationLimits.MaxIntegerBits);
         CheckBits(value, CalculationLimits.MaxIntermediateBits);
 
-        return new MathValue(value).WithAccuracy(InheritedAccuracy(a, b));
+        return new MathValue(value).WithExactness(InheritedExactness(a, b));
     }
 
     private static void CheckIntegerResultBits(long bits)
@@ -1660,7 +1708,7 @@ public readonly partial struct MathValue :
 
     /// <summary>
     /// Gets the exact fraction of a finite value, including the binary value of a double,
-    /// independent of its provenance.
+    /// independent of its exactness.
     /// </summary>
     /// <exception cref="ArgumentException">The value is not finite.</exception>
     internal static void NumericFraction(

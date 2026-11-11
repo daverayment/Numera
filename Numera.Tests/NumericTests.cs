@@ -2956,7 +2956,7 @@ public class NumericTests
         Assert.AreEqual(numerator, actualNumerator);
         Assert.AreEqual(denominator, actualDenominator);
         Assert.AreEqual((numerator, denominator), value.GetExactFraction());
-        Assert.AreEqual(CalculationAccuracy.Exact, value.Accuracy);
+        Assert.AreEqual(CalculationExactness.Exact, value.Exactness);
     }
 
     private static (BigInteger Num, BigInteger Den) RelativeError(MathValue v, BigInteger num, BigInteger den)

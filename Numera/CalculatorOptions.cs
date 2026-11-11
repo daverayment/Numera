@@ -103,7 +103,8 @@ public sealed record CalculatorOptions
 
     /// <summary>
     /// Default formatting options applied when formatting results with this engine.
-    /// Defaults to <see cref="ResultFormatOptions.Default"/>.
+    /// Defaults to <see cref="ResultFormatOptions.Default"/>. Must not be null; use the
+    /// default instance when no formatting customization is needed.
     /// </summary>
     public ResultFormatOptions ResultFormat { get; init; } = ResultFormatOptions.Default;
 
@@ -111,13 +112,14 @@ public sealed record CalculatorOptions
     /// Validates the options against hard safety ceilings and enum ranges.
     /// </summary>
     /// <exception cref="ArgumentNullException">Thrown if <see cref="Culture"/> or
-    /// <see cref="CustomFunctions"/> is null.</exception>
+    /// <see cref="CustomFunctions"/> or <see cref="ResultFormat"/> is null.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown if any limit or setting is
     /// outside its valid range.</exception>
     public void Validate()
     {
         ArgumentNullException.ThrowIfNull(Culture);
         ArgumentNullException.ThrowIfNull(CustomFunctions);
+        ArgumentNullException.ThrowIfNull(ResultFormat);
 
         if (!Enum.IsDefined(AngleUnit))
         {
@@ -152,7 +154,7 @@ public sealed record CalculatorOptions
                 $"Maximum exponent magnitude must be between 1 and {CalculationLimits.MaxExponentMagnitude}.");
         }
 
-        ResultFormat?.Validate();
+        ResultFormat.Validate();
     }
 
     /// <summary>

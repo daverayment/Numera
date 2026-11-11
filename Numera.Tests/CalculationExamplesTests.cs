@@ -88,7 +88,7 @@ public sealed class CalculationExamplesTests
     {
         var result = Calculator.Evaluate(expression);
         Assert.AreEqual(Calculator.Evaluate(expected).Value, result.Value, expression);
-        Assert.AreEqual(CalculationAccuracy.Exact, result.Accuracy, expression);
+        Assert.AreEqual(CalculationExactness.Exact, result.Exactness, expression);
         Assert.IsTrue(result.HasExactFraction);
     }
 
@@ -104,7 +104,7 @@ public sealed class CalculationExamplesTests
         var card = result.FormatResult(culture: CultureInfo.InvariantCulture);
         Assert.AreEqual(display, card.PrimaryDisplay);
         Assert.AreEqual(rounded, card.IsDisplayRounded);
-        Assert.AreEqual(CalculationAccuracy.Exact, result.Accuracy);
+        Assert.AreEqual(CalculationExactness.Exact, result.Exactness);
     }
 
     [TestMethod]

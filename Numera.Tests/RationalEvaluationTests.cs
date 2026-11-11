@@ -31,17 +31,17 @@ public sealed class RationalEvaluationTests
     }
 
     [TestMethod]
-    public void CapturedRationalVariablesAndAnsRetainValueAndProvenance()
+    public void CapturedRationalVariablesAndAnsRetainValueAndExactness()
     {
         var engine = new CalculatorEngine();
         var assigned = engine.Evaluate("x=1/3");
         AssertFraction(engine.Evaluate("x*3", assigned.Context).Value, 1, 1);
         AssertFraction(engine.Evaluate("ans*3", assigned.Context).Value, 1, 1);
         var approximate = engine.Evaluate("x=pi");
-        Assert.AreEqual(CalculationAccuracy.Unverified,
-            engine.Evaluate("floor(x)", approximate.Context).Value.Accuracy);
-        Assert.AreEqual(CalculationAccuracy.Unverified,
-            engine.Evaluate("ans-ans", approximate.Context).Value.Accuracy);
+        Assert.AreEqual(CalculationExactness.Unverified,
+            engine.Evaluate("floor(x)", approximate.Context).Value.Exactness);
+        Assert.AreEqual(CalculationExactness.Unverified,
+            engine.Evaluate("ans-ans", approximate.Context).Value.Exactness);
     }
 
     [TestMethod]
@@ -74,7 +74,7 @@ public sealed class RationalEvaluationTests
     [DataRow("ceil(pi)*0")]
     public void ApproximateInputsNeverCertifyIntegerOrSelectedOutputs(string expression)
     {
-        Assert.AreEqual(CalculationAccuracy.Unverified, Calculator.Evaluate(expression).Value.Accuracy);
+        Assert.AreEqual(CalculationExactness.Unverified, Calculator.Evaluate(expression).Value.Exactness);
     }
 
     [TestMethod]
@@ -94,7 +94,7 @@ public sealed class RationalEvaluationTests
         var exception = Assert.Throws<CalculationLimitException>(() => engine.Evaluate("oversized()"));
         Assert.AreEqual(EvaluationError.LimitExceeded, exception.Diagnostic.Code);
         Assert.AreEqual(0, exception.Diagnostic.Position);
-        Assert.AreEqual(CalculationAccuracy.Unverified, engine.Evaluate("claimed(sqrt(2))").Value.Accuracy);
+        Assert.AreEqual(CalculationExactness.Unverified, engine.Evaluate("claimed(sqrt(2))").Value.Exactness);
     }
 
     [TestMethod]
@@ -186,11 +186,11 @@ public sealed class RationalEvaluationTests
     {
         var engine = new CalculatorEngine();
         var result = engine.Evaluate(expression);
-        Assert.AreEqual(CalculationAccuracy.Unverified, result.Accuracy);
+        Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.IsFalse(result.HasExactFraction);
         Assert.IsNull(result.FormatResult().FractionRepresentation);
-        Assert.AreEqual(CalculationAccuracy.Unverified, (result + 0).Accuracy);
-        Assert.AreEqual(CalculationAccuracy.Unverified, engine.Evaluate("ans", result.Context).Accuracy);
+        Assert.AreEqual(CalculationExactness.Unverified, (result + 0).Exactness);
+        Assert.AreEqual(CalculationExactness.Unverified, engine.Evaluate("ans", result.Context).Exactness);
     }
 
     [TestMethod]
@@ -254,7 +254,7 @@ public sealed class RationalEvaluationTests
         {
             var result = Calculator.Evaluate(expression);
             Assert.AreEqual(MathValue.DataType.Double, result.Type, expression);
-            Assert.AreEqual(CalculationAccuracy.Unverified, result.Accuracy, expression);
+            Assert.AreEqual(CalculationExactness.Unverified, result.Exactness, expression);
             Assert.IsFalse(result.HasExactFraction, expression);
             Assert.AreEqual(expected, result.AsDouble(), Math.Abs(expected) * 3e-15, expression);
         }
@@ -269,7 +269,7 @@ public sealed class RationalEvaluationTests
 
         Assert.AreEqual(Math.ScaleB(1, expectedExponent), result.AsDouble());
         Assert.AreEqual(MathValue.DataType.Double, result.Type);
-        Assert.AreEqual(CalculationAccuracy.Unverified, result.Accuracy);
+        Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.IsFalse(result.HasExactFraction);
     }
 
@@ -284,7 +284,7 @@ public sealed class RationalEvaluationTests
 
         Assert.AreEqual(expected, result.AsDouble(), expected * 3e-15);
         Assert.AreEqual(MathValue.DataType.Double, result.Type);
-        Assert.AreEqual(CalculationAccuracy.Unverified, result.Accuracy);
+        Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.IsFalse(result.HasExactFraction);
     }
 
@@ -297,7 +297,7 @@ public sealed class RationalEvaluationTests
 
         Assert.AreEqual(expected, result.AsDouble());
         Assert.AreEqual(MathValue.DataType.Double, result.Type);
-        Assert.AreEqual(CalculationAccuracy.Unverified, result.Accuracy);
+        Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.IsFalse(result.HasExactFraction);
     }
 
@@ -306,12 +306,12 @@ public sealed class RationalEvaluationTests
     {
         var context = new EvaluationContext
         {
-            Variables = [new Variable("x", MathValue.FromFraction(4, 9).WithAccuracy(CalculationAccuracy.Unverified))]
+            Variables = [new Variable("x", MathValue.FromFraction(4, 9).WithExactness(CalculationExactness.Unverified))]
         };
         var result = Calculator.Evaluate("sqrt(x)", context);
 
         Assert.AreEqual(MathValue.FromFraction(2, 3), result.Value);
-        Assert.AreEqual(CalculationAccuracy.Unverified, result.Accuracy);
+        Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.IsFalse(result.HasExactFraction);
     }
 
@@ -332,7 +332,7 @@ public sealed class RationalEvaluationTests
         var result = Calculator.Evaluate("sqrt(x)", context);
         Assert.AreEqual(MathValue.DataType.Double, result.Type);
         Assert.AreEqual(0.5, result.AsDouble());
-        Assert.AreEqual(CalculationAccuracy.Unverified, result.Accuracy);
+        Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.AreEqual(long.MinValue, BitConverter.DoubleToInt64Bits(Calculator.Evaluate("sqrt(negativeZero)", context).AsDouble()));
         Assert.AreEqual(double.PositiveInfinity, Calculator.Evaluate("sqrt(infinity)", context).AsDouble());
         Assert.IsTrue(Calculator.Evaluate("cbrt(nan)", context).IsNaN);
@@ -344,14 +344,14 @@ public sealed class RationalEvaluationTests
     {
         foreach (var expression in new[] { "isprime(97)", "isprime(2^64)", "divcount(12)", "sigma(12)", "totient(12)" })
         {
-            Assert.AreEqual(CalculationAccuracy.Exact, Calculator.Evaluate(expression).Accuracy);
+            Assert.AreEqual(CalculationExactness.Exact, Calculator.Evaluate(expression).Exactness);
         }
     }
 
     private static void AssertFraction(MathValue value, BigInteger numerator, BigInteger denominator)
     {
         var gcd = BigInteger.GreatestCommonDivisor(BigInteger.Abs(numerator), denominator);
-        Assert.AreEqual(CalculationAccuracy.Exact, value.Accuracy);
+        Assert.AreEqual(CalculationExactness.Exact, value.Exactness);
         Assert.IsTrue(value.TryGetExactFraction(out var actualNumerator, out var actualDenominator));
         Assert.AreEqual(numerator / gcd, actualNumerator);
         Assert.AreEqual(denominator / gcd, actualDenominator);

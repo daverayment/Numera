@@ -12,7 +12,7 @@ Most mathematical expression evaluators rely exclusively on 64-bit IEEE 754 doub
 Numera stores Integer, Decimal, Rational, or Double in `MathValue`. Integer, Decimal, and Rational arithmetic preserves exact fractions within configured limits. Mixing with Double introduces an approximate boundary; exact arithmetic never silently downgrades after a limit violation.
 
 > [!TIP]
-> Representation and calculation accuracy are different: inspect `MathValue.Accuracy` (`Exact` or `Unverified`). Approximate function results remain Unverified through subsequent arithmetic, even if their resulting representation is Integer.
+> Use `MathValue.Exactness` (`Exact` or `Unverified`) to guide UI indicators and interpret calculation paths, not to infer exactness from storage. `1/3` is Exact despite a rounded display; `floor(pi)` remains Unverified despite a whole-number answer. The [exactness guide](exactness.md) explains these distinctions and the limits of what this metadata tells you.
 
 ```mermaid
 flowchart TD
@@ -52,7 +52,7 @@ flowchart TD
 - Used for transcendental functions (`sin`, `cos`, `tan`, `ln`, `exp`), roots not recognized as exact, non-integer exponents, and arithmetic mixed with supplied Double values.
 - Provides approximately 15–17 significant digits across magnitudes up to $\approx \pm 1.8 \times 10^{308}$.
 - Overflows produce `double.PositiveInfinity` or `double.NegativeInfinity`; undefined domains return `NaN` or report structured diagnostics.
-- Approximate roots retain the binary magnitude of exact inputs that would project to zero, subnormal values, or infinity before rooting. Only the final approximate root is subject to Double's output range. Standard deviation uses the same root handling but remains a Double result with Unverified accuracy, even when its variance has an exact square root.
+- Approximate roots retain the binary magnitude of exact inputs that would project to zero, subnormal values, or infinity before rooting. Only the final approximate root is subject to Double's output range. Standard deviation uses the same root handling but remains a Double result with Unverified exactness, even when its variance has an exact square root.
 - Negative finite bases with finite fractional power exponents report `UndefinedMathResult`. This domain check uses the original values, even when the base or exponent would overflow or underflow during Double conversion. Actual nonfinite Double exponents retain native floating-point semantics.
 
 ### Preserving Inputs Before Approximation
@@ -64,7 +64,7 @@ Selected functions retain exact input information until floating-point approxima
 - Degree and gradian `sin`, `cos`, `tan`, `cot`, `sec`, and `csc` reduce exact inputs modulo a revolution before Double conversion. Very large whole revolutions therefore do not erase a small remaining angle. Radian reduction and supplied Double angles retain their existing behavior.
 - `hypot` scales exact inputs before conversion and uses the floating-point hypotenuse routine instead of directly squaring inputs. This avoids intermediate overflow/underflow, including loss of individually underflow-sized inputs whose combined result is representable.
 
-These are numerical algorithm improvements, not arbitrary-precision transcendental output or expression replay. Results remain Doubles with Unverified accuracy, subject to Double's final output range. Subsequent expressions operate on the stored approximation. Increasing display precision does not recover additional calculation precision.
+These are numerical algorithm improvements, not arbitrary-precision transcendental output or expression replay. Results remain Doubles with Unverified exactness, subject to Double's final output range. Subsequent expressions operate on the stored approximation. Increasing display precision does not recover additional calculation precision.
 
 ---
 
@@ -95,11 +95,11 @@ switch (result.Kind)
 }
 ```
 
-Representation access and conversion are distinct. Storage getters (`IntegerValue`, `DecimalValue`, `DoubleValue`, `Numerator`, and `Denominator`) throw `InvalidOperationException` if the storage type does not match; they never convert or return a placeholder zero. The same applies to the forwarded getters on `EvaluationResult` and `Variable`. Use `ToDouble()` (or `AsDouble()`) for an explicit, potentially lossy scalar conversion and `ToDecimal()` for an explicit Decimal conversion. `TryGetExactFraction` extracts a verified-exact fraction across Integer, Decimal, and Rational representations. Supplied exact inputs assert their value, not the accuracy of any calculation performed before supplying them.
+Representation access and conversion are distinct. Storage getters (`IntegerValue`, `DecimalValue`, `DoubleValue`, `Numerator`, and `Denominator`) throw `InvalidOperationException` if the storage type does not match; they never convert or return a placeholder zero. The same applies to the forwarded getters on `EvaluationResult` and `Variable`. Use `ToDouble()` (or `AsDouble()`) for an explicit, potentially lossy scalar conversion and `ToDecimal()` for an explicit Decimal conversion. `TryGetExactFraction` extracts a known or asserted exact fraction across finite representations, including caller-marked Exact Doubles. Supplied exact inputs assert their value, not the exactness of any calculation performed before supplying them.
 
-For callers who do not need storage details, `MathValue.ExactFraction` and `EvaluationResult.ExactFraction` return a nullable named tuple `(BigInteger Numerator, BigInteger Denominator)` in lowest terms. `GetExactFraction()` returns the same tuple or throws `InvalidOperationException` when finite Exact provenance is unavailable. Thus `1/3 + 2/3` exposes `(1, 1)` without requiring a Rational representation. The strict Rational-only storage getters remain unchanged. Caller-asserted Exact Doubles expose their stored binary fraction; ordinary Doubles and Unverified values do not qualify.
+For callers who do not need storage details, `MathValue.ExactFraction` and `EvaluationResult.ExactFraction` return a nullable named tuple `(BigInteger Numerator, BigInteger Denominator)` in lowest terms. `GetExactFraction()` returns the same tuple or throws `InvalidOperationException` when a finite Exact value is unavailable. Thus `1/3 + 2/3` exposes `(1, 1)` without requiring a Rational representation. The strict Rational-only storage getters remain unchanged. Caller-asserted Exact Doubles expose their stored binary fraction; ordinary Doubles and Unverified values do not qualify.
 
-Representation selection is centralized after bounded fraction arithmetic; Decimal-domain operations do not use rounded native Decimal arithmetic. Exact Decimal conversion work also obeys intermediate limits. Numeric rounding helpers retain the input's exact domain, while boolean, sign, bitwise, and number-theory results use their integral result representations. Recognized perfect roots of Decimal inputs retain Decimal when exactly representable rather than becoming approximate solely because the input was stored as Decimal. Double inputs remain approximate through root evaluation, and recognized roots of Unverified inputs do not acquire Exact accuracy.
+Representation selection is centralized after bounded fraction arithmetic; Decimal-domain operations do not use rounded native Decimal arithmetic. Exact Decimal conversion work also obeys intermediate limits. Numeric rounding helpers retain the input's exact domain, while boolean, sign, bitwise, and number-theory results use their integral result representations. Recognized perfect roots of Decimal inputs retain Decimal when exactly representable rather than becoming approximate solely because the input was stored as Decimal. Double inputs remain approximate through root evaluation, and recognized roots of Unverified inputs do not acquire Exact status.
 
 ---
 
@@ -113,9 +113,65 @@ Representation selection is centralized after bounded fraction arithmetic; Decim
   - `MathValue.Equals` and `operator ==` treat `NaN == NaN` as `true` to ensure reflexive semantics required by dictionary keys and hash sets.
   - In contrast, expression evaluation (`Calculator.Evaluate("NaN == NaN")` or `MathValue.AreEqual`) follows IEEE 754 relational semantics where comparisons involving `NaN` evaluate to `false`.
 - **Fraction Equality**: Fractions compare without first rounding to Double. `1/3` is not equal to a nearby Decimal or Double approximation.
-- **Provenance**: Numeric equality and hashing ignore `Accuracy`; metadata can be inspected separately.
+- **Exactness**: Numeric equality and hashing ignore `Exactness`; inspect it separately for UI guidance. For example, an Exact Decimal `0.5` and an Unverified Double `0.5` compare equal but do not offer the same exactness claim.
 - **Probable Primality**: `isprime` is deterministic through the unsigned 64-bit range. Positive results above that range are Unverified; a composite witness remains conclusive. Factorization-dependent `divcount`, `sigma`, and `totient` results above that input range are conservatively Unverified, even if a particular factorization happens to be correct.
 - **Explicit Double Conversion**: Integer `DivRem` rounding implements midpoint-to-even, including direct rounding to the subnormal grid. Conversion does not retroactively certify an approximate calculation.
+
+---
+
+## Immutable Configuration
+
+Options can be prepared independently and reused across engines. Use a record `with`
+expression to base one configuration on another without changing the original:
+
+```csharp
+var common = new CalculatorOptions
+{
+	MaxInputLength = 512,
+	AngleUnit = AngleUnit.Degrees
+};
+var german = common with { Culture = CultureInfo.GetCultureInfo("de-DE") };
+var engine = new CalculatorEngine(german);
+```
+
+For fluent derivation, engine `With...` methods return new engines. They never mutate
+the original or change settings captured by an earlier result:
+
+```csharp
+var scientific = engine
+	.WithAngleUnit(AngleUnit.Radians)
+	.WithOptions(options => options with
+	{
+		ResultFormat = options.ResultFormat with { SignificantDigits = 12 }
+	});
+
+var replacement = engine.WithOptions(common);
+```
+
+`WithOptions(transform)` receives the existing engine's options and invokes the function
+once. Use nested `with` expressions to preserve other formatting settings when changing
+one. `WithOptions(options)` replaces the complete configuration instead of merging it:
+in the example, `replacement` uses `common`'s culture, not the German engine's culture.
+Both overloads validate the chosen configuration before returning a new engine.
+
+Construction remains available as `new CalculatorEngine()`, `new CalculatorEngine(options)`,
+or `new CalculatorEngine(options => options with { ... })`. `ForCulture(culture)` and
+`ForCurrentCulture()` each accept an optional transformation starting from defaults for
+the selected culture. The current culture is captured before a transformation runs.
+Static `CalculatorEngine.WithOptions` is replaced by the instance method; use the
+options constructor when creating an engine from scratch.
+
+Required configuration arguments are strict: explicit null options, required transform
+delegates, or required `Culture`, `CustomFunctions`, and `ResultFormat` members throw
+`ArgumentNullException`. A supplied transform returning null throws `ArgumentException`
+for `configure`, rather than silently reverting to defaults. Out-of-range settings still
+throw `ArgumentOutOfRangeException`, and exceptions from the caller's transform propagate.
+Use the parameterless constructor for defaults instead of passing null.
+
+Null is still meaningful where explicitly optional: the culture factories' nullable
+`configure` parameter means no customization, and `Normalization = null` intentionally
+selects raw input. These are not invalid configurations. Construction and derivation do
+not alter per-session variables or `ans`; those remain in `EvaluationContext`.
 
 ---
 
@@ -124,7 +180,7 @@ Representation selection is centralized after bounded fraction arithmetic; Decim
 `MathValue` implements modern .NET formatting interfaces and multi-radix helpers:
 
 - **`ISpanFormattable` and `IUtf8SpanFormattable`**: Write formatted values into caller-provided character or UTF-8 buffers. Rational formatting can allocate temporary integer and text storage.
-- **Multi-Radix Helpers**: For finite integral values, `value.ToHexString()`, `value.ToBinaryString()`, and `value.ToOctalString()` format with (or without) standard prefixes (`0x`, `0b`, `0o`), returning `null` otherwise. Availability does not certify calculation accuracy.
+- **Multi-Radix Helpers**: For finite integral values, `value.ToHexString()`, `value.ToBinaryString()`, and `value.ToOctalString()` format with (or without) standard prefixes (`0x`, `0b`, `0o`), returning `null` otherwise. Availability does not establish calculation exactness: an Unverified Double containing 2 can still be shown as binary `0b10`.
 - **Launcher Presentation**: `CalculatorEngine.FormatResult(value)` produces a structured `FormattedCalculation` containing primary display text in the engine's culture, machine-readable invariant text, and integer radix strings.
 
 The default primary display uses at most 24 significant digits with culture-aware digit grouping enabled, stripping insignificant trailing zeros. Automatic notation selection uses the rounded base-10 exponent: fixed notation applies from -24 through 23 inclusive (`MaxFixedDigits = 24`); other magnitudes transition to scientific notation. This threshold governs magnitude, not the total number of fractional digits. `ResultFormatOptions` configures this independently of arithmetic.
@@ -135,19 +191,19 @@ Digit grouping follows the culture's complete group-size sequence, including var
 
 Use the structured primary display for calculator UIs. Representation-native `ToString` and explicit .NET numeric format strings are a separate surface; Integer and Decimal formatting can retain more digits than the primary display. Exact invariant expressions may exceed a receiving engine's input-length limit even when their numeric components fit; serialization is the separate value-transfer surface.
 
-`FractionRepresentation` is a reduced slash fraction for verified-exact finite results (`"1/3"`, `"1/2"`, or `"5"` for integers), otherwise null. `EvaluationResult.HasExactFraction` reports that mathematical availability. `IsDisplayRounded` reports formatting loss relative to the stored value, not calculation accuracy. A UI should inspect both it and `Value.Accuracy` before making an exactness claim.
+`FractionRepresentation` is a reduced slash fraction for known or asserted Exact finite results (`"1/3"`, `"1/2"`, or `"5"` for integers), otherwise null. `EvaluationResult.HasExactFraction` reports that availability. Use `IsDisplayRounded` for a rounded-display indicator and `Value.Exactness` for a separate exactness explanation: `1/3` is Exact with a rounded display, while `ln(1)` is Unverified without display rounding. See [UI guidance](exactness.md#i-want-a-useful-indicator-beside-the-answer).
 
-Decimal literals and explicit Decimal values carry a bounded display-scale hint independently of canonical representation. Exact arithmetic and captured values retain it, including across Rational intermediates, without replaying expressions. Fixed, unrounded displays preserve scales up to four places for non-whole values and two for whole values; larger scales normalize trailing zeros. Scientific notation and the significant-digit budget take precedence. Fraction factories do not invent decimal padding merely because a fraction happens to fit Decimal. Numeric equality, hashing, and accuracy ignore the hint.
+Decimal literals and explicit Decimal values carry a bounded display-scale hint independently of canonical representation. Exact arithmetic and captured values retain it, including across Rational intermediates, without replaying expressions. Fixed, unrounded displays preserve scales up to four places for non-whole values and two for whole values; larger scales normalize trailing zeros. Scientific notation and the significant-digit budget take precedence. Fraction factories do not invent decimal padding merely because a fraction happens to fit Decimal. Numeric equality, hashing, and exactness ignore the hint.
 
 Default `EvaluationResult.ToString()`, interpolation, and character/UTF-8 span formatting use the originating engine's numeric display policy, with an explicitly supplied format provider overriding its culture. Thus `Calculator.Evaluate("194.40-100").ToString()` returns `"94.40"`. Only the numeric representation is formatted on these paths, not unused fraction/radix alternates. Explicit format strings and `MathValue` formatting retain their representation-native behavior.
 
 Numeric providers include `CultureInfo`, `NumberFormatInfo`, and custom `IFormatProvider` implementations that supply `NumberFormatInfo`. Their separators, grouping sizes, and signs are applied without replacing the engine's precision or notation settings. A null provider retains the originating engine's culture.
 
-For finite values, `MachineReadable` / `ToInvariantExpression()` preserve the numeric value, separately from rounded display. Decimal scale is retained where representable as an invariant decimal literal: `194.40 - 100` produces `"94.40"`, and `"94.40000"` retains five places even though its primary display trims to `"94.4"`. Machine text does not apply the significant-digit budget or primary display's trailing-zero thresholds. Double values use their exact stored binary fractions rather than decimal strings which the exact-decimal parser would interpret differently. Re-evaluation does not guarantee representation, provenance, or all display-scale metadata survives; Rational results can use reduced slash fractions without their original scale hint. Nonfinite tokens are invariant text, not re-evaluable expressions. `MathValue.Serialize()` / `Deserialize()` preserve value, representation, accuracy, and decimal display-scale metadata, including nonfinite Doubles.
+For finite values, `MachineReadable` / `ToInvariantExpression()` preserve the numeric value, separately from rounded display. Decimal scale is retained where representable as an invariant decimal literal: `194.40 - 100` produces `"94.40"`, and `"94.40000"` retains five places even though its primary display trims to `"94.4"`. Machine text does not apply the significant-digit budget or primary display's trailing-zero thresholds. Double values use their exact stored binary fractions rather than decimal strings which the exact-decimal parser would interpret differently. Re-evaluation does not guarantee representation, exactness, or all display-scale metadata survives; Rational results can use reduced slash fractions without their original scale hint. Nonfinite tokens are invariant text, not re-evaluable expressions. `MathValue.Serialize()` / `Deserialize()` preserve value, representation, exactness, and decimal display-scale metadata, including nonfinite Doubles. Serialized data uses the required `Exactness` field and rejects nonfinite values marked Exact.
 
 ### Radix Helpers
 
-Radix helpers apply to finite integral values, regardless of storage type or accuracy status. Other values return `null`, and a negative integer keeps its sign in front of the prefix:
+Radix helpers apply to finite integral values, regardless of storage type or exactness status. Other values return `null`, and a negative integer keeps its sign in front of the prefix:
 
 ```csharp
 var value = Calculator.Evaluate("1100");
@@ -202,7 +258,7 @@ The culture rules to be aware of:
 - **Results retain their formatting policy.** `PrimaryDisplay`, `FormatResult()`, `ToString`, and span formatting use captured settings. Explicit options and culture override independently; null means retain the existing setting. Results without options fall back to library display defaults and current culture.
 - **Engine formatting deliberately selects the receiving engine's policy.** Use `engine.FormatResult(value)` for raw values or `engine.FormatResult(result)` to reformat under that engine's settings. `Calculator.FormatResult` is removed, and the standalone formatter is internal.
 - **Display text is grouped by default.** Set `ResultFormatOptions.GroupDigits` to false to disable grouping. Matching cultures avoids separator-related misinterpretation, but display rounding can still change the numerical value.
-- **Display rounding is distinct from calculation accuracy.** `IsDisplayRounded` describes presentation; `Accuracy` describes known exactness. Neither storage type nor a lack of display rounding proves calculation accuracy.
+- **Display rounding is distinct from calculation exactness.** Use `IsDisplayRounded` to explain a shortened representation and `Exactness` to explain established exactness. `1/3` needs the former despite being Exact; `ln(1)` remains Unverified without it. Neither storage type nor a lack of display rounding establishes exactness.
 - **Radix strings and `MachineReadable` never depend on culture.** Use an explicitly invariant engine to evaluate machine text; use serialization to preserve storage and metadata as well as value.
 
 ### Complete Presentation Snapshots

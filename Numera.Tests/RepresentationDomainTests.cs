@@ -182,7 +182,7 @@ public sealed class RepresentationDomainTests
         var expected = (new BigInteger(numerator), new BigInteger(denominator));
         Assert.AreEqual(expected, result.GetExactFraction(), expression);
         Assert.AreEqual(expected, result.Value.GetExactFraction(), expression);
-        Assert.AreEqual(CalculationAccuracy.Exact, result.Accuracy);
+        Assert.AreEqual(CalculationExactness.Exact, result.Exactness);
         Assert.IsTrue(result.HasExactFraction);
         Assert.IsTrue(result.ExactFraction is (var _, var _));
     }
@@ -215,15 +215,15 @@ public sealed class RepresentationDomainTests
     }
 
     [TestMethod]
-    public void FractionAvailabilityDependsOnProvenanceNotStorageOrDisplay()
+    public void FractionAvailabilityDependsOnExactnessNotStorageOrDisplay()
     {
         foreach (var value in new[]
         {
-            default(MathValue), new MathValue(1).WithAccuracy(CalculationAccuracy.Unverified),
-            new MathValue(0.5m).WithAccuracy(CalculationAccuracy.Unverified),
-            MathValue.FromFraction(1, 3).WithAccuracy(CalculationAccuracy.Unverified),
-            new MathValue(0.5), new MathValue(double.NaN).WithAccuracy(CalculationAccuracy.Exact),
-            new MathValue(double.PositiveInfinity).WithAccuracy(CalculationAccuracy.Exact),
+            default(MathValue), new MathValue(1).WithExactness(CalculationExactness.Unverified),
+            new MathValue(0.5m).WithExactness(CalculationExactness.Unverified),
+            MathValue.FromFraction(1, 3).WithExactness(CalculationExactness.Unverified),
+            new MathValue(0.5), new MathValue(double.NaN),
+            new MathValue(double.PositiveInfinity), new MathValue(double.NegativeInfinity),
             Calculator.Evaluate("sqrt(2)").Value
         })
         {
@@ -235,7 +235,7 @@ public sealed class RepresentationDomainTests
             Assert.ThrowsExactly<InvalidOperationException>(() => result.GetExactFraction());
         }
 
-        var trusted = new MathValue(0.1).WithAccuracy(CalculationAccuracy.Exact);
+        var trusted = new MathValue(0.1).WithExactness(CalculationExactness.Exact);
         Assert.AreEqual(
             (BigInteger.Parse("3602879701896397"), BigInteger.Parse("36028797018963968")),
             trusted.GetExactFraction());
@@ -255,7 +255,7 @@ public sealed class RepresentationDomainTests
         var fractional = max + new MathValue(0.1m);
         Assert.AreEqual(MathValue.DataType.Rational, fractional.Kind);
         Assert.AreEqual((new BigInteger(decimal.MaxValue) * 10 + 1, new BigInteger(10)), fractional.GetExactFraction());
-        Assert.AreEqual(CalculationAccuracy.Exact, fractional.Accuracy);
+        Assert.AreEqual(CalculationExactness.Exact, fractional.Exactness);
 
         var tiny = Calculator.Evaluate("1e-400");
         Assert.AreEqual(MathValue.DataType.Rational, tiny.Type);
@@ -298,7 +298,7 @@ public sealed class RepresentationDomainTests
         var exact = MathValue.FromFraction(1, 2);
         var mixed = exact + new MathValue(0.5);
         Assert.AreEqual(MathValue.DataType.Double, mixed.Kind);
-        Assert.AreEqual(CalculationAccuracy.Unverified, mixed.Accuracy);
+        Assert.AreEqual(CalculationExactness.Unverified, mixed.Exactness);
         Assert.IsNull(mixed.ExactFraction);
         Assert.AreEqual(0.5m, exact.ToDecimal());
         Assert.AreEqual(MathValue.DataType.Rational, exact.Kind);

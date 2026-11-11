@@ -34,24 +34,20 @@ public sealed class CalculatorEngine
     public static CalculatorEngine Default => new();
 
     /// <summary>
-    /// Creates a new engine configured for the specified culture, using default limits
-    /// and normalization.
-    /// </summary>
-    /// <param name="culture">The culture to use for the engine.</param>
-    /// <returns>A new <see cref="CalculatorEngine"/> configured for the specified
-    /// culture.</returns>
-    public static CalculatorEngine ForCulture(CultureInfo culture) =>
-        new(CalculatorOptions.ForCulture(culture));
-
-    /// <summary>
     /// Creates a new engine configured for the specified culture, with optional
     /// customizations.
     /// </summary>
     /// <param name="culture">The culture to use for the engine.</param>
-    /// <param name="configure">A function that takes the current
-    /// <see cref="CalculatorOptions"/> and returns a modified version.</param>
+    /// <param name="configure">An optional function that transforms default options for
+    /// the specified culture. Null means no customization; a supplied function must
+    /// return non-null, valid options.</param>
     /// <returns>A new <see cref="CalculatorEngine"/> configured for the specified culture
     /// and customizations.</returns>
+    /// <exception cref="ArgumentNullException">The culture or a required option is null.
+    /// </exception>
+    /// <exception cref="ArgumentException">The transformation returns null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">An option is outside its supported
+    /// range.</exception>
     /// <remarks>
     /// For example:
     /// <code>
@@ -63,26 +59,27 @@ public sealed class CalculatorEngine
     public static CalculatorEngine ForCulture(CultureInfo culture, Func<CalculatorOptions, CalculatorOptions>? configure = null)
     {
         var baseOptions = CalculatorOptions.ForCulture(culture);
-        return new(configure != null ? configure(baseOptions) : baseOptions);
-    }
+        if (configure is not null)
+        {
+            baseOptions = ConfigureOptions(baseOptions, configure);
+        }
 
-    /// <summary>
-    /// Creates a new engine capturing the calling thread's current culture, using default
-    /// limits and normalization.
-    /// </summary>
-    /// <returns>A new <see cref="CalculatorEngine"/> configured for the current culture.
-    /// </returns>
-    public static CalculatorEngine ForCurrentCulture() =>
-        new(CalculatorOptions.ForCurrentCulture());
+        return new CalculatorEngine(baseOptions);
+    }
 
     /// <summary>
     /// Creates a new engine configured for the current culture, with optional
     /// customizations.
     /// </summary>
-    /// <param name="configure">A function that takes the current
-    /// <see cref="CalculatorOptions"/> and returns a modified version.</param>
+    /// <param name="configure">An optional function that transforms default options for
+    /// the captured current culture. Null means no customization; a supplied function
+    /// must return non-null, valid options.</param>
     /// <returns>A new <see cref="CalculatorEngine"/> configured for the current culture
     /// and customizations.</returns>
+    /// <exception cref="ArgumentNullException">A required option is null.</exception>
+    /// <exception cref="ArgumentException">The transformation returns null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">An option is outside its supported
+    /// range.</exception>
     /// <remarks>
     /// For example:
     /// <code>
@@ -90,11 +87,8 @@ public sealed class CalculatorEngine
     ///     options => options with { AngleUnit = AngleUnit.Degrees });
     /// </code>
     /// </remarks>
-    public static CalculatorEngine ForCurrentCulture(Func<CalculatorOptions, CalculatorOptions>? configure)
-    {
-        var baseOptions = CalculatorOptions.ForCurrentCulture();
-        return new(configure != null ? configure(baseOptions) : baseOptions);
-    }
+    public static CalculatorEngine ForCurrentCulture(Func<CalculatorOptions, CalculatorOptions>? configure = null) =>
+        ForCulture(CultureInfo.CurrentCulture, configure);
 
     /// <summary>
     /// The immutable options this engine was created with. They were validated at
@@ -104,13 +98,24 @@ public sealed class CalculatorEngine
     public CalculatorOptions Options { get; }
 
     /// <summary>
+    /// Creates a default engine capturing the current culture, with radians and standard
+    /// human-input normalization enabled.
+    /// </summary>
+    public CalculatorEngine() : this(CalculatorOptions.Default)
+    {
+    }
+
+    /// <summary>
     /// Initializes a new <see cref="CalculatorEngine"/> via a transformation of the
     /// default options.
     /// </summary>
     /// <param name="configure">A function that takes the default
-    /// <see cref="CalculatorOptions"/> and returns a modified version.</param>
+    /// <see cref="CalculatorOptions"/> and returns non-null, valid options.</param>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="configure"/> is
-    /// <c>null</c>.</exception>
+    /// null or a required option is null.</exception>
+    /// <exception cref="ArgumentException">The transformation returns null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">An option is outside its supported
+    /// range.</exception>
     /// <remarks>
     /// For example:
     /// <code>
@@ -122,7 +127,7 @@ public sealed class CalculatorEngine
     /// </code>
     /// </remarks>
     public CalculatorEngine(Func<CalculatorOptions, CalculatorOptions> configure) :
-        this((configure ?? throw new ArgumentNullException(nameof(configure)))(CalculatorOptions.Default))
+        this(ConfigureOptions(CalculatorOptions.Default, configure))
     {
     }
 
@@ -130,17 +135,16 @@ public sealed class CalculatorEngine
     /// Creates an engine, validating the options once so evaluation calls do not repeat
     /// the checks.
     /// </summary>
-    /// <param name="options">The options to use; <c>null</c> selects
-    /// <see cref="CalculatorOptions.Default"/>
-    /// (current culture captured at construction, radians, normalization on).</param>
+    /// <param name="options">The non-null options to use. To capture default settings
+    /// and current culture, use the parameterless constructor.</param>
     /// <exception cref="ArgumentOutOfRangeException">Thrown if the options contain
     /// out-of-range values, such as an undefined angle unit or limits outside the
     /// supported ranges.</exception>
-    /// <exception cref="ArgumentNullException">Thrown if the options have a null culture.
+    /// <exception cref="ArgumentNullException">The options or a required option is null.
     /// </exception>
-    public CalculatorEngine(CalculatorOptions? options = null)
+    public CalculatorEngine(CalculatorOptions options)
     {
-        options ??= CalculatorOptions.Default;
+        ArgumentNullException.ThrowIfNull(options);
         options.Validate();
         Options = options;
     }
@@ -150,21 +154,39 @@ public sealed class CalculatorEngine
     /// this engine's options. The original engine is unchanged.
     /// </summary>
     /// <param name="configure">A function that takes the current
-    /// <see cref="CalculatorOptions"/> and returns a modified version.</param>
+    /// <see cref="CalculatorOptions"/> and returns non-null, valid options.</param>
     /// <returns>A new <see cref="CalculatorEngine"/> with the modified options.</returns>
+    /// <exception cref="ArgumentNullException">The function or a required option is null.
+    /// </exception>
+    /// <exception cref="ArgumentException">The transformation returns null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">An option is outside its supported
+    /// range.</exception>
     public CalculatorEngine WithOptions(Func<CalculatorOptions, CalculatorOptions> configure)
     {
-        ArgumentNullException.ThrowIfNull(configure);
-        return new CalculatorEngine(configure(Options));
+        return new CalculatorEngine(ConfigureOptions(Options, configure));
     }
 
     /// <summary>
-    /// Returns a new <see cref="CalculatorEngine"/> using the specified options.
+    /// Returns a new engine using the complete replacement options. The original engine
+    /// is unchanged; options are not merged with its configuration.
     /// </summary>
     /// <param name="options">The options to apply.</param>
     /// <returns>A new <see cref="CalculatorEngine"/> with the specified options.
     /// </returns>
-    public static CalculatorEngine WithOptions(CalculatorOptions options) => new(options);
+    /// <exception cref="ArgumentNullException">The options or a required option is null.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">An option is outside its supported
+    /// range.</exception>
+    public CalculatorEngine WithOptions(CalculatorOptions options) => new(options);
+
+    private static CalculatorOptions ConfigureOptions(
+        CalculatorOptions options,
+        Func<CalculatorOptions, CalculatorOptions> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        return configure(options) ?? throw new ArgumentException(
+            "The configuration transformation must return non-null options.", nameof(configure));
+    }
 
     /// <summary>
     /// Returns a new <see cref="CalculatorEngine"/> with the specified angle unit,
@@ -173,6 +195,8 @@ public sealed class CalculatorEngine
     /// <param name="unit">The angle unit to apply.</param>
     /// <returns>A new <see cref="CalculatorEngine"/> with the specified angle unit.
     /// </returns>
+    /// <exception cref="ArgumentOutOfRangeException">The angle unit is undefined.
+    /// </exception>
     public CalculatorEngine WithAngleUnit(AngleUnit unit) =>
         WithOptions(o => o with { AngleUnit = unit });
 
@@ -183,6 +207,7 @@ public sealed class CalculatorEngine
     /// <param name="culture">The new culture to apply.</param>
     /// <returns>A new <see cref="CalculatorEngine"/> with the same options as this engine
     /// and the specified culture.</returns>
+    /// <exception cref="ArgumentNullException">The culture is null.</exception>
     public CalculatorEngine WithCulture(CultureInfo culture) =>
         WithOptions(o => o with { Culture = culture });
 

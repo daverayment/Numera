@@ -18,7 +18,7 @@ public sealed class RationalIntegrationTests
         Assert.AreEqual(new MathValue(1), engine.Evaluate("a * 3", context).Value);
         Assert.AreEqual(new MathValue(1), engine.Evaluate("ans * 3", context).Value);
         Assert.AreEqual(new MathValue(1), (bareResult * 3).Value);
-        Assert.AreEqual(CalculationAccuracy.Exact, third.Accuracy);
+        Assert.AreEqual(CalculationExactness.Exact, third.Exactness);
         Assert.IsTrue(bareResult.HasExactFraction);
     }
 
@@ -28,12 +28,12 @@ public sealed class RationalIntegrationTests
         var engine = new CalculatorEngine();
         var exact = engine.Evaluate("1/3 + 0.5");
         Assert.AreEqual(MathValue.FromFraction(5, 6), exact.Value);
-        Assert.AreEqual(CalculationAccuracy.Exact, exact.Accuracy);
+        Assert.AreEqual(CalculationExactness.Exact, exact.Exactness);
         Assert.AreEqual("5/6", exact.FormatResult().FractionRepresentation);
 
         var approximate = exact + new MathValue(0.5);
         Assert.AreEqual(MathValue.DataType.Double, approximate.Type);
-        Assert.AreEqual(CalculationAccuracy.Unverified, approximate.Accuracy);
+        Assert.AreEqual(CalculationExactness.Unverified, approximate.Exactness);
         Assert.IsFalse(approximate.HasExactFraction);
         Assert.IsNull(approximate.FormatResult().FractionRepresentation);
     }
@@ -71,17 +71,17 @@ public sealed class RationalIntegrationTests
     [TestMethod]
     public void MachineReadableAndSerializationHaveDifferentContracts()
     {
-        var value = MathValue.FromFraction(1, 3).WithAccuracy(CalculationAccuracy.Unverified);
+        var value = MathValue.FromFraction(1, 3).WithExactness(CalculationExactness.Unverified);
         var card = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture).FormatResult(value);
         Assert.AreEqual("1/3", card.MachineReadable);
         Assert.IsNull(card.FractionRepresentation);
         Assert.IsNotNull(card.MachineReadable);
-        Assert.AreEqual(CalculationAccuracy.Exact, Calculator.Evaluate(card.MachineReadable).Accuracy);
+        Assert.AreEqual(CalculationExactness.Exact, Calculator.Evaluate(card.MachineReadable).Exactness);
 
         var restored = MathValue.Deserialize(value.Serialize());
         Assert.AreEqual(value, restored);
         Assert.AreEqual(value.Kind, restored.Kind);
-        Assert.AreEqual(value.Accuracy, restored.Accuracy);
+        Assert.AreEqual(value.Exactness, restored.Exactness);
     }
 
     [TestMethod]
@@ -126,7 +126,7 @@ public sealed class RationalIntegrationTests
         Assert.AreEqual(value, Calculator.Evaluate(expression).Value);
         var restored = MathValue.Deserialize(value.Serialize());
         Assert.AreEqual(MathValue.DataType.Double, restored.Kind);
-        Assert.AreEqual(CalculationAccuracy.Unverified, restored.Accuracy);
+        Assert.AreEqual(CalculationExactness.Unverified, restored.Exactness);
         Assert.AreEqual(input, restored.DoubleValue);
     }
 
@@ -136,9 +136,9 @@ public sealed class RationalIntegrationTests
         var engine = new CalculatorEngine();
         var ordinary = new MathValue(0.5);
         Assert.IsNull(engine.FormatResult(ordinary).FractionRepresentation);
-        var trusted = ordinary.WithAccuracy(CalculationAccuracy.Exact);
+        var trusted = ordinary.WithExactness(CalculationExactness.Exact);
         Assert.AreEqual("1/2", engine.FormatResult(trusted).FractionRepresentation);
         Assert.IsTrue(new EvaluationResult(trusted, EvaluationContext.Empty).HasExactFraction);
-        Assert.AreEqual(CalculationAccuracy.Unverified, (trusted + new MathValue(1)).Accuracy);
+        Assert.AreEqual(CalculationExactness.Unverified, (trusted + new MathValue(1)).Exactness);
     }
 }

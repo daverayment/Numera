@@ -62,7 +62,9 @@ Callbacks receive evaluated `IReadOnlyList<MathValue>` arguments and return a `M
 
 Arguments can be Rational. Inspect `Kind` for representation access, or explicitly use `ToDouble()` / `ToDecimal()` when a scalar is required. Exact arithmetic preserves fractions across callbacks.
 
-Values carry `Accuracy` (`Exact` or `Unverified`). Integer, Decimal, and fraction construction describe exact supplied values; ordinary Double construction is Unverified. `WithAccuracy` is a trusted caller assertion, not an independent numerical proof. Unverified inputs conservatively propagate through function evaluation.
+Values carry `Exactness` (`CalculationExactness.Exact` or `Unverified`) so the host can label answers and recognize unverified calculation paths. For example, an exact fraction callback returning `1/3` can enable a fraction toggle even when its decimal display rounds; a callback returning a Double `0.5` remains Unverified even though its display needs no rounding.
+
+Integer, Decimal, and fraction construction assert exact supplied values, not the exactness of work done before constructing them. If your callback converts an approximate calculation to Decimal, mark the result with `WithExactness(CalculationExactness.Unverified)`. `WithExactness(Exact)` is a trusted caller assertion: it does not verify earlier work, recover digits, or turn a Double `0.1` into `1/10`. NaN and infinities cannot be marked Exact. Unverified arguments conservatively keep function results Unverified even when a callback returns a newly constructed Integer. See [the exactness guide](exactness.md#my-app-supplies-numbers-or-custom-functions) for examples and counterexamples.
 
 ### 3. Arity & Case-Insensitive Matching
 - Function identifiers are matched ordinally and case-insensitively, consistent with all Numera identifiers.

@@ -49,7 +49,9 @@ public sealed record FormattedCalculation
 
     /// <summary>
     /// Gets whether the primary display rounded the stored value.
-    /// This does not establish calculation accuracy.
+    /// Use this for a rounded-display indicator, not to infer calculation exactness:
+    /// 1/3 is Exact with a rounded display; ln(1) is Unverified without display rounding.
+    /// Inspect <see cref="MathValue.Exactness"/> for a separate exactness indicator.
     /// </summary>
     public bool IsDisplayRounded { get; }
 
