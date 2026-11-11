@@ -113,15 +113,94 @@ public sealed class SourceMapTests
     [TestMethod]
     public void FromRanges_MismatchedCountsThrowArgumentException()
     {
-        Assert.Throws<ArgumentException>(() => SourceMap.FromRanges([0, 1], [1], 2));
+        var exception = Assert.ThrowsExactly<ArgumentException>(() => SourceMap.FromRanges([0, 1], [1], 2));
+        Assert.AreEqual("ends", exception.ParamName);
+    }
+
+    [TestMethod]
+    public void FromRanges_NullCollectionsThrowArgumentNullException()
+    {
+        var starts = Assert.ThrowsExactly<ArgumentNullException>(() => SourceMap.FromRanges(null!, [1], 1));
+        var ends = Assert.ThrowsExactly<ArgumentNullException>(() => SourceMap.FromRanges([0], null!, 1));
+        var both = Assert.ThrowsExactly<ArgumentNullException>(() => SourceMap.FromRanges(null!, null!, 1));
+
+        Assert.AreEqual("starts", starts.ParamName);
+        Assert.AreEqual("ends", ends.ParamName);
+        Assert.AreEqual("starts", both.ParamName);
+    }
+
+    [TestMethod]
+    public void FromRanges_AcceptsListsArraysAndReadOnlyCollections()
+    {
+        IReadOnlyList<int>[] starts =
+        [
+            new List<int> { 0, 1, 3 },
+            new int[] { 0, 1, 3 },
+            Array.AsReadOnly(new int[] { 0, 1, 3 })
+        ];
+        IReadOnlyList<int>[] ends =
+        [
+            new List<int> { 1, 3, 4 },
+            new int[] { 1, 3, 4 },
+            Array.AsReadOnly(new int[] { 1, 3, 4 })
+        ];
+
+        foreach (var startEntries in starts)
+        {
+            foreach (var endEntries in ends)
+            {
+                var map = SourceMap.FromRanges(startEntries, endEntries, 4);
+                Assert.IsFalse(map.IsIdentity);
+                Assert.AreEqual(3, map.MapPosition(2));
+                Assert.AreEqual(new TextSpan(1, 2), map.MapSpan(new TextSpan(1, 1)));
+                Assert.AreEqual(new TextSpan(0, 4), map.MapSpan(new TextSpan(0, 3)));
+            }
+        }
+    }
+
+    [TestMethod]
+    public void FromRanges_CopiesMutableInputsIncludingReadOnlyViews()
+    {
+        int[] starts = [0, 1, 3];
+        int[] ends = [1, 3, 4];
+        var startList = new List<int>(starts);
+        var endList = new List<int>(ends);
+        SourceMap[] maps =
+        [
+            SourceMap.FromRanges(starts, ends, 4),
+            SourceMap.FromRanges(startList, endList, 4),
+            SourceMap.FromRanges(startList.AsReadOnly(), endList.AsReadOnly(), 4)
+        ];
+
+        Array.Fill(starts, 0);
+        Array.Fill(ends, 1);
+        startList.Clear();
+        endList.Clear();
+
+        foreach (var map in maps)
+        {
+            Assert.AreEqual(3, map.MapPosition(2));
+            Assert.AreEqual(4, map.MapPosition(3));
+            Assert.AreEqual(new TextSpan(1, 2), map.MapSpan(new TextSpan(1, 1)));
+            Assert.AreEqual(new TextSpan(0, 4), map.MapSpan(new TextSpan(0, 3)));
+        }
     }
 
     [TestMethod]
     public void FromRanges_IdentityDetectedReturnsIdentityMap()
     {
-        var map = SourceMap.FromRanges([0, 1, 2], [1, 2, 3], 3);
-
-        Assert.IsTrue(map.IsIdentity);
+        IReadOnlyList<int>[] starts =
+        [
+            new List<int> { 0, 1, 2 },
+            new int[] { 0, 1, 2 },
+            Array.AsReadOnly(new int[] { 0, 1, 2 })
+        ];
+        foreach (var entries in starts)
+        {
+            var map = SourceMap.FromRanges(entries, [1, 2, 3], 3);
+            Assert.IsTrue(map.IsIdentity);
+            Assert.AreEqual(new TextSpan(1, 2), map.MapSpan(new TextSpan(1, 2)));
+        }
     }
 
     [TestMethod]

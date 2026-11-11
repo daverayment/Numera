@@ -69,41 +69,42 @@ public sealed record FormattedCalculation
     /// Creates a snapshot from prepared representations. If an assignment summary is not
     /// supplied, prepares it using current culture. Numeric text is stored as supplied.
     /// </summary>
-    /// <param name="Value">The calculated value.</param>
-    /// <param name="PrimaryDisplay">The primary display.</param>
-    /// <param name="MachineReadable">The invariant numerical expression.</param>
-    /// <param name="HexRepresentation">The hexadecimal alternative, or null.</param>
-    /// <param name="BinaryRepresentation">The binary alternative, or null.</param>
-    /// <param name="OctalRepresentation">The octal alternative, or null.</param>
-    /// <param name="AssignedVariables">The assigned variables, if any.</param>
-    /// <param name="IsDisplayRounded">Whether the primary display rounded the value.</param>
-    /// <param name="FractionRepresentation">The exact fraction alternative, or null.</param>
-    /// <param name="AssignmentSummary">The prepared assignment summary, or null.</param>
+    /// <param name="value">The calculated value.</param>
+    /// <param name="primaryDisplay">The primary display.</param>
+    /// <param name="machineReadable">The invariant numerical expression.</param>
+    /// <param name="hexRepresentation">The hexadecimal alternative, or null.</param>
+    /// <param name="binaryRepresentation">The binary alternative, or null.</param>
+    /// <param name="octalRepresentation">The octal alternative, or null.</param>
+    /// <param name="assignedVariables">The assigned variables, if any.</param>
+    /// <param name="isDisplayRounded">Whether the primary display rounded the value.</param>
+    /// <param name="fractionRepresentation">The exact fraction alternative, or null.</param>
+    /// <param name="assignmentSummary">The prepared assignment summary, or null.</param>
     /// <exception cref="ArgumentNullException">Required display text is null.</exception>
     public FormattedCalculation(
-        MathValue Value,
-        string PrimaryDisplay,
-        string MachineReadable,
-        string? HexRepresentation = null,
-        string? BinaryRepresentation = null,
-        string? OctalRepresentation = null,
-        VariableCollection? AssignedVariables = null,
-        bool IsDisplayRounded = false,
-        string? FractionRepresentation = null,
-        string? AssignmentSummary = null)
+        MathValue value,
+        string primaryDisplay,
+        string machineReadable,
+        string? hexRepresentation = null,
+        string? binaryRepresentation = null,
+        string? octalRepresentation = null,
+        VariableCollection? assignedVariables = null,
+        bool isDisplayRounded = false,
+        string? fractionRepresentation = null,
+        string? assignmentSummary = null)
     {
-        ArgumentNullException.ThrowIfNull(PrimaryDisplay);
-        ArgumentNullException.ThrowIfNull(MachineReadable);
-        this.Value = Value;
-        this.PrimaryDisplay = PrimaryDisplay;
-        this.MachineReadable = MachineReadable;
-        this.HexRepresentation = HexRepresentation;
-        this.BinaryRepresentation = BinaryRepresentation;
-        this.OctalRepresentation = OctalRepresentation;
-        this.AssignedVariables = AssignedVariables;
-        this.IsDisplayRounded = IsDisplayRounded;
-        this.FractionRepresentation = FractionRepresentation;
-        this.AssignmentSummary = AssignmentSummary ?? AssignedVariables?.FormatSummary(null);
+        ArgumentNullException.ThrowIfNull(primaryDisplay);
+        ArgumentNullException.ThrowIfNull(machineReadable);
+
+        Value = value;
+        PrimaryDisplay = primaryDisplay;
+        MachineReadable = machineReadable;
+        HexRepresentation = hexRepresentation;
+        BinaryRepresentation = binaryRepresentation;
+        OctalRepresentation = octalRepresentation;
+        AssignedVariables = assignedVariables;
+        IsDisplayRounded = isDisplayRounded;
+        FractionRepresentation = fractionRepresentation;
+        AssignmentSummary = assignmentSummary ?? assignedVariables?.FormatSummary(null);
     }
 
     /// <summary>Deconstructs the original seven-field presentation surface.</summary>

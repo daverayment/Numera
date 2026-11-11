@@ -3,7 +3,7 @@ namespace Numera;
 /// <summary>
 /// Hard safety ceilings for expression parsing and bounded numeric operations.
 /// </summary>
-public sealed class CalculationLimits
+public static class CalculationLimits
 {
     /// <summary>
     /// The maximum permitted length of an expression string in UTF-16 code units.

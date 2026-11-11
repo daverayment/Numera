@@ -72,15 +72,15 @@ internal static class ResultFormatter
         var (primaryDisplay, isRounded) = ResultValueFormatter.Format(value, options, culture);
 
         return new FormattedCalculation(
-            Value: value,
-            PrimaryDisplay: primaryDisplay,
-            MachineReadable: value.ToInvariantExpression(),
-            HexRepresentation: value.ToHexString(prefixRadixOutput),
-            BinaryRepresentation: value.ToBinaryString(prefixRadixOutput),
-            OctalRepresentation: value.ToOctalString(prefixRadixOutput),
-            AssignedVariables: assignedVariables,
-            FractionRepresentation: ResultValueFormatter.FormatExactFraction(value),
-            IsDisplayRounded: isRounded,
-            AssignmentSummary: assignedVariables?.FormatSummary(culture));
+            value: value,
+            primaryDisplay: primaryDisplay,
+            machineReadable: value.ToInvariantExpression(),
+            hexRepresentation: value.ToHexString(prefixRadixOutput),
+            binaryRepresentation: value.ToBinaryString(prefixRadixOutput),
+            octalRepresentation: value.ToOctalString(prefixRadixOutput),
+            assignedVariables: assignedVariables,
+            fractionRepresentation: ResultValueFormatter.FormatExactFraction(value),
+            isDisplayRounded: isRounded,
+            assignmentSummary: assignedVariables?.FormatSummary(culture));
     }
 }

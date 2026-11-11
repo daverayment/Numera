@@ -50,16 +50,24 @@ public sealed class SourceMap
     /// when every character maps to itself, which keeps unchanged text allocation-free
     /// downstream.
     /// </summary>
+    /// <remarks>Input ranges are copied when stored. Later changes to the supplied
+    /// collections do not affect the map.</remarks>
     /// <param name="starts">Inclusive zero-based start offset in the original text for
     /// each normalized character.</param>
     /// <param name="ends">Exclusive zero-based end offset in the original text for each
     /// normalized character.
     /// </param>
     /// <param name="originalLength">Total length of the original text.</param>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="starts"/> or
+    /// <paramref name="ends"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown if <paramref name="starts"/> and
     /// <paramref name="ends"/> counts differ.</exception>
-    public static SourceMap FromRanges(List<int> starts, List<int> ends, int originalLength)
+    public static SourceMap FromRanges(
+        IReadOnlyList<int> starts, IReadOnlyList<int> ends, int originalLength)
     {
+        ArgumentNullException.ThrowIfNull(starts);
+        ArgumentNullException.ThrowIfNull(ends);
+
         if (starts.Count != ends.Count)
         {
             throw new ArgumentException("Start and end entries must pair up.", nameof(ends));

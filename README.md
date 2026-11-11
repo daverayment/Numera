@@ -103,7 +103,17 @@ Results retain their originating settings. Use `result.PrimaryDisplay` for text 
 var formatted = result.FormatResult(culture: CultureInfo.InvariantCulture);
 ```
 
-`engine.FormatResult(result)` deliberately uses the receiving engine's settings instead. It also accepts raw `MathValue` values. `Calculator.FormatResult` has been removed; use these result or engine methods instead.
+Choose the formatting entry point according to whose defaults should apply:
+
+| Call | Default formatting policy |
+| --- | --- |
+| `result.FormatResult()` | The result's captured settings; recommended for saved calculator history. |
+| `engine.FormatResult(result)` | The receiving engine's settings. |
+| `Calculator.FormatResult(result)` | Library display defaults and current culture at call time. |
+
+Both engine and facade methods also accept raw `MathValue` values. Explicit options
+and culture override independently; null selects the defaults of the chosen entry point.
+The result overloads preserve assignment metadata; raw-value overloads have none.
 
 `FormattedCalculation` is an immutable, fully prepared snapshot: reading properties or switching views does not perform more formatting. `PrimaryDisplay` and `MachineReadable` are always present; null alternatives mean that view is unavailable for the value. Text has no character ceiling, so even long exact fractions and radix strings remain accessible. The default is still 24 significant digits, not 24 characters. Callers can check `.Length` to decide what fits their UI; see [representation lengths](docs/architecture.md#representation-lengths) for sizing guidance. Invalid options and numerical safety violations still throw when formatting, not when reading the snapshot.
 
