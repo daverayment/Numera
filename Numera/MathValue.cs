@@ -33,6 +33,7 @@ namespace Numera;
 /// than truncating. Conversions do not change the stored value or its exactness.
 /// </para>
 /// </remarks>
+[JsonConverter(typeof(MathValueJsonConverter))]
 public readonly partial struct MathValue :
     IEquatable<MathValue>, IComparable<MathValue>, IComparable,
     IFormattable, ISpanFormattable, IUtf8SpanFormattable
@@ -80,6 +81,8 @@ public readonly partial struct MathValue :
     internal int DecimalDisplayScale { get; }
 
     private static readonly BigInteger MaxDecimalMantissa = (BigInteger.One << 96) - 1;
+
+    private const int MaxSerializedJsonLength = 25000;
 
     /// <summary>
     /// Gets an Exact Integer zero, unlike the Unverified zero of a default instance.
@@ -892,12 +895,32 @@ public readonly partial struct MathValue :
     /// Serializes the representation, value, exactness and decimal display scale to JSON
     /// without losing precision.
     /// </summary>
-    public string Serialize() => JsonSerializer.Serialize(new SerializedValue(
+    /// <remarks>Uses the same canonical object format as System.Text.Json serialization.
+    /// </remarks>
+    public string Serialize() => JsonSerializer.Serialize(
+        ToSerializedValue(), SerializationContext.Default.SerializedValue);
+
+    private SerializedValue ToSerializedValue() => new(
         Kind, Exactness, InvariantStoredValue(),
         Kind == DataType.Rational ? numerator.ToString(CultureInfo.InvariantCulture) : null,
         Kind == DataType.Rational ? denominator.ToString(CultureInfo.InvariantCulture) : null,
-        DecimalDisplayScale),
-        SerializationContext.Default.SerializedValue);
+        DecimalDisplayScale);
+
+    internal void WriteJson(Utf8JsonWriter writer) =>
+        JsonSerializer.Serialize(writer, ToSerializedValue(), SerializationContext.Default.SerializedValue);
+
+    internal static MathValue ReadJson(ref Utf8JsonReader reader)
+    {
+        var probe = reader;
+        probe.Skip();
+        if (probe.BytesConsumed - reader.TokenStartIndex > MaxSerializedJsonLength)
+        {
+            throw new CalculationLimitException();
+        }
+
+        var dto = JsonSerializer.Deserialize(ref reader, SerializationContext.Default.SerializedValue);
+        return DeserializeValue(dto, CalculationLimits.MaxIntegerBits);
+    }
 
     /// <summary>
     /// Reads a value written by <see cref="Serialize"/>, validating it against
@@ -910,14 +933,18 @@ public readonly partial struct MathValue :
     public static MathValue Deserialize(string json, int maxIntegerBits = CalculationLimits.MaxIntegerBits)
     {
         ArgumentNullException.ThrowIfNull(json);
-        if (json.Length > 25000)
+        if (json.Length > MaxSerializedJsonLength)
         {
             throw new CalculationLimitException();
         }
 
-        var dto = JsonSerializer.Deserialize(json, SerializationContext.Default.SerializedValue) ??
-            throw new FormatException("Missing numeric value.");
-        if (dto.Value is null)
+        var dto = JsonSerializer.Deserialize(json, SerializationContext.Default.SerializedValue);
+        return DeserializeValue(dto, maxIntegerBits);
+    }
+
+    private static MathValue DeserializeValue(SerializedValue? dto, int maxIntegerBits)
+    {
+        if (dto is null || dto.Value is null)
         {
             throw new FormatException("Missing numeric value.");
         }

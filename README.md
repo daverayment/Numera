@@ -168,6 +168,12 @@ rounding behavior.
 
 `MachineReadable` and `MathValue.ToInvariantExpression()` preserve the numeric value separately from the rounded display, retaining decimal scale where an invariant decimal literal can express it (`194.40 - 100` yields `"94.40"`). They never apply the display's significant-digit rounding or trailing-zero limits. Exact slash fractions are used when needed; representation, exactness, and all display metadata are not guaranteed to survive re-evaluation. `MathValue.Serialize()` / `Deserialize()` preserve that full metadata.
 
+Standard System.Text.Json serialization of `MathValue` uses the same precision-preserving
+schema automatically: `JsonSerializer.Serialize(result.Value)` and
+`JsonSerializer.Deserialize<MathValue>(json)` also work inside application-owned history
+records. The converter handles values, not entire results or engine configurations.
+See [JSON value serialization](docs/architecture.md#json-value-serialization) for details.
+
 ### 1. Formatted Display (`IFormattable`)
 `EvaluationResult` implements `IFormattable`, so string interpolation and standard format strings use the result's captured culture unless explicitly overridden. Raw `MathValue` formatting uses the usual .NET culture defaults:
 

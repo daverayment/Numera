@@ -281,6 +281,40 @@ Numeric providers include `CultureInfo`, `NumberFormatInfo`, and custom `IFormat
 
 For finite values, `MachineReadable` / `ToInvariantExpression()` preserve the numeric value, separately from rounded display. Decimal scale is retained where representable as an invariant decimal literal: `194.40 - 100` produces `"94.40"`, and `"94.40000"` retains five places even though its primary display trims to `"94.4"`. Machine text does not apply the significant-digit budget or primary display's trailing-zero thresholds. Double values use their exact stored binary fractions rather than decimal strings which the exact-decimal parser would interpret differently. Re-evaluation does not guarantee representation, exactness, or all display-scale metadata survives; Rational results can use reduced slash fractions without their original scale hint. Nonfinite tokens are invariant text, not re-evaluable expressions. `MathValue.Serialize()` / `Deserialize()` preserve value, representation, exactness, and decimal display-scale metadata, including nonfinite Doubles. Serialized data uses the required `Exactness` field and rejects nonfinite values marked Exact.
 
+### JSON Value Serialization
+
+`MathValue` registers `MathValueJsonConverter` automatically for System.Text.Json.
+Ordinary serialization uses the same canonical object schema as `MathValue.Serialize()`;
+both routes share representation selection and validation rather than enumerating the
+public storage getters:
+
+```csharp
+var value = MathValue.FromFraction(1, 3).WithExactness(CalculationExactness.Unverified);
+string json = System.Text.Json.JsonSerializer.Serialize(value);
+MathValue restored = System.Text.Json.JsonSerializer.Deserialize<MathValue>(json);
+// Rational 1/3, still Unverified, with its display-scale metadata preserved.
+```
+
+This also works for MathValue properties in application-owned history records, arrays,
+and dictionary values, with reflection-based or source-generated serializer metadata.
+`MathValue?` supports JSON null; a non-nullable `MathValue` rejects it rather than
+silently producing default zero. Numeric strings, including nonfinite Double tokens,
+remain invariant. Serializer naming policies and enum converters do not change the
+canonical fields inside the value object; writer indentation still applies.
+
+Invalid JSON or invalid value metadata throws `JsonException`, with the original
+validation exception retained as its cause where applicable. Calculation-limit violations
+remain `CalculationLimitException`. Converter reads enforce the hard numeric ceilings
+and at most 25,000 UTF-8 bytes per value object, excluding surrounding whitespace; this
+does not limit the enclosing history record's size. The explicit `MathValue.Deserialize`
+helper retains its existing exception behavior, 25,000-character input limit, and
+`maxIntegerBits` parameter for callers imposing a stricter numeric limit.
+
+The converter defines persistence for numbers, not entire evaluation results, formatted
+snapshots, engine options, or sessions. Select the expression and metadata your application
+needs in its own history model; serializing an entire library object graph is a separate
+contract. Neither route re-evaluates expressions or certifies imported exactness claims.
+
 ### Radix Helpers
 
 Radix helpers apply to finite integral values, regardless of storage type or exactness status. Other values return `null`, and a negative integer keeps its sign in front of the prefix:

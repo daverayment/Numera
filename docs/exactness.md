@@ -157,6 +157,20 @@ value and storage metadata. Machine-readable expressions preserve the stored num
 not the history behind it: re-evaluating the text of an Unverified `1/3` constructs an
 Exact fraction. Use serialization rather than re-evaluation when that distinction matters.
 
+System.Text.Json also supports MathValue directly, including properties inside your
+own history records, through its automatically registered converter:
+
+```csharp
+string json = System.Text.Json.JsonSerializer.Serialize(result.Value);
+MathValue restored = System.Text.Json.JsonSerializer.Deserialize<MathValue>(json);
+```
+
+This uses the same representation, exactness, and display-scale schema as the explicit
+helpers, with the same numeric validation. Invalid states do not silently become default
+zero or acquire Exact status. The converter does not define persistence for the entire
+`EvaluationResult` or its live configuration. See [JSON value serialization](architecture.md#json-value-serialization)
+for serializer policies, exception behavior, and input limits.
+
 The pre-v1 rename from Accuracy to Exactness also changes the serialized field name;
 old payloads are not a supported compatibility format. The flag is trusted metadata,
 not a tamper-proof certificate when crossing an application trust boundary.
