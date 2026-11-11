@@ -18,7 +18,7 @@ public enum ExponentMarker
 
 /// <summary>
 /// Controls the numeric presentation of calculation results, including notation,
-/// precision, formatting style, and output safety limits.
+/// precision and formatting style. These settings do not impose a character limit.
 /// </summary>
 public sealed record ResultFormatOptions
 {
@@ -66,13 +66,6 @@ public sealed record ResultFormatOptions
     public bool GroupDigits { get; init; } = true;
 
     /// <summary>
-    /// Gets the maximum characters permitted in a single formatted numeric representation.
-    /// Defaults to <see cref="CalculationLimits.MaxOutputCharacters"/> (16,384).
-    /// Includes signs, decimal and group separators, scientific suffixes, and preserved trailing zeros.
-    /// </summary>
-    public int MaxOutputCharacters { get; init; } = CalculationLimits.MaxOutputCharacters;
-
-    /// <summary>
     /// Validates the format options against supported ranges and safety limits.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown if any setting is outside its valid range.</exception>
@@ -90,13 +83,6 @@ public sealed record ResultFormatOptions
             throw new ArgumentOutOfRangeException(
                 nameof(MaxFixedDigits),
                 $"Maximum fixed digits must be between 1 and {CalculationLimits.MaxSignificantDigits}.");
-        }
-
-        if (MaxOutputCharacters < 1 || MaxOutputCharacters > CalculationLimits.MaxOutputCharacters)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(MaxOutputCharacters),
-                $"Maximum output characters must be between 1 and {CalculationLimits.MaxOutputCharacters}.");
         }
 
         if (!Enum.IsDefined(Notation))

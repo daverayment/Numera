@@ -738,14 +738,15 @@ public readonly record struct EvaluationResult :
     /// <c>0o</c> prefixes. Defaults to <see langword="true"/>.</param>
     /// <returns>Display text and alternatives, with rounding information and any assigned
     /// variables.</returns>
-    /// <remarks>The output limit applies to every numeric representation, including
-    /// alternatives.
-    /// Use <see cref="PrimaryDisplay"/> if you only need the numeric display text.
+    /// <remarks>
+    /// All applicable representations are prepared before returning, without a character
+    /// limit. Reading the snapshot's properties does not perform more formatting.
+    /// Display precision does not limit the length of exact or radix alternatives.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">A formatting option is outside its
     /// supported range.</exception>
-    /// <exception cref="CalculationLimitException">An output or formatting calculation
-    /// exceeds a limit.</exception>
+    /// <exception cref="CalculationLimitException">Formatting arithmetic exceeds a
+    /// numerical safety bound.</exception>
     public FormattedCalculation FormatResult(
         ResultFormatOptions? options = null, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
         ResultFormatter.Format(this, options, culture, prefixRadixOutput);
@@ -762,8 +763,8 @@ public readonly record struct EvaluationResult :
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">A formatting option is outside its
     /// supported range.</exception>
-    /// <exception cref="CalculationLimitException">The display or a formatting
-    /// calculation exceeds a limit.</exception>
+    /// <exception cref="CalculationLimitException">Formatting arithmetic exceeds a
+    /// numerical safety bound.</exception>
     public string PrimaryDisplay => FormatDisplay(FormatOptions, Culture);
 
     /// <summary>
@@ -771,7 +772,7 @@ public readonly record struct EvaluationResult :
     /// rounding.
     /// </summary>
     /// <remarks>
-    /// Does not apply the result's display settings or output limit. Decimal scale is
+    /// Does not apply the result's display settings. Decimal scale is
     /// kept where representable; Doubles use fractions of their stored binary values. NaN
     /// and infinity are diagnostic text, not expressions that can be evaluated again.
     /// Evaluating this text again need not preserve the storage type, exactness status,
@@ -798,8 +799,8 @@ public readonly record struct EvaluationResult :
     /// supplied.</remarks>
     /// <exception cref="ArgumentOutOfRangeException">A formatting option is outside its
     /// supported range.</exception>
-    /// <exception cref="CalculationLimitException">The display or a formatting
-    /// calculation exceeds a limit.</exception>
+    /// <exception cref="CalculationLimitException">Formatting arithmetic exceeds a
+    /// numerical safety bound.</exception>
     public override string ToString() => FormatDisplay(FormatOptions, Culture);
 
     /// <summary>
@@ -832,8 +833,8 @@ public readonly record struct EvaluationResult :
     /// stored type.</exception>
     /// <exception cref="ArgumentOutOfRangeException">A formatting option or precision is
     /// outside its supported range.</exception>
-    /// <exception cref="CalculationLimitException">An output or formatting calculation
-    /// exceeds a limit.</exception>
+    /// <exception cref="CalculationLimitException">A formatting calculation exceeds a
+    /// limit.</exception>
     public string ToString(string? format, IFormatProvider? formatProvider) =>
         string.IsNullOrEmpty(format)
             ? FormatDisplay(FormatOptions, formatProvider)
@@ -867,8 +868,8 @@ public readonly record struct EvaluationResult :
     /// stored type.</exception>
     /// <exception cref="ArgumentOutOfRangeException">A formatting option or precision is
     /// outside its supported range.</exception>
-    /// <exception cref="CalculationLimitException">An output or formatting calculation
-    /// exceeds a limit.</exception>
+    /// <exception cref="CalculationLimitException">A formatting calculation exceeds a
+    /// limit.</exception>
     public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider? provider = null)
     {
         if (!format.IsEmpty)
@@ -905,8 +906,8 @@ public readonly record struct EvaluationResult :
     /// stored type.</exception>
     /// <exception cref="ArgumentOutOfRangeException">A formatting option or precision is
     /// outside its supported range.</exception>
-    /// <exception cref="CalculationLimitException">An output or formatting calculation
-    /// exceeds a limit.</exception>
+    /// <exception cref="CalculationLimitException">A formatting calculation exceeds a
+    /// limit.</exception>
     public bool TryFormat(
         Span<byte> utf8Destination,
         out int bytesWritten,

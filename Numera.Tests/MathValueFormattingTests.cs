@@ -232,20 +232,25 @@ public sealed class MathValueFormattingTests
     }
 
     [TestMethod]
-    public void CustomProviderCharactersCountTowardsTheResultOutputLimit()
+    public void CustomProviderTextIsPreservedAcrossResultFormattingSurfaces()
     {
         var numberFormat = (NumberFormatInfo)CultureInfo.InvariantCulture.NumberFormat.Clone();
-        numberFormat.NegativeSign = "negative";
+        numberFormat.NegativeSign = new string('-', 20000);
         var provider = new NumericFormatProvider(numberFormat);
-        var engine = new CalculatorEngine(new CalculatorOptions
-        {
-            ResultFormat = new ResultFormatOptions { MaxOutputCharacters = 5 }
-        });
+        var engine = new CalculatorEngine();
         var result = engine.Evaluate("-1");
-
-        Assert.ThrowsExactly<CalculationLimitException>(() => result.ToString(provider));
-        Assert.ThrowsExactly<CalculationLimitException>(() => result.TryFormat(new char[16], out _, provider: provider));
-        Assert.ThrowsExactly<CalculationLimitException>(() => result.TryFormat(new byte[16], out _, provider: provider));
+        string expected = numberFormat.NegativeSign + "1";
+        Assert.AreEqual(expected, result.ToString(provider));
+        var chars = new char[expected.Length];
+        Assert.IsTrue(result.TryFormat(chars, out int charsWritten, provider: provider));
+        Assert.AreEqual(expected, new string(chars, 0, charsWritten));
+        var bytes = new byte[expected.Length];
+        Assert.IsTrue(result.TryFormat(bytes, out int bytesWritten, provider: provider));
+        Assert.AreEqual(expected, Encoding.UTF8.GetString(bytes, 0, bytesWritten));
+        Assert.IsFalse(result.TryFormat(chars.AsSpan(0, 16), out charsWritten, provider: provider));
+        Assert.AreEqual(0, charsWritten);
+        Assert.IsFalse(result.TryFormat(bytes.AsSpan(0, 16), out bytesWritten, provider: provider));
+        Assert.AreEqual(0, bytesWritten);
     }
 
     private sealed class NumericFormatProvider(NumberFormatInfo numberFormat) : IFormatProvider

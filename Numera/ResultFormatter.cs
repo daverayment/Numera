@@ -69,43 +69,18 @@ internal static class ResultFormatter
         bool prefixRadixOutput)
     {
         options.Validate();
-
         var (primaryDisplay, isRounded) = ResultValueFormatter.Format(value, options, culture);
 
-        // Machine text preserves the stored value, not the rounded primary display;
-        // copying a readable approximation here would silently lose information.
-        string machineReadable = value.ToInvariantExpression();
-        string? fraction = ResultValueFormatter.FormatExactFraction(value, options);
-
-        var formatted = new FormattedCalculation(
+        return new FormattedCalculation(
             Value: value,
             PrimaryDisplay: primaryDisplay,
-            MachineReadable: machineReadable,
+            MachineReadable: value.ToInvariantExpression(),
             HexRepresentation: value.ToHexString(prefixRadixOutput),
             BinaryRepresentation: value.ToBinaryString(prefixRadixOutput),
             OctalRepresentation: value.ToOctalString(prefixRadixOutput),
             AssignedVariables: assignedVariables,
-            FractionRepresentation: fraction,
-            IsDisplayRounded: isRounded);
-
-        // Guard against any representation exceeding the configured maximum character
-        // limit.
-        foreach (var representation in new[]
-        {
-            formatted.PrimaryDisplay,
-            formatted.MachineReadable,
-            formatted.FractionRepresentation,
-            formatted.HexRepresentation,
-            formatted.BinaryRepresentation,
-            formatted.OctalRepresentation,
-        })
-        {
-            if (representation?.Length > options.MaxOutputCharacters)
-            {
-                throw new CalculationLimitException();
-            }
-        }
-
-        return formatted;
+            FractionRepresentation: ResultValueFormatter.FormatExactFraction(value),
+            IsDisplayRounded: isRounded,
+            AssignmentSummary: assignedVariables?.FormatSummary(culture));
     }
 }

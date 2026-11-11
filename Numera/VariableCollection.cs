@@ -401,18 +401,24 @@ public sealed class VariableCollection : IReadOnlyList<Variable>
         Count == 0 ? "{Empty}" : $"Count = {Count}: {ToString()}";
 
     /// <inheritdoc/>
-    public override string ToString()
+    public override string ToString() => FormatSummary(null);
+
+    internal string FormatSummary(IFormatProvider? provider)
     {
         if (Count == 0)
         {
             return "(empty)";
         }
 
-        static string GetDefinition(Variable v) =>
-            (v.Definition != null && v.Definition != v.Value.ToString()) ?
-                $" ({v.Definition})" :
-                "";
+        return string.Join(", ", this.Select(variable =>
+        {
+            string text = variable.Value.ToString(null, provider);
+            if (variable.Definition is string definition && definition != text)
+            {
+                return $"{variable.Name} = {text} ({definition})";
+            }
 
-        return string.Join(", ", this.Select(v => $"{v.Name} = {v.Value}{GetDefinition(v)}"));
+            return $"{variable.Name} = {text}";
+        }));
     }
 }

@@ -12,7 +12,7 @@ Numera defines hard safety bounds via `CalculationLimits`:
 | :--- | :--- | :---: | :--- |
 | **Input Length** | `MaxInputLength` | `4,096` UTF-16 units | Prevents excessive memory use during parsing |
 | **Recursion Depth** | `MaxNestingDepth` | `128` frames | Prevents thread call-stack overflow from nested expressions or unary chains |
-| **Integer Size** | `MaxIntegerBits` | `16,384` bits ($\approx 4,932$ digits) | Prevents memory exhaustion from giant integer allocations |
+| **Integer Size** | `MaxIntegerBits` | `16,384` bits (up to 4,933 decimal digits) | Prevents memory exhaustion from giant integer allocations |
 | **Factorial Argument** | `MaxFactorialArgument` | `1,000` | Prevents CPU and memory exhaustion in `factorial(n)` |
 | **Exponent Magnitude** | `MaxExponentMagnitude` | `10,000` | Limits integer power calculations |
 | **Primality Testing** | `MaxPrimalityBits` | `2,048` bits | Limits Miller-Rabin primality testing to prevent CPU exhaustion on huge primes |
@@ -30,8 +30,7 @@ var engine = new CalculatorEngine(new CalculatorOptions
 	MaxExponentMagnitude = 500, // Stricter than default 10000
 	ResultFormat = new ResultFormatOptions
 	{
-		SignificantDigits = 10,
-		MaxOutputCharacters = 2048
+		SignificantDigits = 10
 	}
 });
 
@@ -49,11 +48,13 @@ Calculation limits (`CalculatorOptions`) and formatting presentation options (`R
 | Arithmetic intermediate bits | 32,768 |
 | Absolute integer exponent | 10,000 |
 | Maximum requested significant display digits | 1,000 |
-| Maximum characters per formatted representation | 16,384 |
+| Default significant display digits | 24 |
 
 Fractions are cross-cancelled and reduced before unnecessary growth. Intermediate limits still apply: an oversized intermediate can be rejected even if a later expression would cancel it. Literal coefficients and powers of ten are bounded before allocation; callback-returned values and captured variable values are checked against the receiving engine's limits.
 
-Limit violations throw `CalculationLimitException`; exact calculations never silently fall back to Double and formatted output is never silently truncated. Standalone `MathValue` operators use default numeric limits.
+Calculation limit violations throw `CalculationLimitException`; exact calculations never silently fall back to Double and formatted output is never silently truncated. Standalone `MathValue` operators use default numeric limits.
+
+There is no character-output ceiling. `SignificantDigits` controls primary-display precision, not total width, and exact fractions, machine-readable text, and radix alternatives are not shortened to match it. `FormatResult()` prepares a complete immutable snapshot; null alternatives indicate mathematical unavailability, not rejected length. Callers decide what fits their UI using the returned strings' `.Length`. Invalid options still throw, as do numerical work-limit violations; character and UTF-8 span formatting still return `false` if the supplied buffer is too small. See [representation lengths](architecture.md#representation-lengths) for overhead formulas and bounds derived from the numeric limits.
 
 These size limits are not execution-time guarantees and cannot constrain work performed inside caller callbacks. Existing specialized number-theory limits remain in force.
 

@@ -124,30 +124,30 @@ Representation selection is centralized after bounded fraction arithmetic; Decim
 `MathValue` implements modern .NET formatting interfaces and multi-radix helpers:
 
 - **`ISpanFormattable` and `IUtf8SpanFormattable`**: Write formatted values into caller-provided character or UTF-8 buffers. Rational formatting can allocate temporary integer and text storage.
-- **Multi-Radix Helpers**: For exact integers, `value.ToHexString()`, `value.ToBinaryString()`, and `value.ToOctalString()` format with (or without) standard prefixes (`0x`, `0b`, `0o`), returning `null` when the value is not an integer.
+- **Multi-Radix Helpers**: For finite integral values, `value.ToHexString()`, `value.ToBinaryString()`, and `value.ToOctalString()` format with (or without) standard prefixes (`0x`, `0b`, `0o`), returning `null` otherwise. Availability does not certify calculation accuracy.
 - **Launcher Presentation**: `CalculatorEngine.FormatResult(value)` produces a structured `FormattedCalculation` containing primary display text in the engine's culture, machine-readable invariant text, and integer radix strings.
 
 The default primary display uses at most 24 significant digits with culture-aware digit grouping enabled, stripping insignificant trailing zeros. Automatic notation selection uses the rounded base-10 exponent: fixed notation applies from -24 through 23 inclusive (`MaxFixedDigits = 24`); other magnitudes transition to scientific notation. This threshold governs magnitude, not the total number of fractional digits. `ResultFormatOptions` configures this independently of arithmetic.
 
 Scientific result displays default to compact lowercase e-notation (`Style = ExpressionFormatStyle.NormalizedAscii`), for example `1e-400`. Set `ExponentMarker = ExponentMarker.Uppercase` for `1E-400`. This setting affects only the numeric exponent marker, not identifiers, expression formatting, or machine-readable text. Explicit `TypographicUnicode` and `MathJax` result styles retain their mathematical exponent notation and ignore marker casing. Expression formatting still defaults to typographic Unicode; its normalized ASCII style retains uppercase E.
 
-Digit grouping follows the culture's complete group-size sequence, including variable-sized groups and a terminal zero that stops further grouping. Finite numeric output length is checked before rendering and verified afterward. `MaxOutputCharacters` includes signs, decimal and group separators, scientific suffixes, and preserved trailing zeros; output that exactly fits the limit is permitted, and longer output is rejected rather than truncated. Fixed-layout digit counts and preserved padding are calculated once and shared by rendering and length checking.
+Digit grouping follows the culture's complete group-size sequence, including variable-sized groups and a terminal zero that stops further grouping. There is no character-output ceiling: signs, separators, exponents, and place-holding zeros can make a display longer than its significant-digit budget. Exact and radix alternatives remain available even when impractical to show inline. See [representation lengths](#representation-lengths).
 
 Use the structured primary display for calculator UIs. Representation-native `ToString` and explicit .NET numeric format strings are a separate surface; Integer and Decimal formatting can retain more digits than the primary display. Exact invariant expressions may exceed a receiving engine's input-length limit even when their numeric components fit; serialization is the separate value-transfer surface.
 
-`FractionRepresentation` is a reduced slash fraction for verified-exact finite results (`"1/3"`, `"1/2"`, or `"5"` for integers), otherwise null. `EvaluationResult.HasExactFraction` reports this capability without formatting. `IsDisplayRounded` reports formatting loss relative to the stored value, not calculation accuracy. A UI should inspect both it and `Value.Accuracy` before making an exactness claim.
+`FractionRepresentation` is a reduced slash fraction for verified-exact finite results (`"1/3"`, `"1/2"`, or `"5"` for integers), otherwise null. `EvaluationResult.HasExactFraction` reports that mathematical availability. `IsDisplayRounded` reports formatting loss relative to the stored value, not calculation accuracy. A UI should inspect both it and `Value.Accuracy` before making an exactness claim.
 
 Decimal literals and explicit Decimal values carry a bounded display-scale hint independently of canonical representation. Exact arithmetic and captured values retain it, including across Rational intermediates, without replaying expressions. Fixed, unrounded displays preserve scales up to four places for non-whole values and two for whole values; larger scales normalize trailing zeros. Scientific notation and the significant-digit budget take precedence. Fraction factories do not invent decimal padding merely because a fraction happens to fit Decimal. Numeric equality, hashing, and accuracy ignore the hint.
 
 Default `EvaluationResult.ToString()`, interpolation, and character/UTF-8 span formatting use the originating engine's numeric display policy, with an explicitly supplied format provider overriding its culture. Thus `Calculator.Evaluate("194.40-100").ToString()` returns `"94.40"`. Only the numeric representation is formatted on these paths, not unused fraction/radix alternates. Explicit format strings and `MathValue` formatting retain their representation-native behavior.
 
-Numeric providers include `CultureInfo`, `NumberFormatInfo`, and custom `IFormatProvider` implementations that supply `NumberFormatInfo`. Their separators, grouping sizes, and signs are applied without replacing the engine's precision or notation settings; their characters still count towards the output limit. A null provider retains the originating engine's culture.
+Numeric providers include `CultureInfo`, `NumberFormatInfo`, and custom `IFormatProvider` implementations that supply `NumberFormatInfo`. Their separators, grouping sizes, and signs are applied without replacing the engine's precision or notation settings. A null provider retains the originating engine's culture.
 
 For finite values, `MachineReadable` / `ToInvariantExpression()` preserve the numeric value, separately from rounded display. Decimal scale is retained where representable as an invariant decimal literal: `194.40 - 100` produces `"94.40"`, and `"94.40000"` retains five places even though its primary display trims to `"94.4"`. Machine text does not apply the significant-digit budget or primary display's trailing-zero thresholds. Double values use their exact stored binary fractions rather than decimal strings which the exact-decimal parser would interpret differently. Re-evaluation does not guarantee representation, provenance, or all display-scale metadata survives; Rational results can use reduced slash fractions without their original scale hint. Nonfinite tokens are invariant text, not re-evaluable expressions. `MathValue.Serialize()` / `Deserialize()` preserve value, representation, accuracy, and decimal display-scale metadata, including nonfinite Doubles.
 
 ### Radix Helpers
 
-Radix helpers apply to exact integers only. Any other value returns `null`, and a negative integer keeps its sign in front of the prefix:
+Radix helpers apply to finite integral values, regardless of storage type or accuracy status. Other values return `null`, and a negative integer keeps its sign in front of the prefix:
 
 ```csharp
 var value = Calculator.Evaluate("1100");
@@ -205,7 +205,81 @@ The culture rules to be aware of:
 - **Display rounding is distinct from calculation accuracy.** `IsDisplayRounded` describes presentation; `Accuracy` describes known exactness. Neither storage type nor a lack of display rounding proves calculation accuracy.
 - **Radix strings and `MachineReadable` never depend on culture.** Use an explicitly invariant engine to evaluate machine text; use serialization to preserve storage and metadata as well as value.
 
-Numeric output limits and eager generation of alternatives are unchanged. Display-width fitting is a separate, deferred feature.
+### Complete Presentation Snapshots
+
+`result.FormatResult()` and both engine formatting routes return an immutable `FormattedCalculation`. All representations and summaries are prepared before returning. `PrimaryDisplay` and `MachineReadable` are non-null, and `IsDisplayRounded` is a boolean. Alternatives are null only when unavailable for the value, such as binary for a third or an exact fraction for an Unverified result. Reading properties, caching the snapshot, or switching views does not trigger formatting or new formatting exceptions.
+
+`AssignmentSummary` is prepared using the selected culture and native value formatting, including existing definition text. It is null when there are no assignments. Its text, like the numeric presentations, is unaffected by subsequent current-culture changes.
+
+Formatting does not re-evaluate the calculation. Invalid options still throw argument exceptions at the formatting call; numerical component and formatting-work safety bounds remain in force. `TryEvaluate` reports evaluation failures only. There is no separate formatting-diagnostic model or character-limit failure path.
+
+### Representation Lengths
+
+**24 significant digits is still the default, not a 24-character budget.** Most answers are short, but leading zeros and punctuation need space too. Automatic notation is enough for many calculator UIs; a strict-width field still needs an application decision when the actual text is longer.
+
+All counts below are UTF-16 code units (`string.Length`), not pixels, graphemes, or UTF-8 bytes. Numeric bounds assume values within the current hard limit of 16,384 absolute-magnitude bits per integer or reduced fraction component. Stricter engine limits can reduce them. Explicit .NET format strings are a separate surface from primary-display options.
+
+#### Numeric primary display
+
+Let `P = SignificantDigits` (default 24), `T = MaxFixedDigits` (default 24), and `e` be the **rounded** base-10 exponent. Let `S` be the length of the culture's negative sign when present, `D` the decimal separator's length when present, and `G` the group separator's length. Count a symbol as zero when it is absent.
+
+| Primary-display form | Conservative character bound | With default precision and ordinary one-character signs/separators |
+| --- | --- | --- |
+| Compact scientific (`e` or `E`) | `P + S + D + 6` | At most **32** (`P + 8`) |
+| Typographic scientific (` × 10^`) | `P + S + D + 11` | At most **37** (`P + 13`) |
+| MathJax scientific (` \times 10^{...}`) | `P + S + D + 18` | At most **44** (`P + 20`) |
+| Fixed, `e < 0` | `P - e + S + D` | Auto's lower boundary can reach **50** (`P + T + 2`) |
+| Fixed, `e >= 0` | `max(P, e + 1) + S + D + groupCount * G` | Auto with three-digit grouping needs at most **33** |
+
+Scientific suffixes include the exponent's optional invariant `-` and at most four exponent digits: the numeric bounds keep `abs(e) <= 4933`, including rounding. The marker adds one character in compact notation, six in typographic notation, or thirteen in MathJax including its closing brace. Grouping is not applied to scientific mantissas. Shorter coefficients, positive values, and smaller exponents need less space; zero has no scientific suffix.
+
+In fixed notation, `e < 0` adds the leading `0` and `-e - 1` fractional zeros before significant digits. For example, `-1.23456789012345678901234e-24` displays as `-0.00000000000000000000000123456789012345678901234`: 24 significant digits, **50 characters**. Auto selects fixed notation for `-T <= e < T`, so its default compact primary display is bounded by **50 characters** with one-character signs/separators and three-digit grouping. This is a conservative sizing allowance, not a promise to pad every result to that width.
+
+For `e >= 0`, the integer part has `e + 1` digits. Rounding can add place-holding zeros beyond `P` (for example, `999.9` at three significant digits becomes `1,000`). For repeated group size `g`, `groupCount = floor((integerDigits - 1) / g)`. With arbitrary .NET group-size sequences, count each group from the right; the last nonzero size repeats and a terminal zero stops grouping. There are never more than `integerDigits - 1` separators. Preserved decimal-scale padding stays inside the significant-digit budget; it does not add another allowance to these bounds. Zero preserves at most two fractional places, also within that budget.
+
+Forced fixed notation ignores `T` and can require thousands of zeros; use its exponent-dependent formula rather than a constant overhead beyond `P`. At the current limits, negative fixed displays with ordinary three-digit grouping need at most **6,578 characters** even at the maximum `P = 1000`: up to 4,933 integer digits, 1,644 group separators, and a sign. Tiny fractions need at most `P + 4935` characters including sign and decimal point (5,935 at maximum precision).
+
+For a hard 30-character numeric field with ordinary one-character symbols, explicitly selecting compact scientific notation and `P = 22` provides a conservative 30-character bound. Keeping the familiar default auto notation and checking the actual length is another reasonable UI choice. Numera does not yet provide fit-to-width formatting.
+
+#### Exact, machine-readable, and radix alternatives
+
+These representations preserve their meaning rather than obeying `P`. Their overhead is relative to their **own digit counts**, not the primary display's significant digits. Signs and prefixes here are invariant ASCII.
+
+| Representation | Extra characters beyond its digits | Maximum full length at current hard numeric limits |
+| --- | --- | ---: |
+| Invariant integer | At most one `-` | **4,934** |
+| Reduced slash fraction | At most one `-` and one `/`; `/1` is omitted | **9,868** |
+| Finite `MachineReadable` | At most one `-` and one `.` or `/`; digit counts can include preserved padding | **9,868** |
+| Binary, prefixed | At most one `-` plus `0b` | **16,387** |
+| Hexadecimal, prefixed | At most one `-` plus `0x` | **4,099** |
+| Octal, prefixed | At most one `-` plus `0o` | **5,465** |
+
+For a magnitude of `B` bits, radix digit counts are at most `B`, `ceil(B / 4)`, and `ceil(B / 3)` respectively (zero uses one digit). Disabling prefixes subtracts two characters from the prefixed bounds. Negative radix values use magnitude digits, not a two's-complement expansion.
+
+An integer component has at most `floor(16384 * log10(2)) + 1 = 4933` decimal digits. A negative fraction with two coprime components of that size reaches `2 * 4933 + 2 = 9868` characters. Machine text uses an invariant integer, decimal, or fraction, including an exact binary fraction for finite Doubles. Preserved decimal scale adds at most 28 fractional places: even the loose integer-with-padding bound `4933 + 28 + 2 = 4963` is below the fraction bound.
+
+For example, `1e-50` has a five-character primary display and 53-character fraction/machine text. `1 << 16383` is a valid default-limit expression whose prefixed binary text has **16,386 characters**; it remains available in full:
+
+```csharp
+var formatted = Calculator.Evaluate("1 << 16383").FormatResult();
+if (formatted.BinaryRepresentation is string binary)
+{
+	if (binary.Length <= 30)
+	{
+		Console.WriteLine(binary);
+	}
+	else
+	{
+		Console.WriteLine($"Binary result has {binary.Length} characters; offer a copy or expanded view.");
+	}
+}
+```
+
+#### Cases without a universal UI allowance
+
+Custom cultures can supply arbitrarily long signs, decimal/group separators, or nonfinite symbols. Substitute their actual lengths into the formulas; do not assume one character per symbol. The exponent's minus sign remains a single ASCII `-`. Nonfinite primary displays use the configured symbols rather than a significant-digit budget; invariant machine tokens are `NaN`, `Infinity`, and `-Infinity` (3, 8, and 9 characters).
+
+`AssignmentSummary` combines multiple names, native value text, definitions, and delimiters, so it has no fixed overhead relative to one answer's digits. Other application decorations, such as an approximation indicator or unit, are not part of these strings and need their own allowance. For custom cultures, summaries, UTF-8 buffers, or actual visual fitting, inspect/measure the prepared representation rather than assuming these common-case character counts are display widths.
 
 ---
 

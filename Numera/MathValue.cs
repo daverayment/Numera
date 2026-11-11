@@ -730,14 +730,6 @@ public readonly partial struct MathValue :
         string whole = integer.ToString(CultureInfo.InvariantCulture);
         string sign = numerator.Sign < 0 ? culture.NegativeSign : "";
         bool grouped = char.ToUpperInvariant(format[0]) == 'N';
-        int groups = grouped ? ResultValueFormatter.GetGroupSeparatorCount(whole.Length, culture) : 0;
-
-        long outputLength = (long)sign.Length + whole.Length + (long)groups * culture.NumberGroupSeparator.Length
-            + (digits > 0 ? (long)culture.NumberDecimalSeparator.Length + digits : 0);
-        if (outputLength > CalculationLimits.MaxOutputCharacters)
-        {
-            throw new CalculationLimitException();
-        }
 
         if (grouped)
         {
@@ -747,8 +739,6 @@ public readonly partial struct MathValue :
         string result = digits == 0
             ? sign + whole
             : sign + whole + culture.NumberDecimalSeparator + fraction.ToString("D" + digits.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
-        ResultValueFormatter.CheckOutputLength(result, CalculationLimits.MaxOutputCharacters);
-
         return result;
     }
 

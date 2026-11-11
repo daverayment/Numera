@@ -219,9 +219,10 @@ public sealed class RationalMathValueTests
         Assert.AreEqual("0.0000000000000000000000000000", MathValue.FromFraction(5, BigInteger.Pow(10, 29)).ToString("F28", CultureInfo.InvariantCulture));
         Assert.AreEqual("0.0000000000000000000000000002", MathValue.FromFraction(15, BigInteger.Pow(10, 29)).ToString("F28", CultureInfo.InvariantCulture));
         Assert.ThrowsExactly<CalculationLimitException>(() => third.ToString("F1001", CultureInfo.InvariantCulture));
-        var oversizedSeparators = (NumberFormatInfo)CultureInfo.InvariantCulture.NumberFormat.Clone();
-        oversizedSeparators.NumberGroupSeparator = new string(' ', 16384);
-        Assert.ThrowsExactly<CalculationLimitException>(() => MathValue.FromFraction(5000, 3).ToString("N2", oversizedSeparators));
+        var longSeparators = (NumberFormatInfo)CultureInfo.InvariantCulture.NumberFormat.Clone();
+        longSeparators.NumberGroupSeparator = new string(' ', 16384);
+        Assert.AreEqual("1" + longSeparators.NumberGroupSeparator + "666.67",
+            MathValue.FromFraction(5000, 3).ToString("N2", longSeparators));
         Assert.AreEqual(1.0 / 3.0, third.ToDouble());
         Assert.AreEqual(0.3333333333333333333333333333m, third.ToDecimal());
         var tie = MathValue.FromFraction(5, BigInteger.Pow(10, 29));

@@ -1,41 +1,108 @@
 namespace Numera;
 
 /// <summary>
-/// Represents a structured, presentation-ready calculation result formatted for user
-/// interfaces, desktop launchers, and clipboard copying.
+/// An immutable snapshot of an answer's prepared presentations.
+/// Reading its properties does not perform formatting.
 /// </summary>
-/// <param name="Value">The raw calculated <see cref="MathValue"/>.</param>
-/// <param name="PrimaryDisplay">The primary human-facing formatted representation (using
-/// the specified or current culture).</param>
-/// <param name="MachineReadable">The lossless, culture-invariant numeric expression,
-/// preserving decimal scale where representable, independently of display rounding.</param>
-/// <param name="HexRepresentation">The prefixed hexadecimal string representation (e.g.
-/// "0x44C"), or <c>null</c> if the value is not an integer.</param>
-/// <param name="BinaryRepresentation">The prefixed binary string representation (e.g.
-/// "0b10001001100"), or <c>null</c> if the value is not an integer.</param>
-/// <param name="OctalRepresentation">The prefixed octal string representation (e.g.
-/// "0o2114"), or <c>null</c> if the value is not an integer.</param>
-/// <param name="AssignedVariables">The variables assigned by the expression, if any.
-/// </param>
-/// <param name="IsDisplayRounded">Whether the numeric display rounds the stored value.
-/// This does not establish the accuracy of the calculation.</param>
-/// <param name="FractionRepresentation">The reduced invariant exact fraction, or
-/// <c>null</c> when calculation accuracy is unverified.</param>
-public sealed record FormattedCalculation(
-    MathValue Value,
-    string PrimaryDisplay,
-    string MachineReadable,
-    string? HexRepresentation = null,
-    string? BinaryRepresentation = null,
-    string? OctalRepresentation = null,
-    VariableCollection? AssignedVariables = null,
-    bool IsDisplayRounded = false,
-    string? FractionRepresentation = null)
+/// <remarks>
+/// The primary display and machine-readable text are always present. Null alternatives
+/// mean the representation is unavailable for this value. Text is not withheld because
+/// of its length; callers decide what fits their display.
+/// </remarks>
+public sealed record FormattedCalculation
 {
     /// <summary>
-    /// Gets a formatted summary of assigned variables.
+    /// Gets the calculated value.
     /// </summary>
-    public string? AssignmentSummary => AssignedVariables?.ToString();
+    public MathValue Value { get; }
+
+    /// <summary>
+    /// Gets the primary human-readable display.
+    /// </summary>
+    public string PrimaryDisplay { get; }
+
+    /// <summary>
+    /// Gets invariant text preserving the stored numerical value.
+    /// Non-finite tokens are diagnostic text, not re-evaluable expressions.
+    /// </summary>
+    public string MachineReadable { get; }
+
+    /// <summary>
+    /// Gets hexadecimal text, or null if the value is not integral and finite.
+    /// </summary>
+    public string? HexRepresentation { get; }
+
+    /// <summary>
+    /// Gets binary text, or null if the value is not integral and finite.
+    /// </summary>
+    public string? BinaryRepresentation { get; }
+
+    /// <summary>
+    /// Gets octal text, or null if the value is not integral and finite.
+    /// </summary>
+    public string? OctalRepresentation { get; }
+
+    /// <summary>
+    /// Gets variables assigned by the calculation, if any.
+    /// </summary>
+    public VariableCollection? AssignedVariables { get; }
+
+    /// <summary>
+    /// Gets whether the primary display rounded the stored value.
+    /// This does not establish calculation accuracy.
+    /// </summary>
+    public bool IsDisplayRounded { get; }
+
+    /// <summary>
+    /// Gets exact fraction text, or null if an exact fraction is unavailable.
+    /// </summary>
+    public string? FractionRepresentation { get; }
+
+    /// <summary>
+    /// Gets the prepared assignment summary, or null if absent.
+    /// </summary>
+    public string? AssignmentSummary { get; }
+
+    /// <summary>
+    /// Creates a snapshot from prepared representations. If an assignment summary is not
+    /// supplied, prepares it using current culture. Numeric text is stored as supplied.
+    /// </summary>
+    /// <param name="Value">The calculated value.</param>
+    /// <param name="PrimaryDisplay">The primary display.</param>
+    /// <param name="MachineReadable">The invariant numerical expression.</param>
+    /// <param name="HexRepresentation">The hexadecimal alternative, or null.</param>
+    /// <param name="BinaryRepresentation">The binary alternative, or null.</param>
+    /// <param name="OctalRepresentation">The octal alternative, or null.</param>
+    /// <param name="AssignedVariables">The assigned variables, if any.</param>
+    /// <param name="IsDisplayRounded">Whether the primary display rounded the value.</param>
+    /// <param name="FractionRepresentation">The exact fraction alternative, or null.</param>
+    /// <param name="AssignmentSummary">The prepared assignment summary, or null.</param>
+    /// <exception cref="ArgumentNullException">Required display text is null.</exception>
+    public FormattedCalculation(
+        MathValue Value,
+        string PrimaryDisplay,
+        string MachineReadable,
+        string? HexRepresentation = null,
+        string? BinaryRepresentation = null,
+        string? OctalRepresentation = null,
+        VariableCollection? AssignedVariables = null,
+        bool IsDisplayRounded = false,
+        string? FractionRepresentation = null,
+        string? AssignmentSummary = null)
+    {
+        ArgumentNullException.ThrowIfNull(PrimaryDisplay);
+        ArgumentNullException.ThrowIfNull(MachineReadable);
+        this.Value = Value;
+        this.PrimaryDisplay = PrimaryDisplay;
+        this.MachineReadable = MachineReadable;
+        this.HexRepresentation = HexRepresentation;
+        this.BinaryRepresentation = BinaryRepresentation;
+        this.OctalRepresentation = OctalRepresentation;
+        this.AssignedVariables = AssignedVariables;
+        this.IsDisplayRounded = IsDisplayRounded;
+        this.FractionRepresentation = FractionRepresentation;
+        this.AssignmentSummary = AssignmentSummary ?? AssignedVariables?.FormatSummary(null);
+    }
 
     /// <summary>Deconstructs the original seven-field presentation surface.</summary>
     /// <param name="value">The calculated value.</param>

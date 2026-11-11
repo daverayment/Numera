@@ -57,7 +57,7 @@ the default display text.
 | `(-2)^2` | `4` | Parentheses make the negative number the base |
 | `0.1 + 0.2` | `0.3` | Finite decimal literals are exact |
 | `0.3 / 0.1` | `3` | Exact decimal division |
-| `3033554.11 - 3033359.71` | `194.4` | Subtraction without losing the cents |
+| `3033554.11 - 3033359.71` | `194.40` | Subtraction without losing the cents |
 | `(1/49)*49` | `1` | An intermediate fraction stays exact |
 | `1/3 + 0.5` | `5/6` | Decimal input does not force a rounding boundary |
 | `(2^53 + 1) - 2^53` | `1` | Large consecutive integers remain distinct |
@@ -294,7 +294,7 @@ clean-looking text; that does not restore lost information.
 | --- | --- | --- |
 | `0.1 + 0.2` | Exactly `0.3` | `0.30000000000000004` |
 | `0.3 / 0.1` | Exactly `3` | `2.9999999999999996` |
-| `3033554.11 - 3033359.71` | Exactly `194.4` | `194.39999999990687` |
+| `3033554.11 - 3033359.71` | Exactly `194.40` | `194.39999999990687` |
 | `(1/49)*49` | Exactly `1` | `0.9999999999999999` |
 | `(2^53 + 1) - 2^53` | Exactly `1` | `0` |
 | `(10^20 + 0.125) - 10^20` | Exactly `0.125` | `0` |

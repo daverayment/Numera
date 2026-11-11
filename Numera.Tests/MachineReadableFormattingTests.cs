@@ -31,6 +31,7 @@ public sealed class MachineReadableFormattingTests
         Assert.AreEqual(expected, card.MachineReadable);
         Assert.AreEqual(expected, result.MachineReadable);
         Assert.AreEqual(expected, result.Value.ToInvariantExpression());
+        Assert.IsNotNull(card.MachineReadable);
         var restored = Calculator.Evaluate(card.MachineReadable);
         Assert.AreEqual(result.Value, restored.Value);
         Assert.AreEqual(result.GetExactFraction(), restored.GetExactFraction());
@@ -92,15 +93,18 @@ public sealed class MachineReadableFormattingTests
     }
 
     [TestMethod]
-    public void MachineTextLimitsThrowInsteadOfTrimmingScaleOrRoundingValue()
+    public void RoundedDisplayDoesNotTrimMachineScaleOrExactFraction()
     {
         var engine = new CalculatorEngine(new CalculatorOptions
         {
-            ResultFormat = new ResultFormatOptions { SignificantDigits = 1, MaxOutputCharacters = 5 }
+            ResultFormat = new ResultFormatOptions { SignificantDigits = 1 }
         });
         var result = engine.Evaluate("194.40");
         Assert.AreEqual("200", result.ToString());
         Assert.AreEqual("194.40", result.Value.ToInvariantExpression());
-        Assert.ThrowsExactly<CalculationLimitException>(() => result.FormatResult());
+        var formatted = result.FormatResult();
+        Assert.AreEqual("200", formatted.PrimaryDisplay);
+        Assert.AreEqual("194.40", formatted.MachineReadable);
+        Assert.AreEqual("972/5", formatted.FractionRepresentation);
     }
 }

@@ -12,7 +12,6 @@ public sealed class RationalResultFormattingTests
         NumericNotation notation = NumericNotation.Auto,
         IFormatProvider? provider = null,
         ExpressionFormatStyle style = ExpressionFormatStyle.TypographicUnicode,
-        int maxOutputCharacters = CalculationLimits.MaxOutputCharacters,
         int maxFixedDigits = 24,
         bool groupDigits = false)
         => ResultValueFormatter.Format(
@@ -22,7 +21,6 @@ public sealed class RationalResultFormattingTests
                 SignificantDigits = digits,
                 Notation = notation,
                 Style = style,
-                MaxOutputCharacters = maxOutputCharacters,
                 MaxFixedDigits = maxFixedDigits,
                 GroupDigits = groupDigits,
             },
@@ -33,7 +31,7 @@ public sealed class RationalResultFormattingTests
     {
         var value = MathValue.FromFraction(new BigInteger(1), new BigInteger(3));
         Assert.AreEqual(("0.333333333333333333333333", true), Format(value));
-        Assert.AreEqual("1/3", ResultValueFormatter.FormatExactFraction(value, new()));
+        Assert.AreEqual("1/3", ResultValueFormatter.FormatExactFraction(value));
         Assert.AreEqual(("0.000000333333333333333333333333", true),
             Format(MathValue.FromFraction(BigInteger.One, new BigInteger(3000000))));
         Assert.AreEqual(("3.33333333333333333333333 × 10^-7", true),
@@ -58,7 +56,7 @@ public sealed class RationalResultFormattingTests
         Assert.AreEqual(("0." + new string('0', 39) + "1", false),
             Format(value, notation: NumericNotation.Fixed));
         Assert.AreEqual("1/" + denominator.ToString(CultureInfo.InvariantCulture),
-            ResultValueFormatter.FormatExactFraction(value, new()));
+            ResultValueFormatter.FormatExactFraction(value));
     }
 
     [TestMethod]
@@ -67,9 +65,8 @@ public sealed class RationalResultFormattingTests
         var power = BigInteger.Pow(10, 4000);
         Assert.AreEqual(("1 × 10^-4000", false), Format(MathValue.FromFraction(BigInteger.One, power)));
         Assert.AreEqual(("1 × 10^4000", false), Format(new MathValue(power)));
-        Assert.ThrowsExactly<CalculationLimitException>(() =>
-            Format(MathValue.FromFraction(BigInteger.One, power), notation: NumericNotation.Fixed,
-                maxOutputCharacters: 32));
+        Assert.AreEqual(("0." + new string('0', 3999) + "1", false),
+            Format(MathValue.FromFraction(BigInteger.One, power), notation: NumericNotation.Fixed));
     }
 
     [TestMethod]
@@ -166,43 +163,32 @@ public sealed class RationalResultFormattingTests
         Assert.AreEqual(("0.1", true), Format(new MathValue(0.1), digits: 16));
         Assert.AreEqual(("0.5", false), Format(new MathValue(0.5)));
         Assert.AreEqual(("5 × 10^-324", true), Format(new MathValue(double.Epsilon), 1));
-        Assert.IsNull(ResultValueFormatter.FormatExactFraction(new MathValue(0.5), new()));
+        Assert.IsNull(ResultValueFormatter.FormatExactFraction(new MathValue(0.5)));
         Assert.AreEqual(("NaN", false), Format(new MathValue(double.NaN)));
         Assert.AreEqual(("Infinity", false), Format(new MathValue(double.PositiveInfinity)));
         Assert.AreEqual(("-0", false), Format(new MathValue(-0.0)));
-        Assert.IsNull(ResultValueFormatter.FormatExactFraction(new MathValue(-0.0), new()));
-        Assert.ThrowsExactly<CalculationLimitException>(() =>
-            Format(new MathValue(-0.0), maxOutputCharacters: 1));
+        Assert.IsNull(ResultValueFormatter.FormatExactFraction(new MathValue(-0.0)));
     }
 
     [TestMethod]
     public void FractionAlternateIsReducedInvariantAndDoesNotAppendOne()
     {
         Assert.AreEqual("-1/3", ResultValueFormatter.FormatExactFraction(
-            MathValue.FromFraction(new BigInteger(-2), new BigInteger(6)), new()));
-        Assert.AreEqual("5", ResultValueFormatter.FormatExactFraction(new MathValue(5), new()));
-        Assert.AreEqual("5/4", ResultValueFormatter.FormatExactFraction(new MathValue(1.25m), new()));
+            MathValue.FromFraction(new BigInteger(-2), new BigInteger(6))));
+        Assert.AreEqual("5", ResultValueFormatter.FormatExactFraction(new MathValue(5)));
+        Assert.AreEqual("5/4", ResultValueFormatter.FormatExactFraction(new MathValue(1.25m)));
     }
 
     [TestMethod]
-    public void FormatLimitsRejectRatherThanTruncate()
+    public void InvalidPrecisionAndNotationAreRejected()
     {
-        Assert.ThrowsExactly<CalculationLimitException>(() =>
-            Format(MathValue.FromFraction(BigInteger.One, BigInteger.Pow(10, 40)), notation: NumericNotation.Fixed,
-                maxOutputCharacters: 20));
-        Assert.ThrowsExactly<CalculationLimitException>(() =>
-            ResultValueFormatter.FormatExactFraction(
-                MathValue.FromFraction(BigInteger.One, BigInteger.Pow(10, 40)),
-                new ResultFormatOptions { MaxOutputCharacters = 20 }));
-        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => Format(new MathValue(1), digits: 1001));
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
             Format(new MathValue(1), digits: 1001));
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
-            Format(new MathValue(1), maxOutputCharacters: 16385));
+            Format(new MathValue(1), digits: 0));
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
             Format(new MathValue(1), notation: (NumericNotation)99));
-        Assert.AreEqual(("1", false),
-            Format(new MathValue(1), maxOutputCharacters: 1));
+        Assert.AreEqual(("1", false), Format(new MathValue(1), digits: 1));
     }
 
     [TestMethod]
@@ -218,7 +204,7 @@ public sealed class RationalResultFormattingTests
     [DataRow("-1234.50", "-1,234.50", new int[] { 3, 0 }, ",")]
     [DataRow("123456", "123456", new int[] { 0 }, ",")]
     [DataRow("123456", "123456", new int[] { 3 }, "")]
-    public void CultureGroupingAndLengthChecksAgree(
+    public void CultureGroupingFollowsAllConfiguredGroupSizes(
         string number, string expected, int[] groupSizes, string groupSeparator)
     {
         var culture = (CultureInfo)CultureInfo.InvariantCulture.Clone();
@@ -226,10 +212,7 @@ public sealed class RationalResultFormattingTests
         culture.NumberFormat.NumberGroupSeparator = groupSeparator;
         var value = new MathValue(decimal.Parse(number, CultureInfo.InvariantCulture));
 
-        Assert.AreEqual((expected, false), Format(value, provider: culture, groupDigits: true,
-            maxOutputCharacters: expected.Length));
-        Assert.ThrowsExactly<CalculationLimitException>(() => Format(value, provider: culture,
-            groupDigits: true, maxOutputCharacters: expected.Length - 1));
+        Assert.AreEqual((expected, false), Format(value, provider: culture, groupDigits: true));
     }
 
     [TestMethod]
@@ -249,10 +232,7 @@ public sealed class RationalResultFormattingTests
 
         Assert.AreEqual(MathValue.DataType.Rational, value.Kind);
         Assert.AreEqual(expected, value.ToString("N1", culture));
-        Assert.AreEqual((expected, false), Format(value, provider: culture, groupDigits: true,
-            maxOutputCharacters: expected.Length));
-        Assert.ThrowsExactly<CalculationLimitException>(() => Format(value, provider: culture,
-            groupDigits: true, maxOutputCharacters: expected.Length - 1));
+        Assert.AreEqual((expected, false), Format(value, provider: culture, groupDigits: true));
     }
 
     [TestMethod]
@@ -260,7 +240,7 @@ public sealed class RationalResultFormattingTests
     [DataRow("1.2300", "1::2300")]
     [DataRow("-1234567.50", "minus1__234__567::50")]
     [DataRow("-0.00125", "minus0::00125")]
-    public void FixedLengthIncludesSignsSeparatorsAndPreservedZeros(string number, string expected)
+    public void FixedFormattingIncludesSignsSeparatorsAndPreservedZeros(string number, string expected)
     {
         var culture = (CultureInfo)CultureInfo.InvariantCulture.Clone();
         culture.NumberFormat.NegativeSign = "minus";
@@ -269,18 +249,14 @@ public sealed class RationalResultFormattingTests
         var value = new MathValue(decimal.Parse(number, CultureInfo.InvariantCulture));
 
         Assert.AreEqual((expected, false), Format(value, notation: NumericNotation.Fixed,
-            provider: culture, groupDigits: true, maxOutputCharacters: expected.Length));
-        Assert.ThrowsExactly<CalculationLimitException>(() => Format(value, notation: NumericNotation.Fixed,
-            provider: culture, groupDigits: true, maxOutputCharacters: expected.Length - 1));
+            provider: culture, groupDigits: true));
     }
 
     [TestMethod]
     public void RoundedCarryUsesTheResultingFixedLayoutAndGroupCount()
     {
         Assert.AreEqual(("1,000", true), Format(new MathValue(999.9m), digits: 3,
-            notation: NumericNotation.Fixed, groupDigits: true, maxOutputCharacters: 5));
-        Assert.ThrowsExactly<CalculationLimitException>(() => Format(new MathValue(999.9m), digits: 3,
-            notation: NumericNotation.Fixed, groupDigits: true, maxOutputCharacters: 4));
+            notation: NumericNotation.Fixed, groupDigits: true));
     }
 
     [TestMethod]
@@ -288,7 +264,7 @@ public sealed class RationalResultFormattingTests
     [DataRow(ExpressionFormatStyle.NormalizedAscii, ExponentMarker.Uppercase, "minus1::25E0")]
     [DataRow(ExpressionFormatStyle.TypographicUnicode, ExponentMarker.Lowercase, "minus1::25 × 10^0")]
     [DataRow(ExpressionFormatStyle.MathJax, ExponentMarker.Lowercase, @"minus1::25 \times 10^{0}")]
-    public void ScientificLengthChecksAcceptTheExactBoundary(
+    public void ScientificFormattingRetainsTheSelectedStyleAndCustomSeparators(
         ExpressionFormatStyle style, ExponentMarker marker, string expected)
     {
         var culture = (CultureInfo)CultureInfo.InvariantCulture.Clone();
@@ -300,29 +276,17 @@ public sealed class RationalResultFormattingTests
             Notation = NumericNotation.Scientific,
             Style = style,
             ExponentMarker = marker,
-            MaxOutputCharacters = expected.Length,
         };
 
         Assert.AreEqual((expected, false), ResultValueFormatter.Format(value, options, culture));
-        Assert.ThrowsExactly<CalculationLimitException>(() => ResultValueFormatter.Format(
-            value, options with { MaxOutputCharacters = expected.Length - 1 }, culture));
     }
 
     [TestMethod]
-    public void DefaultResultStringsEnforceGroupedLengthForIndianCulture()
+    public void DefaultResultStringsPreserveIndianCultureGrouping()
     {
         var culture = CultureInfo.GetCultureInfo("hi-IN");
-        var limited = CalculatorEngine.ForCulture(culture, options => options with
-        {
-            ResultFormat = new ResultFormatOptions { MaxOutputCharacters = 10 }
-        });
-        Assert.ThrowsExactly<CalculationLimitException>(() => limited.Evaluate("12345678").ToString());
-
-        var exactBoundary = CalculatorEngine.ForCulture(culture, options => options with
-        {
-            ResultFormat = new ResultFormatOptions { MaxOutputCharacters = 11 }
-        });
-        Assert.AreEqual("1,23,45,678", exactBoundary.Evaluate("12345678").ToString());
+        var engine = CalculatorEngine.ForCulture(culture);
+        Assert.AreEqual("1,23,45,678", engine.Evaluate("12345678").ToString());
     }
 
     [TestMethod]

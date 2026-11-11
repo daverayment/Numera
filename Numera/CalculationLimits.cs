@@ -50,9 +50,4 @@ public sealed class CalculationLimits
     /// The maximum significant digits permitted in a formatted numeric representation.
     /// </summary>
     public const int MaxSignificantDigits = 1000;
-
-    /// <summary>
-    /// The maximum characters permitted in a formatted numeric representation.
-    /// </summary>
-    public const int MaxOutputCharacters = 16384;
 }

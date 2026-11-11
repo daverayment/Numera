@@ -53,15 +53,19 @@ public sealed class RationalIntegrationTests
     }
 
     [TestMethod]
-    public void FormattingLimitsAreSeparateFromCalculationLimits()
+    public void DisplayPrecisionIsSeparateFromCalculationAndExactRepresentations()
     {
         var engine = new CalculatorEngine(new CalculatorOptions
         {
-            ResultFormat = new ResultFormatOptions { MaxOutputCharacters = 8 }
+            ResultFormat = new ResultFormatOptions { SignificantDigits = 3 }
         });
         var result = engine.Evaluate("1/257");
         Assert.AreEqual(MathValue.FromFraction(1, 257), result.Value);
-        Assert.Throws<CalculationLimitException>(() => engine.FormatResult(result));
+        var formatted = engine.FormatResult(result);
+        Assert.AreEqual("0.00389", formatted.PrimaryDisplay);
+        Assert.IsTrue(formatted.IsDisplayRounded);
+        Assert.AreEqual("1/257", formatted.MachineReadable);
+        Assert.AreEqual("1/257", formatted.FractionRepresentation);
     }
 
     [TestMethod]
@@ -71,6 +75,7 @@ public sealed class RationalIntegrationTests
         var card = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture).FormatResult(value);
         Assert.AreEqual("1/3", card.MachineReadable);
         Assert.IsNull(card.FractionRepresentation);
+        Assert.IsNotNull(card.MachineReadable);
         Assert.AreEqual(CalculationAccuracy.Exact, Calculator.Evaluate(card.MachineReadable).Accuracy);
 
         var restored = MathValue.Deserialize(value.Serialize());
@@ -106,6 +111,7 @@ public sealed class RationalIntegrationTests
         Assert.AreEqual("1267650600228229401496703205376", card.MachineReadable);
         Assert.AreEqual(card.MachineReadable, card.FractionRepresentation);
         Assert.IsTrue(card.IsDisplayRounded);
+        Assert.IsNotNull(card.MachineReadable);
         Assert.AreEqual(value, Calculator.Evaluate(card.MachineReadable).Value);
     }
 

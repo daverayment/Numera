@@ -82,6 +82,7 @@ public sealed class FormattingGuideTests
         var engine = GermanEngine();
         var shown = engine.FormatResult(engine.Evaluate("1000 + 2,5"));
 
+        Assert.IsNotNull(shown.PrimaryDisplay);
         Assert.AreEqual(1002.5m, engine.Evaluate(shown.PrimaryDisplay).DecimalValue);
     }
 

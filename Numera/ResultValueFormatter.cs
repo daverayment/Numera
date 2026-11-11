@@ -29,7 +29,7 @@ internal static class ResultValueFormatter
         options.Validate();
         var culture = NumberFormatInfo.GetInstance(provider);
 
-        if (!TryExtractRational(value, culture, options, out var rational, out string? nonFiniteText))
+        if (!TryExtractRational(value, culture, out var rational, out string? nonFiniteText))
         {
             return (nonFiniteText!, false);
         }
@@ -53,7 +53,6 @@ internal static class ResultValueFormatter
             ? FormatScientific(rounded, options, culture)
             : FormatFixed(rounded, value, rational.Denominator.IsOne, options, culture);
 
-        CheckOutputLength(formatted, options);
         return (formatted, rounded.IsRounded);
     }
 
@@ -61,11 +60,8 @@ internal static class ResultValueFormatter
     /// Formats the exact fractional representation of a math value (e.g. "1/3" or "5/4"),
     /// or returns <see langword="null"/> if the value has no verified exact fraction.
     /// </summary>
-    internal static string? FormatExactFraction(MathValue value, ResultFormatOptions options)
+    internal static string? FormatExactFraction(MathValue value)
     {
-        ArgumentNullException.ThrowIfNull(options);
-        options.Validate();
-
         if (!value.TryGetExactFraction(out var numerator, out var denominator))
         {
             return null;
@@ -73,13 +69,6 @@ internal static class ResultValueFormatter
 
         CheckComponents(numerator, denominator);
 
-        long length = IntegerLength(numerator);
-        if (!denominator.IsOne)
-        {
-            length += 1L + IntegerLength(denominator);
-        }
-
-        CheckLength(length, options);
         string text = numerator.ToString(CultureInfo.InvariantCulture);
         return denominator.IsOne ? text : text + "/" + denominator.ToString(CultureInfo.InvariantCulture);
     }
@@ -146,12 +135,6 @@ internal static class ResultValueFormatter
         return exponent;
     }
 
-    internal static void CheckOutputLength(string text, ResultFormatOptions options)
-        => CheckLength(text.Length, options.MaxOutputCharacters);
-
-    internal static void CheckOutputLength(string text, int maxOutputCharacters = CalculationLimits.MaxOutputCharacters)
-        => CheckLength(text.Length, maxOutputCharacters);
-
     #endregion
 
     #region Pipeline Stages: Extraction & Zero
@@ -165,7 +148,6 @@ internal static class ResultValueFormatter
     private static bool TryExtractRational(
         MathValue value,
         NumberFormatInfo culture,
-        ResultFormatOptions options,
         out RationalInput rational,
         out string? nonFiniteText)
     {
@@ -176,7 +158,6 @@ internal static class ResultValueFormatter
             if (!double.IsFinite(value.DoubleValue))
             {
                 nonFiniteText = value.DoubleValue.ToString(culture);
-                CheckOutputLength(nonFiniteText, options);
                 rational = default;
                 return false;
             }
@@ -209,16 +190,11 @@ internal static class ResultValueFormatter
             : Math.Min(PreservedDecimalScale(value, isWholeNumber: true), options.SignificantDigits - 1);
 
         string sign = isNegativeZero ? culture.NegativeSign : "";
-        long length = (long)sign.Length + 1 + zeroScale
-            + (zeroScale > 0 ? culture.NumberDecimalSeparator.Length : 0);
-        CheckLength(length, options);
-
         string decimalPart = zeroScale > 0
             ? culture.NumberDecimalSeparator + new string('0', zeroScale)
             : "";
 
         string result = sign + "0" + decimalPart;
-        CheckOutputLength(result, options);
         return (result, false);
     }
 
@@ -293,10 +269,6 @@ internal static class ResultValueFormatter
         string separator = culture.NumberDecimalSeparator;
         string suffix = ScientificSuffix(rounded.Exponent, options);
 
-        long length = (long)sign.Length + rounded.Digits.Length + suffix.Length
-            + (rounded.Digits.Length > 1 ? separator.Length : 0);
-        CheckLength(length, options);
-
         string mantissa = rounded.Digits.Length == 1
             ? rounded.Digits
             : rounded.Digits[..1] + separator + rounded.Digits[1..];
@@ -312,10 +284,6 @@ internal static class ResultValueFormatter
         NumberFormatInfo culture)
     {
         var layout = CreateFixedLayout(rounded, originalValue, isWholeNumber, options);
-
-        // Share the layout with length checking, so padding and culture separators
-        // cannot make the rendered string exceed a limit that the preflight accepted.
-        CheckFixedLength(rounded, layout, options, culture);
 
         string sign = rounded.IsNegative ? culture.NegativeSign : "";
         string separator = culture.NumberDecimalSeparator;
@@ -351,7 +319,7 @@ internal static class ResultValueFormatter
 
     #endregion
 
-    #region Pipeline Stages: Formatting Helpers & Limits
+    #region Pipeline Stages: Formatting Helpers
 
     private readonly record struct FixedLayout(
         int IntegerDigitCount,
@@ -393,23 +361,6 @@ internal static class ResultValueFormatter
         return Math.Max(0, preservedScale - decimalPlaces);
     }
 
-    private static void CheckFixedLength(
-        RoundedDecimal rounded,
-        FixedLayout layout,
-        ResultFormatOptions options,
-        NumberFormatInfo culture)
-    {
-        int signLength = rounded.IsNegative ? culture.NegativeSign.Length : 0;
-        int decimalPlaces = layout.DecimalPlaces + layout.PreservedTrailingZeroCount;
-        int groupCount = options.GroupDigits ? GetGroupSeparatorCount(layout.IntegerDigitCount, culture) : 0;
-
-        long length = (long)signLength + layout.IntegerDigitCount + decimalPlaces
-            + (decimalPlaces > 0 ? culture.NumberDecimalSeparator.Length : 0)
-            + (long)groupCount * culture.NumberGroupSeparator.Length;
-
-        CheckLength(length, options);
-    }
-
     private static string GroupIntegerDigits(string integerDigits, NumberFormatInfo culture)
     {
         if (GetGroupSeparatorCount(integerDigits.Length, culture) == 0)
@@ -434,7 +385,6 @@ internal static class ResultValueFormatter
         int groupCount = 0;
 
         // .NET repeats the final nonzero group size; a terminal zero stops grouping.
-        // Counting the same way keeps preflight limits consistent with ToString("N0").
         while (groupSizes.Length > 0 && groupSizes[groupIndex] > 0 && remainingDigits > groupSizes[groupIndex])
         {
             remainingDigits -= groupSizes[groupIndex];
@@ -478,33 +428,6 @@ internal static class ResultValueFormatter
         {
             throw new CalculationLimitException();
         }
-    }
-
-    private static void CheckLength(long length, ResultFormatOptions options)
-        => CheckLength(length, options.MaxOutputCharacters);
-
-    private static void CheckLength(long length, int maxOutputCharacters)
-    {
-        if (length > maxOutputCharacters)
-        {
-            throw new CalculationLimitException();
-        }
-    }
-
-    private static int IntegerLength(BigInteger value)
-    {
-        if (value.IsZero)
-        {
-            return 1;
-        }
-
-        int length = DecimalExponent(BigInteger.Abs(value), BigInteger.One) + 1;
-        if (value.Sign < 0)
-        {
-            length++;
-        }
-
-        return length;
     }
 
     private static int ComparePowerOfTen(BigInteger numerator, BigInteger denominator, int exponent)

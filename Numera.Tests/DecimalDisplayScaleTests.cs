@@ -131,7 +131,7 @@ public sealed class DecimalDisplayScaleTests
     }
 
     [TestMethod]
-    public void PrecisionNotationCultureAndOutputLimitsStillApply()
+    public void PrecisionNotationAndCultureStillApply()
     {
         var shortDisplay = new CalculatorEngine(new CalculatorOptions
         {
@@ -152,15 +152,6 @@ public sealed class DecimalDisplayScaleTests
         Assert.AreEqual("94,40", german.Evaluate("194,40-100").FormatResult().PrimaryDisplay);
         AssertDefaultDisplay(german.Evaluate("194,40-100"), "94,40");
         Assert.AreEqual("94.40", german.Evaluate("194,40-100").ToString(CultureInfo.InvariantCulture));
-        var limited = new CalculatorEngine(new CalculatorOptions
-        {
-            ResultFormat = new ResultFormatOptions { MaxOutputCharacters = 4 }
-        });
-        Assert.ThrowsExactly<CalculationLimitException>(() => limited.Evaluate("94.40").FormatResult());
-        Assert.ThrowsExactly<CalculationLimitException>(() => ResultValueFormatter.Format(
-            new MathValue(94.40m), new ResultFormatOptions { MaxOutputCharacters = 4 }, CultureInfo.InvariantCulture));
-        Assert.ThrowsExactly<CalculationLimitException>(() => ResultValueFormatter.Format(
-            new MathValue(0.00m), new ResultFormatOptions { MaxOutputCharacters = 3 }, CultureInfo.InvariantCulture));
     }
 
     [TestMethod]
@@ -276,20 +267,16 @@ public sealed class DecimalDisplayScaleTests
     }
 
     [TestMethod]
-    public void DefaultResultStringsDoNotFormatUnusedAlternateRepresentations()
+    public void CompactDefaultStringsAndFullAlternateRepresentationsAreBothAvailable()
     {
-        var engine = new CalculatorEngine(new CalculatorOptions
-        {
-            ResultFormat = new ResultFormatOptions { MaxOutputCharacters = 10 }
-        });
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
         var result = engine.Evaluate("1e-50");
         AssertDefaultDisplay(result, "1e-50");
-        Assert.ThrowsExactly<CalculationLimitException>(() => result.FormatResult());
-        var limited = new CalculatorEngine(new CalculatorOptions
-        {
-            ResultFormat = new ResultFormatOptions { MaxOutputCharacters = 4 }
-        });
-        var tooLong = limited.Evaluate("94.40");
-        Assert.ThrowsExactly<CalculationLimitException>(() => tooLong.ToString());
+        var formatted = result.FormatResult();
+        Assert.AreEqual("1e-50", formatted.PrimaryDisplay);
+        Assert.IsFalse(formatted.IsDisplayRounded);
+        string fraction = "1/1" + new string('0', 50);
+        Assert.AreEqual(fraction, formatted.MachineReadable);
+        Assert.AreEqual(fraction, formatted.FractionRepresentation);
     }
 }

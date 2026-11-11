@@ -3,7 +3,8 @@ namespace Numera;
 /// <summary>
 /// Indicates that evaluation would exceed a computational safety ceiling.
 /// </summary>
-/// <param name="diagnostic">The optional diagnostic describing the ceiling failure.</param>
+/// <param name="diagnostic">The optional diagnostic describing the ceiling failure.
+/// </param>
 public sealed class CalculationLimitException(EvaluationDiagnostic? diagnostic = null)
     : NumeraException(diagnostic ?? new EvaluationDiagnostic(
         EvaluationError.LimitExceeded,
