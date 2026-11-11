@@ -81,7 +81,7 @@ Integer, Decimal, and fraction construction assert exact supplied values, not th
 ### 4. Reserved Names & No Shadowing
 To prevent subtle mathematical ambiguities and maintain consistency:
 - Custom function names cannot shadow built-in functions in `FunctionCatalog` (e.g. `sin`, `sqrt`, `hypot`).
-- Custom function names cannot shadow reserved constants in `ConstantCatalog` (e.g. `pi`, `e`, `tau`).
+- Custom function names cannot shadow reserved constants (e.g. `pi`, `e`, `tau`). Use `Constants.AllNames` or `Constants.TryResolve` to discover these names; see [constant discovery](syntax.md#constant-discovery).
 - Custom function names cannot shadow reserved keywords (e.g. `and`, `or`, `not`, `xor`).
 - Custom functions cannot be assigned to as variables (e.g. `myFunc = 10` throws `EvaluationError.InvalidSyntax`).
 Conflicts are validated at engine creation and throw `ArgumentException`.

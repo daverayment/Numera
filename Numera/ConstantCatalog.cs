@@ -1,3 +1,6 @@
+using System.Collections.Frozen;
+using System.Diagnostics.CodeAnalysis;
+
 namespace Numera;
 
 /// <summary>
@@ -21,14 +24,12 @@ public enum ConstantKind
     True,
 
     /// <summary>Boolean false literal (0m).</summary>
-    False,
+    False
 }
 
 /// <summary>
 /// Central registry and resolution for recognized mathematical constants.
-/// Constants are resolved as <see cref="decimal"/> to provide up to 28-29 digits of precision
-/// for direct inspection and linear/decimal arithmetic; callers handling transcendental or
-/// trigonometry functions convert them down to <see cref="double"/> as required.
+/// Values use Decimal storage and carry the same exactness for discovery and evaluation.
 /// </summary>
 internal static class ConstantCatalog
 {
@@ -38,6 +39,65 @@ internal static class ConstantCatalog
     private const decimal TauValue = 6.2831853071795864769252867666m;
     private const decimal PhiValue = 1.6180339887498948482045868344m;
 
+    private static readonly FrozenDictionary<string, ConstantInfo> InfoByExactName;
+    private static readonly FrozenDictionary<string, ConstantInfo> InfoByName;
+
+    internal static IReadOnlyCollection<string> AllNames { get; }
+    internal static IReadOnlyCollection<string> CanonicalNames { get; }
+    internal static IReadOnlyList<ConstantInfo> All { get; }
+    internal static IReadOnlyList<ConstantInfo> Canonical { get; }
+
+    static ConstantCatalog()
+    {
+        ConstantInfo[] definitions =
+        [
+            CreateCanonical("e", ConstantKind.E, EValue, "Euler's number, the base of natural logarithms."),
+            CreateCanonical("pi", ConstantKind.Pi, PiValue, "The ratio of a circle's circumference to its diameter.", "\u03C0"),
+            CreateCanonical("tau", ConstantKind.Tau, TauValue, "The circle constant, equal to twice pi.", "\u03C4"),
+            CreateCanonical("phi", ConstantKind.Phi, PhiValue, "The golden ratio.", "\u03C6", "\u03D5"),
+            CreateCanonical("true", ConstantKind.True, 1m, "The Boolean true literal, with numeric value one."),
+            CreateCanonical("false", ConstantKind.False, 0m, "The Boolean false literal, with numeric value zero.")
+        ];
+        Canonical = Array.AsReadOnly(definitions.OrderBy(info => info.Name, Identifier.Comparer).ToArray());
+        CanonicalNames = Array.AsReadOnly(Canonical.Select(info => info.Name).ToArray());
+
+        var all = new List<ConstantInfo>();
+        foreach (var canonical in Canonical)
+        {
+            all.Add(canonical);
+            foreach (var alias in canonical.Aliases)
+            {
+                all.Add(canonical with { Name = alias, IsAlias = true });
+            }
+        }
+
+        All = Array.AsReadOnly(all.OrderBy(info => info.Name, Identifier.Comparer).ToArray());
+        AllNames = Array.AsReadOnly(All.Select(info => info.Name).ToArray());
+
+        // Distinct phi glyphs compare equal ignoring case; retain exact-spelling metadata.
+        InfoByExactName = All.ToFrozenDictionary(info => info.Name, StringComparer.Ordinal);
+        var byName = new Dictionary<string, ConstantInfo>(Identifier.Comparer);
+        foreach (var info in All)
+        {
+            byName.TryAdd(info.Name, info);
+        }
+
+        InfoByName = byName.ToFrozenDictionary(Identifier.Comparer);
+    }
+
+    private static ConstantInfo CreateCanonical(
+        string name, ConstantKind kind, decimal value, string description, params string[] aliases)
+    {
+        var exactness = CalculationExactness.Unverified;
+        if (kind is ConstantKind.True or ConstantKind.False)
+        {
+            exactness = CalculationExactness.Exact;
+        }
+
+        return new ConstantInfo(name, name, kind, new MathValue(value).WithExactness(exactness),
+            description, Array.AsReadOnly(aliases));
+    }
+
     /// <summary>
     /// Determines whether the specified character is a recognized non-ASCII mathematical constant symbol (e.g. Greek letters).
     /// </summary>
@@ -46,56 +106,26 @@ internal static class ConstantCatalog
              '\u03C4' or '\u03A4' or           // τ, Τ
              '\u03D5' or '\u03C6' or '\u03A6'; // ϕ (symbol), φ (small), Φ (capital)
 
+    internal static bool TryGetInfo(ReadOnlySpan<char> name, [NotNullWhen(true)] out ConstantInfo? info)
+    {
+        // Case folding also matches unsupported Greek variants; preserve the parser's symbol set.
+        if (name.Length == 1 && name[0] > '\u007F' && !IsConstantLetter(name[0]))
+        {
+            info = null;
+            return false;
+        }
+
+        return InfoByExactName.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(name, out info) ||
+            InfoByName.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(name, out info);
+    }
+
     internal static bool TryResolve(ReadOnlySpan<char> name, out ConstantKind kind, out decimal value)
     {
-        switch (name.Length)
+        if (TryGetInfo(name, out var info))
         {
-            case 1:
-                switch (name[0])
-                {
-                    case 'e' or 'E':
-                        kind = ConstantKind.E;
-                        value = EValue;
-                        return true;
-                    case '\u03C0' or '\u03A0': // π, Π
-                        kind = ConstantKind.Pi;
-                        value = PiValue;
-                        return true;
-                    case '\u03C4' or '\u03A4': // τ, Τ
-                        kind = ConstantKind.Tau;
-                        value = TauValue;
-                        return true;
-                    case '\u03D5' or '\u03C6' or '\u03A6': // ϕ (symbol), φ (small), Φ (capital)
-                        kind = ConstantKind.Phi;
-                        value = PhiValue;
-                        return true;
-                }
-                break;
-
-            case 2 when name.Equals("pi", Identifier.Comparison):
-                kind = ConstantKind.Pi;
-                value = PiValue;
-                return true;
-
-            case 3 when name.Equals("tau", Identifier.Comparison):
-                kind = ConstantKind.Tau;
-                value = TauValue;
-                return true;
-
-            case 3 when name.Equals("phi", Identifier.Comparison):
-                kind = ConstantKind.Phi;
-                value = PhiValue;
-                return true;
-
-            case 4 when name.Equals("true", Identifier.Comparison):
-                kind = ConstantKind.True;
-                value = 1m;
-                return true;
-
-            case 5 when name.Equals("false", Identifier.Comparison):
-                kind = ConstantKind.False;
-                value = 0m;
-                return true;
+            kind = info.Kind;
+            value = info.Value.DecimalValue;
+            return true;
         }
 
         kind = default;

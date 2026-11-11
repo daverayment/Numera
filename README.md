@@ -82,6 +82,16 @@ Try entering:
 * `1 / 0` or `sqrt(-1)` *(Clean error diagnostics and non-finite number handling)*
 * `0b10101011 - 0xAA` *(Support for multiple integer literal formats, such as binary and hexadecimal)*
 
+## Discovering Built-in Constants
+
+`Constants` complements the `Functions` discovery API. Use `Constants.Canonical` for
+constant-picker metadata, `Constants.AllNames` for names and Greek aliases, and
+`Constants.TryGetInfo(name, out info)` for descriptions and canonical identities.
+`Constants.TryResolve(name, out value)` returns the evaluator's `MathValue` without
+evaluating an expression, preserving the Unverified status of irrational approximations
+and Exact status of Boolean constants. All discovery collections are read-only.
+See [constant discovery](docs/syntax.md#constant-discovery) for the full contract.
+
 ## Working with Results
 
 When `TryEvaluate` succeeds, it returns an `EvaluationResult` containing a `MathValue`. You have a few clean ways to work with it:

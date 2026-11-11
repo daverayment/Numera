@@ -26,13 +26,9 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
     public MathValue Visit(IdentifierNode node)
     {
-        // Constant resolution produces a high-precision decimal (up to 28 digits)
-        // for direct inspection and linear decimal/integer arithmetic.
-        if (ConstantCatalog.TryResolve(node.Name, out var constant, out decimal value))
+        if (ConstantCatalog.TryGetInfo(node.Name, out var constant))
         {
-            return Guard(node.Span, () => ValidateValue(new MathValue(value).WithExactness(
-                constant is ConstantKind.True or ConstantKind.False
-                    ? CalculationExactness.Exact : CalculationExactness.Unverified)));
+            return Guard(node.Span, () => ValidateValue(constant.Value));
         }
 
         // Check recent assignments within this evaluation.

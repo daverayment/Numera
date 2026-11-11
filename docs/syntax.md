@@ -23,7 +23,7 @@ Numera's grammar is deliberately small and unambiguous: a recursive-descent pars
 
 ## Constants
 
-Numera provides these constants (case-insensitive). The transcendental constants
+Numera provides these constants (case-insensitive). The irrational constants
 are Decimal approximations with Unverified exactness, not exact symbolic values.
 Use that status for UI guidance rather than the number's appearance: `floor(pi)`
 still has Unverified exactness even though it displays `3`. See the
@@ -34,8 +34,43 @@ still has Unverified exactness even though it displays `3`. See the
 | `pi` | `π`, `Π` | Ratio of circle circumference to diameter ($\approx 3.141592653589793$) | `decimal` |
 | `tau` | `τ`, `Τ` | Full circle angle constant in radians, $2\pi$ ($\approx 6.283185307179586$) | `decimal` |
 | `e` | | Base of the natural logarithm, Euler's number ($\approx 2.718281828459045$) | `decimal` |
-| `phi` | `φ`, `Φ` | Golden ratio ($\approx 1.618033988749895$) | `decimal` |
-| `true`, `false` | | Exact truth values `1` and `0` | `BigInteger` |
+| `phi` | `φ`, `ϕ`, `Φ` | Golden ratio ($\approx 1.618033988749895$) | `decimal` |
+| `true`, `false` | | Exact truth values `1` and `0` | `decimal` |
+
+### Constant Discovery
+
+Use `Constants` to populate autocomplete, constant pickers, or tooltips without
+evaluating expressions:
+
+```csharp
+foreach (ConstantInfo info in Constants.Canonical)
+{
+	Console.WriteLine($"{info.Name}: {info.Description} ({info.Value.Exactness})");
+}
+
+if (Constants.TryResolve("pi", out MathValue value))
+{
+	Console.WriteLine(value.DecimalValue); // The evaluator's stored Decimal approximation.
+}
+```
+
+- `AllNames` and `All` include the canonical names and Greek aliases; `CanonicalNames`
+  and `Canonical` omit alias entries. Each collection is sorted ordinally ignoring case
+  and is read-only, including the nested `ConstantInfo.Aliases` collections.
+- `TryGetInfo(name, out info)` returns the invocation name, canonical name, `ConstantKind`,
+  stored `MathValue`, description, aliases, and alias flag. Both phi glyphs have their
+  own alias entry; casing variants such as `PI` and `Π` are not enumerated separately.
+- `TryResolve(name, out value)` returns the same representation, precision, and exactness
+  used by evaluation. The four irrational constants remain Unverified; `true` and `false`
+  remain Exact. Decimal storage is not itself a guarantee of mathematical exactness.
+- Lookups follow the parser's culture-independent, case-insensitive rules and supported
+  Greek spellings. Unknown, empty, whitespace-padded, or expression inputs return false;
+  null names throw `ArgumentNullException`. On failure, metadata is null and the value
+  is default, not a successfully resolved zero.
+
+This catalog describes built-in expression constants, not variables, custom functions,
+or the static properties on `MathValue`. In particular, `MathValue.NaN` and infinity
+properties do not introduce corresponding recognized constant names.
 
 ---
 
