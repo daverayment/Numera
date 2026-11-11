@@ -157,6 +157,21 @@ public sealed class CustomFunctionCollection : IReadOnlyList<CustomFunction>
     // Fluent overloads.
 
     /// <summary>
+    /// Returns a new collection with a zero-argument custom function added or updated,
+    /// keyed by the specified name.
+    /// </summary>
+    /// <param name="name">The name of the custom function.</param>
+    /// <param name="handler">The function handler.</param>
+    /// <param name="description">An optional description of the function.</param>
+    /// <returns>A new <see cref="CustomFunctionCollection"/> with the added/updated
+    /// function.</returns>
+    /// <exception cref="ArgumentNullException">The name or handler is null.</exception>
+    /// <exception cref="ArgumentException">The name is invalid or reserved.</exception>
+    [Pure]
+    public CustomFunctionCollection SetItem(string name, Func<MathValue> handler, string? description = null) =>
+        SetItem(CustomFunction.Create(name, handler, description));
+
+    /// <summary>
     /// Returns a new collection with the given custom function added or updated, keyed by
     /// the specified name. 
     /// </summary>

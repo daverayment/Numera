@@ -280,12 +280,13 @@ public sealed class CustomFunctionCollectionTests
             .SetItem("unary", x => x, "one")
             .SetItem("binary", (x, y) => x + y, "two")
             .SetItem("ternary", (x, y, z) => x + y + z, "three")
-            .SetItem("variadic", 1, args => args[0], "many");
+            .SetItem("variadic", 1, args => args[0], "many")
+            .SetItem("zero", () => new MathValue(7m), "none");
         MathValue one = new(1m);
         MathValue two = new(2m);
         MathValue three = new(3m);
 
-        Assert.AreSequenceEqual(["unary", "binary", "ternary", "variadic"], functions.Names);
+        Assert.AreSequenceEqual(["unary", "binary", "ternary", "variadic", "zero"], functions.Names);
         Assert.AreEqual("one", functions[0].Description);
         Assert.AreEqual("two", functions[1].Description);
         Assert.AreEqual("three", functions[2].Description);
@@ -296,6 +297,57 @@ public sealed class CustomFunctionCollectionTests
         Assert.AreEqual(1m, functions[3].Implementation([one, two]).DecimalValue);
         Assert.AreEqual(1, functions[3].Signature.MinimumArguments);
         Assert.IsNull(functions[3].Signature.MaximumArguments);
+        Assert.AreEqual("none", functions[4].Description);
+        Assert.AreEqual(7m, functions[4].Implementation([]).DecimalValue);
+        Assert.AreEqual(0, functions[4].Signature.MinimumArguments);
+        Assert.AreEqual(0, functions[4].Signature.MaximumArguments);
+    }
+
+    [TestMethod]
+    public void SetItem_ZeroArgumentReplacementPreservesSnapshotsAndValidatesCalls()
+    {
+        int calls = 0;
+        var original = F("tick", 10m, "old");
+        var other = F("other");
+        CustomFunctionCollection initial = [original, other];
+
+        var updated = initial.SetItem("TICK", () => new MathValue(++calls));
+        Assert.AreEqual(0, calls);
+        Assert.AreSequenceEqual(["TICK", "other"], updated.Names);
+        Assert.AreEqual(2, updated.Count);
+        Assert.AreSame(updated[0], updated["tick"]);
+        Assert.AreSame(other, updated[1]);
+        Assert.IsNull(updated[0].Description);
+        Assert.AreEqual(0, updated[0].Signature.MinimumArguments);
+        Assert.AreEqual(0, updated[0].Signature.MaximumArguments);
+        Assert.AreSame(original, initial[0]);
+        Assert.AreEqual(1, initial[0].Signature.MinimumArguments);
+        Assert.AreEqual("old", initial[0].Description);
+
+        var engine = new CalculatorEngine(new CalculatorOptions { CustomFunctions = updated });
+        Assert.AreEqual(MathValue.One, engine.Evaluate("tick()").Value);
+        Assert.AreEqual(new MathValue(2), engine.Evaluate("TICK()").Value);
+        Assert.AreEqual(2, calls);
+        var exception = Assert.ThrowsExactly<ExpressionException>(() => engine.Evaluate("tick(1)"));
+        Assert.AreEqual(EvaluationError.InvalidArgumentCount, exception.Diagnostic.Code);
+        Assert.AreEqual(2, calls);
+    }
+
+    [TestMethod]
+    public void SetItem_ZeroArgumentOverloadUsesFactoryNameValidation()
+    {
+        var functions = CustomFunctionCollection.Empty;
+        Func<MathValue> handler = () => MathValue.One;
+        var nullName = Assert.ThrowsExactly<ArgumentNullException>(() => functions.SetItem(null!, handler));
+        Assert.AreEqual("name", nullName.ParamName);
+
+        foreach (string name in new[] { "", "1invalid", "sin", "ans" })
+        {
+            var exception = Assert.ThrowsExactly<ArgumentException>(() => functions.SetItem(name, handler));
+            Assert.AreEqual("name", exception.ParamName);
+        }
+
+        Assert.AreEqual(0, functions.Count);
     }
 
     [TestMethod]
@@ -303,6 +355,8 @@ public sealed class CustomFunctionCollectionTests
     {
         var functions = CustomFunctionCollection.Empty;
 
+        var zero = Assert.ThrowsExactly<ArgumentNullException>(() => functions.SetItem("zero", (Func<MathValue>)null!));
+        Assert.AreEqual("handler", zero.ParamName);
         Assert.Throws<ArgumentNullException>(() => functions.SetItem("unary", (Func<MathValue, MathValue>)null!));
         Assert.Throws<ArgumentNullException>(() => functions.SetItem("binary", (Func<MathValue, MathValue, MathValue>)null!));
         Assert.Throws<ArgumentNullException>(() => functions.SetItem("ternary", (Func<MathValue, MathValue, MathValue, MathValue>)null!));
