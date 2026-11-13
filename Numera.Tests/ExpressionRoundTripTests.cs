@@ -159,6 +159,59 @@ public sealed class ExpressionRoundTripTests
     }
 
     [TestMethod]
+    public void MathJaxSignedNumberNodesKeepTheirGroupingInPowersAndUnaryOperators()
+    {
+        var cases = new (MathValue Value, string GroupedText)[]
+        {
+            (new MathValue(-5), "(-5)"),
+            (new MathValue(-2m), "(-2)"),
+            (new MathValue(-0.1), "(-0.1)"),
+            (new MathValue(-0.0), "(-0)"),
+            (MathValue.FromFraction(-1, 3), @"\left(\frac{-1}{3}\right)"),
+            (new MathValue(-BigInteger.Pow(10, 30)), @"(-1 \times 10^{30})"),
+            (new MathValue(-0.00001), @"(-1 \times 10^{-5})"),
+        };
+
+        foreach (var (value, groupedText) in cases)
+        {
+            var literal = new NumberNode(value);
+            var two = new NumberNode(new MathValue(2));
+            Assert.AreEqual($"{groupedText}^{{2}}",
+                Engine.FormatExpression(new BinaryNode(BinaryOperator.Power, literal, two), ExpressionFormatOptions.LaTeX));
+            Assert.AreEqual($"-{groupedText}",
+                Engine.FormatExpression(new UnaryNode(UnaryOperator.Negate, literal), ExpressionFormatOptions.LaTeX));
+            Assert.AreEqual($"+{groupedText}",
+                Engine.FormatExpression(new UnaryNode(UnaryOperator.Positive, literal), ExpressionFormatOptions.LaTeX));
+            Assert.AreEqual($"{groupedText}!",
+                Engine.FormatExpression(new UnaryNode(UnaryOperator.Factorial, literal), ExpressionFormatOptions.LaTeX));
+            Assert.AreEqual($@"{groupedText}\%",
+                Engine.FormatExpression(new UnaryNode(UnaryOperator.Percent, literal), ExpressionFormatOptions.LaTeX));
+        }
+
+        var negativeExponent = new BinaryNode(BinaryOperator.Power,
+            new NumberNode(new MathValue(2)), new NumberNode(new MathValue(-5)));
+        Assert.AreEqual("2^{-5}", Engine.FormatExpression(negativeExponent, ExpressionFormatOptions.LaTeX));
+        Assert.AreEqual("2^{2}", Engine.FormatExpression(
+            new BinaryNode(BinaryOperator.Power, new NumberNode(new MathValue(2)), new NumberNode(new MathValue(2))),
+            ExpressionFormatOptions.LaTeX));
+    }
+
+    [TestMethod]
+    [DataRow("asin", "arcsin", @"\arcsin(0.5)")]
+    [DataRow("acos", "arccos", @"\arccos(0.5)")]
+    [DataRow("atan", "arctan", @"\arctan(0.5)")]
+    public void MathJaxInverseTrigonometricAliasesUseTheSameStandardCommand(
+        string shortName, string longName, string expected)
+    {
+        foreach (string name in new[] { shortName, longName, longName.ToUpperInvariant() })
+        {
+            string expression = $"{name}(0.5)";
+            Assert.AreEqual(expected, Engine.FormatExpression(expression, ExpressionFormatOptions.LaTeX));
+            Assert.AreEqual(expected, Engine.FormatExpression(Engine.Parse(expression), ExpressionFormatOptions.LaTeX));
+        }
+    }
+
+    [TestMethod]
     public void OfOnTheLeftOfJuxtapositionPreservesGroupingInEveryStyle()
     {
         var context = new EvaluationContext([new Variable("x", new MathValue(2))]);

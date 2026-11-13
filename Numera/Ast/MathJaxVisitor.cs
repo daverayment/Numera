@@ -270,9 +270,9 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
     {
         latexFn = fn.ToLowerInvariant() switch
         {
-            "asin" => "arcsin",
-            "acos" => "arccos",
-            "atan" => "arctan",
+            "asin" or "arcsin" => "arcsin",
+            "acos" or "arccos" => "arccos",
+            "atan" or "arctan" => "arctan",
             "sin" or "cos" or "tan" or "csc" or "sec" or "cot" or
             "sinh" or "cosh" or "tanh" or "coth" or
             "ln" or "log" or "exp" or "min" or "max" or "gcd" or "deg" => fn.ToLowerInvariant(),
@@ -355,8 +355,26 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
     private static string Wrap(string text) =>
         ContainsTallLatex(text) ? $@"\left({text}\right)" : $"({text})";
 
-    private string Parenthesize(string text, ExpressionNode child, ExpressionNode parent, bool isRight) =>
-        NeedsParentheses(child, parent, isRight) ? Wrap(text) : text;
+    private string Parenthesize(string text, ExpressionNode child, ExpressionNode parent, bool isRight)
+    {
+        // A rational's negative sign sits inside its fraction markup.
+        if (child is NumberNode number &&
+            (text.StartsWith('-') ||
+             (number.Value.Kind == MathValue.DataType.Rational && number.Value.Numerator.Sign < 0)))
+        {
+            if (parent is BinaryNode { Op: BinaryOperator.Power } && !isRight)
+            {
+                return Wrap(text);
+            }
+
+            if (parent is UnaryNode { Op: UnaryOperator.Negate or UnaryOperator.Positive or UnaryOperator.Factorial or UnaryOperator.Percent })
+            {
+                return Wrap(text);
+            }
+        }
+
+        return NeedsParentheses(child, parent, isRight) ? Wrap(text) : text;
+    }
 
     private static bool ContainsTallLatex(string text) =>
         text.Contains(@"\frac", StringComparison.Ordinal) ||

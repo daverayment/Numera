@@ -546,6 +546,12 @@ string formula = Calculator.FormatExpression("x+ans", ExpressionFormatOptions.As
 
 Assignments have lower precedence than arithmetic, comparisons, and logical operators. Renderers preserve grouping around nested assignments, including function arguments, while leaving right-associative chains such as `a = b = 2` unwrapped. Grouping also keeps `(10% of 200)x` distinct from `10% of 200x`, and negated comparisons retain explicit parentheses for strict logical-negation parsing. MathJax fraction and root structures provide their own visual grouping.
 
+MathJax also groups stored negative numeric literals when used as power bases or
+under unary signs and postfix operators, including negative rational and scientific
+representations. For example, a stored `-5` squared renders as `(-5)^{2}`, not
+`-5^{2}`. Inverse-trigonometric short and long names share standard commands:
+`asin`/`arcsin` render with `\arcsin`, and likewise for cosine and tangent.
+
 Both expression formatters retain right-hand grouping for nested addition and
 multiplication: `a + (b + c)` and `a * (b * c)` are not flattened into running
 left-associated chains. Regrouping can change percentage markup, Double rounding,
