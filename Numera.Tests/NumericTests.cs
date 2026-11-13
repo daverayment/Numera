@@ -1361,6 +1361,94 @@ public class NumericTests
     }
 
     [TestMethod]
+    [DataRow("coth")]
+    [DataRow("csch")]
+    public void ReciprocalHyperbolicFunctionsRejectActualZero(string function)
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+        foreach (var zero in new[] { new MathValue(0), new MathValue(0m), new MathValue(0.0), new MathValue(-0.0) })
+        {
+            var context = new EvaluationContext([new Variable("x", zero)]);
+            string expression = $"{function}(x)";
+            Assert.IsFalse(engine.TryEvaluate(expression, out _, out var diagnostic, context));
+            Assert.AreEqual(EvaluationError.UndefinedMathResult, diagnostic!.Code);
+            Assert.AreEqual(0, diagnostic.Position);
+            Assert.AreEqual(expression.Length, diagnostic.Length);
+            var exception = Assert.ThrowsExactly<ExpressionException>(() => engine.Evaluate(expression, context));
+            Assert.AreEqual(diagnostic, exception.Diagnostic);
+        }
+
+        Assert.IsFalse(engine.TryEvaluate($"{function}(1-1)", out _, out var computedDiagnostic));
+        Assert.AreEqual(EvaluationError.UndefinedMathResult, computedDiagnostic!.Code);
+    }
+
+    [TestMethod]
+    [DataRow("coth")]
+    [DataRow("csch")]
+    public void ReciprocalHyperbolicFunctionsDoNotMistakeUnderflowedNonzeroArgumentsForPoles(string function)
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+        foreach (int sign in new[] { -1, 1 })
+        {
+            var argument = MathValue.FromFraction(sign, BigInteger.Pow(10, 400));
+            Assert.IsFalse(argument.IsZero);
+            Assert.AreEqual(0.0, argument.AsDouble());
+            var context = new EvaluationContext([new Variable("x", argument)]);
+            var result = engine.Evaluate($"{function}(x)", context);
+
+            double expected = double.PositiveInfinity;
+            if (sign < 0)
+            {
+                expected = double.NegativeInfinity;
+            }
+
+            Assert.AreEqual(expected, result.DoubleValue);
+            Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
+        }
+    }
+
+    [TestMethod]
+    [DataRow("coth")]
+    [DataRow("csch")]
+    public void ReciprocalHyperbolicFunctionsPreserveNonzeroAndNonfiniteBehavior(string function)
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+        foreach (double argument in new[] { -1.0, 0.5, 1.0, double.NaN, double.PositiveInfinity, double.NegativeInfinity })
+        {
+            double expected;
+            if (function == "coth")
+            {
+                expected = 1.0 / Math.Tanh(argument);
+            }
+            else
+            {
+                expected = 1.0 / Math.Sinh(argument);
+            }
+
+            var context = new EvaluationContext([new Variable("x", new MathValue(argument))]);
+            var result = engine.Evaluate($"{function}(x)", context);
+            Assert.AreEqual(expected, result.DoubleValue);
+            Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
+            if (expected == 0.0)
+            {
+                Assert.AreEqual(BitConverter.DoubleToInt64Bits(expected), BitConverter.DoubleToInt64Bits(result.DoubleValue));
+            }
+        }
+    }
+
+    [TestMethod]
+    public void SignOfNaNReturnsZeroWithoutCertifyingIt()
+    {
+        var context = new EvaluationContext([new Variable("x", MathValue.NaN)]);
+        foreach (string function in new[] { "sign", "sgn" })
+        {
+            var result = Calculator.Evaluate($"{function}(x)", context);
+            Assert.IsTrue(result.IsZero);
+            Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
+        }
+    }
+
+    [TestMethod]
     [DataRow("asin(0.5)", "arcsin(0.5)")]
     [DataRow("acos(0.5)", "arccos(0.5)")]
     [DataRow("atan(1)", "arctan(1)")]

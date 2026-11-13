@@ -50,13 +50,13 @@ Calculation limits (`CalculatorOptions`) and formatting presentation options (`R
 | Maximum requested significant display digits | 1,000 |
 | Default significant display digits | 24 |
 
-Fractions are cross-cancelled and reduced before unnecessary growth. Intermediate limits still apply: an oversized intermediate can be rejected even if a later expression would cancel it. Literal coefficients and powers of ten are bounded before allocation; callback-returned values and captured variable values are checked against the receiving engine's limits.
+Fractions are cross-cancelled and reduced before unnecessary growth. Intermediate limits apply: an oversized intermediate can be rejected even if a later expression would cancel it. Literal coefficients and powers of ten are bounded before allocation; callback-returned values and captured variable values are checked against the receiving engine's limits.
 
 Calculation limit violations throw `CalculationLimitException`; exact calculations never silently fall back to Double and formatted output is never silently truncated. Standalone `MathValue` operators use default numeric limits.
 
-There is no character-output ceiling. `SignificantDigits` controls primary-display precision, not total width, and exact fractions, machine-readable text, and radix alternatives are not shortened to match it. `FormatResult()` prepares a complete immutable snapshot; null alternatives indicate mathematical unavailability, not rejected length. Callers decide what fits their UI using the returned strings' `.Length`. Invalid options still throw, as do numerical work-limit violations; character and UTF-8 span formatting still return `false` if the supplied buffer is too small. See [representation lengths](architecture.md#representation-lengths) for overhead formulas and bounds derived from the numeric limits.
+There is no character-output ceiling. `SignificantDigits` controls primary-display precision, not total width, and exact fractions, machine-readable text, and radix alternatives are not shortened to match it. `FormatResult()` prepares a complete immutable snapshot; null alternatives indicate mathematical unavailability, not rejected length. Callers decide what fits their UI using the returned strings' `.Length`. Invalid options and numerical work-limit violations throw; character and UTF-8 span formatting return `false` if the supplied buffer is too small. See [representation lengths](architecture.md#representation-lengths) for overhead formulas and bounds derived from the numeric limits.
 
-These size limits are not execution-time guarantees and cannot constrain work performed inside caller callbacks. Existing specialized number-theory limits remain in force.
+These size limits are not execution-time guarantees and cannot constrain work performed inside caller callbacks.
 
 Completed-result arithmetic checks the captured operands and the final value against the selected options' integer and rational-component limits. Operands are checked before arithmetic, even when cancellation would produce a small result. Binary composition selects the left result's options when available, otherwise the right result's options, otherwise the defaults. Unary composition uses the operand's options or the defaults.
 
@@ -67,14 +67,14 @@ Composition also applies the selected structural AST limits to its metadata, wit
 Evaluation validates the entire AST before executing any node or custom callback.
 Variable references, assignment targets, and function names must satisfy
 `Identifier.IsValidIdentifier`; malformed names such as `1x` or `a b` report
-`InvalidSyntax`, with the offending node's source span when supplied. Existing
+`InvalidSyntax`, with the offending node's source span when supplied. Expression
 constant markings, reserved assignment names, function bindings, arity checks,
 and structural limits are also enforced.
 
-Formatting an existing AST still tolerates unknown function names, including
+Formatting an existing AST tolerates unknown function names, including
 display-only names that are not executable identifiers. Variable references and
 assignment targets must have valid identifier syntax. Captured-result metadata
-continues to receive structural validation only; arithmetic uses the stored
+receives structural validation only; arithmetic uses the stored
 values and does not execute that metadata.
 
 ---

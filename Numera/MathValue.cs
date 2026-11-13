@@ -598,7 +598,7 @@ public readonly partial struct MathValue :
     /// <remarks>
     /// Rational values support G (optionally with a digit count), F, N and R. The R
     /// format gives the exact fraction as <c>numerator/denominator</c>; the others round
-    /// midpoint-to-even.
+    /// midpoint-to-even. G0 uses the default general precision, like G.
     /// </remarks>
     /// <exception cref="FormatException">The format is not supported by a Rational value.
     /// </exception>
@@ -794,7 +794,10 @@ public readonly partial struct MathValue :
                 throw new FormatException("Rational values support general numeric (G), fixed (F), grouped (N), or exact fraction (R) formatting.");
             }
 
-            return ResultValueFormatter.Format(this, new ResultFormatOptions { SignificantDigits = digits }, provider).Text;
+            if (digits != 0)
+            {
+                return ResultValueFormatter.Format(this, new ResultFormatOptions { SignificantDigits = digits }, provider).Text;
+            }
         }
 
         return ResultValueFormatter.Format(this, new ResultFormatOptions(), provider).Text;

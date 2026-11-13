@@ -181,10 +181,8 @@ With **degree mode explicitly configured**, `sin(30)` and `cos(60)` give about
 `0.5`, `tan(45)` about `1`, and `arcsin(1)` about `90`. With **gradian mode**,
 `sin(100)` gives about `1`. Typing an angle does not automatically change the mode.
 
-**Current limitation:** tiny-argument checks of `expm1(1e-20)` and `log1p(1e-20)`
-on the tested Windows/.NET 10 runtime did not retain the expected tiny positive
-value. Do not assume those names guarantee cancellation-free or arbitrary-precision
-evaluation. The examples above use moderate arguments.
+Small-argument accuracy in `expm1` and `log1p` depends on the numerical
+implementation; these Double approximations do not provide certified error bounds.
 
 ## Lists, statistics, and counting
 
@@ -213,11 +211,12 @@ Recommendation: use `totient(n)` for Euler's totient; its `phi(n)` alias shares 
 golden-ratio constant. Write `phi * (n)` when you mean multiplication by that constant.
 
 Variance is **sample variance**, divided by `n-1`. Standard deviation (`stdev`,
-also `stddev`) preserves an exact result when exact inputs produce a variance with
-an exact rational square root, even outside Double's range. Non-perfect roots use
-Unverified floating-point approximations; Unverified inputs remain Unverified.
-`comb(52,5)` counts unordered
-five-card hands; `perm(10,3)` counts ordered selections without replacement.
+also `stddev`) takes its square root: recognized perfect rational roots use exact
+arithmetic; other roots use Double approximations. Unverified inputs produce
+Unverified results.
+
+`comb(52,5)` counts unordered five-card hands; `perm(10,3)` counts ordered
+selections without replacement.
 `sigma(12,2)` sums squared divisors. For sufficiently large inputs, primality
 and factorization-dependent functions may use probable-prime reasoning and return
 Unverified results rather than claiming a proof.

@@ -171,6 +171,5 @@ zero or acquire Exact status. The converter does not define persistence for the 
 `EvaluationResult` or its live configuration. See [JSON value serialization](architecture.md#json-value-serialization)
 for serializer policies, exception behavior, and input limits.
 
-The pre-v1 rename from Accuracy to Exactness also changes the serialized field name;
-old payloads are not a supported compatibility format. The flag is trusted metadata,
-not a tamper-proof certificate when crossing an application trust boundary.
+The flag is trusted metadata, not a tamper-proof certificate when crossing an
+application trust boundary.

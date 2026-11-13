@@ -59,24 +59,19 @@ Assigning to a reserved name fails with `EvaluationError.InvalidSyntax`.
 ### Incomplete assignments and launcher decoration
 
 `x =` is an incomplete assignment, not a request to evaluate `x`. It reports
-`EvaluationError.InvalidSyntax` with a missing-value message highlighting the `=`,
-whether or not `x` already exists. Parsing fails before evaluation, so no assignments
-are committed and custom functions are not executed.
+`EvaluationError.InvalidSyntax` at the `=`. Parsing failures do not execute callbacks
+or commit assignments.
 
-Completed expressions and assignments may still have trailing launcher decoration:
+With launcher trimming enabled, completed expressions and assignments can have
+trailing equals decoration:
 
 - `2 + 2 =` evaluates to `4`.
 - `x = 5 =` assigns `5` to `x`; the stored definition is `5`, without decoration.
 - `a = b = 5 =` assigns `5` to both variables.
-- `x = y =` assigns the existing value of `y` to `x`; an undefined `y` still reports
-  `UnknownConstant`, rather than inventing an assignment value.
-- `x = 5 + =` remains a syntax error: removing decoration cannot complete its value.
 
-These rules do not guess at hypothetical typos. The [normalizer](normalization.md)
-preserves the assignment operator after a lone identifier and removes other eligible
-launcher suffixes; the parser validates the remaining expression. With launcher
-trimming disabled or normalization set to null, `x = 5 =` is not accepted, while
-`x =` still reports a missing assignment value.
+The [normalizer](normalization.md) removes decoration, not assignment operators or
+syntax errors. Disable decoration with `TrimLauncherEquals = false`, or use raw
+input with `Normalization = null`.
 
 ---
 
@@ -91,10 +86,8 @@ Round 3:  c = ans + 5   => 35, and c is now 35
 ```
 
 `ans` is reserved, case-insensitively: `ans = 5` is rejected with
-`InvalidSyntax`, including in manually constructed assignment ASTs. Rejection happens
-before evaluation, so callbacks do not run and the original context is unchanged.
-Caller-supplied variables named `ans` are also rejected with `ArgumentException`
-when constructing or initializing a context, including through `with` expressions.
+`InvalidSyntax`. Context variables cannot use that name either: supplying one
+through a constructor, initializer, or `with` expression throws `ArgumentException`.
 
 To seed or replace the previous answer explicitly, use `PreviousResult`:
 
@@ -103,7 +96,7 @@ var context = EvaluationContext.Empty with { PreviousResult = new MathValue(5) }
 ```
 
 Evaluating `5` normally also advances the previous answer to `5`. A null
-`PreviousResult` leaves `ans` undefined; it never falls back to a caller variable.
+`PreviousResult` leaves `ans` undefined.
 
 ---
 

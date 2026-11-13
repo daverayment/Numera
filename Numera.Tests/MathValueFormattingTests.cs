@@ -8,6 +8,50 @@ namespace Numera.Tests;
 public sealed class MathValueFormattingTests
 {
     [TestMethod]
+    [DataRow("G0")]
+    [DataRow("g0")]
+    [DataRow("G00")]
+    public void RationalGeneralZeroPrecisionUsesDefaultPrecisionAcrossFormattingSurfaces(string format)
+    {
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, CultureInfo.GetCultureInfo("de-DE") })
+        {
+            foreach (var value in new[]
+            {
+                MathValue.FromFraction(1, 3),
+                MathValue.FromFraction(-5, 7),
+                MathValue.FromFraction(1, BigInteger.Pow(10, 400))
+            })
+            {
+                string expected = value.ToString("G", culture);
+                Assert.AreEqual(expected, value.ToString(format, culture));
+                Assert.AreEqual(expected, new EvaluationResult(value, EvaluationContext.Empty).ToString(format, culture));
+
+                var characters = new char[64];
+                Assert.IsTrue(value.TryFormat(characters, out int charsWritten, format, culture));
+                Assert.AreEqual(expected, new string(characters, 0, charsWritten));
+                Assert.IsFalse(value.TryFormat(characters.AsSpan(0, 1), out charsWritten, format, culture));
+                Assert.AreEqual(0, charsWritten);
+
+                var utf8 = new byte[128];
+                Assert.IsTrue(value.TryFormat(utf8, out int bytesWritten, format, culture));
+                Assert.AreEqual(expected, Encoding.UTF8.GetString(utf8, 0, bytesWritten));
+                Assert.IsFalse(value.TryFormat(utf8.AsSpan(0, 1), out bytesWritten, format, culture));
+                Assert.AreEqual(0, bytesWritten);
+            }
+        }
+    }
+
+    [TestMethod]
+    [DataRow("G-1")]
+    [DataRow("Gx")]
+    [DataRow("G0x")]
+    public void MalformedRationalGeneralFormatsRemainRejected(string format)
+    {
+        var value = MathValue.FromFraction(1, 3);
+        Assert.ThrowsExactly<FormatException>(() => value.ToString(format, CultureInfo.InvariantCulture));
+    }
+
+    [TestMethod]
     public void SpanFormattableWorksForIntegerDecimalAndDouble()
     {
         var intVal = new MathValue(new BigInteger(12345));

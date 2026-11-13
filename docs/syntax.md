@@ -119,20 +119,17 @@ Evaluation follows standard mathematical and scientific computing precedence (hi
 Function names are case-insensitive.
 
 ### Trigonometric Functions
-Trigonometric routines operate in radians by default, or in degrees/gradians when configured via `CalculatorOptions.AngleUnit` on a `CalculatorEngine`. Exact cardinal values after degree/gradian angle projection have special cases, without proximity-based snapping. Trigonometric results remain Unverified; a whole-number display is not an exactness guarantee.
+Trigonometric routines operate in radians by default, or in degrees/gradians when configured via `CalculatorOptions.AngleUnit` on a `CalculatorEngine`. Cardinal angles in degree/gradian mode can produce zero or whole-number results, but trigonometric results are Unverified regardless of their appearance.
 
 Radians use the numeric argument, not a symbolic identity. For example, `sin(pi)`
 can have a small nonzero residual, while `tan(pi/2)` can return a large finite
 approximation instead of a pole diagnostic. The same applies to radians obtained
-with `rad` or `grad2rad`. Small nonzero angles and values near poles are not
-snapped to cardinal values. Finite-precision projection and evaluation still
-apply in every angle mode. Exact symbolic pi support is a
+with `rad` or `grad2rad`. Angle conversion and evaluation have finite precision.
+Exact symbolic pi support is a
 [potential next step](potential-next-steps.md#exact-rational-multiples-of-pi).
 
 `sin`, `cos`, `tan`, `cot`, `sec`, and `csc` return Unverified NaN for NaN or
-positive/negative Infinity inputs in every angle mode, including infinities produced
-by expressions such as `exp(1000)`. Nonfinite arguments are not reported as poles.
-Finite-input pole and reciprocal-overflow checks remain in place.
+positive/negative Infinity arguments in every angle mode.
 
 | Function | Aliases | Description |
 | :--- | :--- | :--- |
@@ -160,9 +157,9 @@ Finite-input pole and reciprocal-overflow checks remain in place.
 | `arsinh(x)` | `asinh` | Inverse hyperbolic sine |
 | `arcosh(x)` | `acosh` | Inverse hyperbolic cosine |
 | `artanh(x)` | `atanh` | Inverse hyperbolic tangent |
-| `coth(x)` | | Hyperbolic cotangent |
+| `coth(x)` | | Hyperbolic cotangent; undefined at zero |
 | `sech(x)` | | Hyperbolic secant |
-| `csch(x)` | | Hyperbolic cosecant |
+| `csch(x)` | | Hyperbolic cosecant; undefined at zero |
 | `arcoth(x)` | `acoth` | Inverse hyperbolic cotangent |
 | `arsech(x)` | `asech` | Inverse hyperbolic secant |
 | `arcsch(x)` | `acsch` | Inverse hyperbolic cosecant |
@@ -213,7 +210,7 @@ the recognized root `sqrt(4)` is Exact. Keep exactness and display indicators se
 | `totient(n)` | `phi`, `eulerphi` | Euler's totient function $\phi(n)$ |
 
 Prefer `totient(n)` in examples and user guidance to avoid confusion with the
-golden-ratio constant `phi`. The aliases remain supported.
+golden-ratio constant `phi`.
 
 ### Special & Probability Functions
 
@@ -230,30 +227,20 @@ golden-ratio constant `phi`. The aliases remain supported.
 
 Gamma, log-Gamma, Beta, and Zeta evaluate using Double arithmetic and return
 **Unverified** approximations, even when a particular result is a whole number.
-Scaled Gamma evaluation and reflection avoid overflowing intermediate
-factors when the final answer is representable. Negative Gamma uses direct reflection
-while its positive reflected Gamma is finite, preserving ordinary-case accuracy;
-otherwise it uses logarithmic reflection to retain subnormal results. Beta combines its Lanczos terms
-instead of subtracting nearly equal log-Gamma values, including for highly unequal
-arguments: `beta(1, 1e16)` is approximately `1e-16`, not `1`.
+Their output range is Double's: overflow produces signed infinity, and very small
+results may be subnormal or round to signed zero. Use `lgamma` for the logarithmic
+magnitude of Gamma values too large to return directly.
 
-These routines do not extend Double's output range. Genuine overflow produces
-signed infinity; very small results may be subnormal or round to signed zero.
-`lgamma` can represent the logarithmic magnitude of Gamma values that are too large
-to return directly. Existing pole/domain checks still report `UndefinedMathResult`;
-Zeta's negative-even-integer zeros remain explicitly handled.
-
-Negative infinity in `gamma`, `lgamma`, or either `beta` argument reports an
-infinity-specific `UndefinedMathResult` diagnostic. Beta with positive-infinite
-arguments retains its existing NaN convention; these changes do not redefine
-infinite-input limits. NaN propagation still takes precedence over domain errors.
+Poles and invalid real-domain arguments report `UndefinedMathResult`. Negative
+infinity is invalid for `gamma`, `lgamma`, and either `beta` argument; positive-infinite
+Beta arguments produce NaN. NaN arguments propagate.
 
 ### General Math & Rounding
 
 | Function | Description |
 | :--- | :--- |
 | `abs(x)` | Absolute value |
-| `sign(x)` / `sgn(x)` | Signum (-1 for negative, 0 for zero, 1 for positive) |
+| `sign(x)` / `sgn(x)` | Signum (-1 for negative, 0 for zero, 1 for positive); NaN returns Unverified `0` |
 | `min(...values)` | Minimum value across one or more arguments (variadic) |
 | `max(...values)` | Maximum value across one or more arguments (variadic) |
 | `avg(...values)` | Arithmetic mean across one or more arguments (variadic) |

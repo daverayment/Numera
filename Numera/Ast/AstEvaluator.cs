@@ -673,12 +673,22 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                     return new MathValue(Math.Atanh(v));
 
                 case "coth":
+                    if (args[0].IsZero)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "Hyperbolic cotangent is undefined at zero."));
+                    }
                     return new MathValue(1.0 / Math.Tanh(v));
 
                 case "sech":
                     return new MathValue(1.0 / Math.Cosh(v));
 
                 case "csch":
+                    if (args[0].IsZero)
+                    {
+                        throw new ExpressionException(new EvaluationDiagnostic(
+                            EvaluationError.UndefinedMathResult, "Hyperbolic cosecant is undefined at zero."));
+                    }
                     return new MathValue(1.0 / Math.Sinh(v));
 
                 case "arcoth":

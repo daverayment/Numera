@@ -58,13 +58,12 @@ provenance: `sin(pi)` can have a small nonzero residual, and `tan(pi/2)` or
 Likewise, `floor(tan(pi/4))` operates on the approximation, not the exact identity.
 These results remain Unverified.
 
-This avoids incorrectly turning small nonzero angles into zero or rejecting
-valid values near a pole. Degrees and gradians retain special cases for exact
-cardinal values after numeric angle projection, without a tolerance; finite
-precision during projection and evaluation still applies.
+Degrees and gradians recognize cardinal values after numeric angle projection.
+Projection and evaluation have finite precision; the special-angle cases use no
+proximity tolerance.
 
-A future rational-multiple-of-pi representation could restore proven radian
+A future rational-multiple-of-pi representation could support exact radian
 identities and exact pole detection, including through variables and `ans`.
 It must distinguish symbolic `pi/2` from a nearby numeric approximation, not
-reintroduce snapping. An exact rational-angle evaluation path for degrees and
-gradians could also preserve offsets too small to survive Double projection.
+use proximity-based snapping. An exact rational-angle evaluation path for degrees
+and gradians could also preserve offsets too small to survive Double projection.

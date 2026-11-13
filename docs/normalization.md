@@ -59,11 +59,8 @@ Strips leading and trailing equals characters without disturbing equality compar
 
 > [!NOTE]
 > An equals after a lone identifier is an assignment operator, not launcher decoration.
-> `x =` reports `InvalidSyntax` at that operator whether or not `x` already exists.
-> Other eligible trailing equals are removed once, and the parser checks the remaining
-> syntax: `x = 5 + =` still fails because its value expression is incomplete. Disabling
-> `TrimLauncherEquals` (or using raw mode) disables decoration removal, not assignment
-> validation. See [Variables and Context](variables.md).
+> `x =` reports `InvalidSyntax` at the `=`. Trimming decoration does not supply missing
+> operands or complete an assignment. See [Variables and Context](variables.md).
 
 ### 2. Typographic & Unicode Sanitization
 Converts copied Unicode mathematical symbols, dashes, and Fortran/Python power operators to standard ASCII equivalents:
@@ -91,9 +88,9 @@ The culture's list separator separates function arguments. **Semicolon is also a
 In a comma-separated call, a comma that could also form valid digit grouping is rejected as ambiguous. Numera does not use function arity, later malformed groups, or evaluation results to guess what was intended. To resolve this, use semicolons, remove digit grouping, or put a space after an argument comma so it cannot group digits.
 
 Parentheses after operator keywords (`not`, `and`, `or`, `xor`, `of`) group an
-expression, not function arguments. For example, en-US `not (1,000 == 1000)`
-accepts the grouped number, including with explicit logical negation required.
-Actual function calls nested inside such groups still follow the ambiguity rules.
+expression, so en-US `not (1,000 == 1000)` contains a grouped number rather than
+function arguments. Nested function calls follow the same argument-separator rules
+as other calls.
 
 | Culture | Input | Interpretation |
 | :--- | :--- | :--- |
@@ -109,7 +106,7 @@ Actual function calls nested inside such groups still follow the ambiguity rules
 | de-DE | `max(1,234,567)` or `max(1,234,567.890)` | Invalid repeated decimal separators |
 | de-DE | `max(1, 2)` | Invalid separator: use `max(1; 2)` |
 
-Each nested call selects its own separator style. Ordinary grouping parentheses also isolate grouped literals. This is a bounded structural scan, not a second expression parser: an identifier followed by `(` is treated conservatively as a potential call, without resolving functions or variables. For a variable multiplied by a grouped literal, write `x * (1,234)` in en-US rather than the call-like `x(1,234)`.
+Each nested call selects its own separator style. Ordinary grouping parentheses also isolate grouped literals. An identifier followed by `(` is treated as a potential call during normalization, without resolving functions or variables. For a variable multiplied by a grouped literal, write `x * (1,234)` in en-US rather than the call-like `x(1,234)`.
 
 The culture pass leaves square-bracket contents unchanged, and their semicolons do not select a surrounding call's separator style. Brackets remain unsupported by the expression parser; their punctuation is reserved for future matrix syntax.
 
@@ -117,11 +114,9 @@ The culture pass leaves square-bracket contents unchanged, and their semicolons 
 
 Malformed or ambiguous localized numbers fail with `InvalidNumberFormat`; invalid or mixed argument-separator styles fail with `InvalidSyntax`. Messages explain the ambiguity or suggest the expected separator. Positions and lengths refer to the **original input**, even after earlier normalization passes changed its offsets. `TryNormalize`, `TryParse`, and `TryEvaluate` report these diagnostics; throwing APIs raise `ExpressionException`. Rejection happens before evaluation, so custom functions are not invoked.
 
-This intentionally tightens older permissive behavior: foreign decimal syntax and compact ambiguous argument commas are no longer guessed or silently stripped.
-
 ### 4. Division Colon
 Rewrites a European ratio colon to `/` only when the left side is a number (decimal, scientific such as `1e5` or `1e-5`, or radix-prefixed such as `0xFF`) or a closing `)`, and the right side is an optionally signed number or starts with `(`. The sign must touch the number, so `6 : - 2` is left unchanged. Controlled by `ReplaceDivisionColon`.
-- Culture normalization runs first, so validated localized numbers work on either side: German `1.000.000 : 2,5` becomes `1000000 / 2.5`. Malformed grouping is rejected rather than repaired. Configured number and argument separators are interpreted before division colons.
+- Operands follow the configured culture: German `1.000.000 : 2,5` becomes `1000000 / 2.5`. Configured number and argument separators take precedence over division colons.
 - `6 : 2` $\to$ `6 / 2`, `16:9` $\to$ `16/9`, `log10(100):2` $\to$ `log10(100)/2`
 - Identifiers are never guessed at, so launcher-style text is preserved: `status:200`, `pi:2`, `item1:200`. Parenthesise an identifier to opt in: `(pi):2` $\to$ `(pi)/2`.
 - Colons inside square brackets are left alone. Brackets are reserved for future syntax and are an error in expressions today.

@@ -45,15 +45,16 @@ flowchart TD
 - Arithmetic involving Rational stays in that domain, with integral results normalizing to Integer. Explicit Decimal input does not convert a Rational operand to Decimal.
 - Preserves results such as `1/3`, `(1/3)*3`, and `1/3 + 0.5` without expression expansion or replay.
 - Integer powers, including negative powers, use bounded exact fraction arithmetic. Size failures throw `CalculationLimitException`.
-- `sqrt`, `cbrt`, `root`, and `nthroot` recognize perfect fraction roots for positive integer degrees by rooting both reduced components. Domain checks use the original sign and degree, so tiny negative fractions cannot become valid even-root inputs through floating-point underflow.
+- `sqrt`, `cbrt`, `root`, and `nthroot` recognize perfect fraction roots for positive integer degrees by rooting both reduced components. Domain validation uses the original inputs before floating-point approximation.
+- Standard deviation (`stdev` / `stddev`) applies these root rules to sample variance, preserving exact perfect roots.
 
 ### 4. Double (IEEE 754 64-Bit Floating-Point)
 - Backed by hardware `System.Double`.
 - Used for transcendental functions (`sin`, `cos`, `tan`, `ln`, `exp`), roots not recognized as exact, non-integer exponents, and arithmetic mixed with supplied Double values.
 - Provides approximately 15–17 significant digits across magnitudes up to $\approx \pm 1.8 \times 10^{308}$.
 - Overflows produce `double.PositiveInfinity` or `double.NegativeInfinity`; undefined domains return `NaN` or report structured diagnostics.
-- Approximate roots retain the binary magnitude of exact inputs that would project to zero, subnormal values, or infinity before rooting. Only the final approximate root is subject to Double's output range. Standard deviation uses the same root handling but remains a Double result with Unverified exactness, even when its variance has an exact square root.
-- Negative finite bases with finite fractional power exponents report `UndefinedMathResult`. This domain check uses the original values, even when the base or exponent would overflow or underflow during Double conversion. Actual nonfinite Double exponents retain native floating-point semantics.
+- Approximate roots retain the binary magnitude of exact inputs that would project to zero, subnormal values, or infinity before rooting. Only the final approximate root is subject to Double's output range.
+- Negative finite bases with finite fractional power exponents report `UndefinedMathResult`. Power domain checks use the original values before Double conversion; nonfinite Double exponents follow native floating-point semantics.
 
 ### Preserving Inputs Before Approximation
 
@@ -61,10 +62,10 @@ Selected functions retain exact input information until floating-point approxima
 
 - `ln`, `log`/`log10`, and `log2` use scaled rational magnitudes when inputs exceed Double's range. For example, `log10(1e-400)` remains approximately `-400`, rather than treating the input as zero.
 - Near one, logarithms use the original fractional difference and compensated `log1p` evaluation. `ln(1+1e-30)` retains its small nonzero result. `logn` keeps tiny logarithms scaled through division, including when either logarithm alone would underflow. `log1p` checks the original input against its domain boundary before forming `1+x`.
-- Degree and gradian `sin`, `cos`, `tan`, `cot`, `sec`, and `csc` reduce exact inputs modulo a revolution before Double conversion. Very large whole revolutions therefore do not erase a small remaining angle. Radian reduction and supplied Double angles retain their existing behavior.
+- Degree and gradian `sin`, `cos`, `tan`, `cot`, `sec`, and `csc` reduce exact inputs modulo a revolution before Double conversion, retaining small offsets within large angles. Radian and supplied Double angles use floating-point reduction.
 - `hypot` scales exact inputs before conversion and uses the floating-point hypotenuse routine instead of directly squaring inputs. This avoids intermediate overflow/underflow, including loss of individually underflow-sized inputs whose combined result is representable.
 
-These are numerical algorithm improvements, not arbitrary-precision transcendental output or expression replay. Results remain Doubles with Unverified exactness, subject to Double's final output range. Subsequent expressions operate on the stored approximation. Increasing display precision does not recover additional calculation precision.
+These functions produce Double results with Unverified exactness, subject to Double's final output range. They do not provide arbitrary-precision transcendental output or expression replay: subsequent expressions operate on the stored approximation. Increasing display precision does not recover additional calculation precision.
 
 ---
 
@@ -126,7 +127,7 @@ both types, even for Unverified Rational storage; they do not project Integer, D
 or Double values into fractions. Use the exact-fraction APIs for representation-independent
 access subject to the exactness requirement.
 
-For callers who do not need storage details, `MathValue.ExactFraction` and `EvaluationResult.ExactFraction` return a nullable named tuple `(BigInteger Numerator, BigInteger Denominator)` in lowest terms. `GetExactFraction()` returns the same tuple or throws `InvalidOperationException` when a finite Exact value is unavailable. Thus `1/3 + 2/3` exposes `(1, 1)` without requiring a Rational representation. The strict Rational-only storage getters remain unchanged. Caller-asserted Exact Doubles expose their stored binary fraction; ordinary Doubles and Unverified values do not qualify.
+For callers who do not need storage details, `MathValue.ExactFraction` and `EvaluationResult.ExactFraction` return a nullable named tuple `(BigInteger Numerator, BigInteger Denominator)` in lowest terms. `GetExactFraction()` returns the same tuple or throws `InvalidOperationException` when a finite Exact value is unavailable. Thus `1/3 + 2/3` exposes `(1, 1)` without requiring a Rational representation. Caller-asserted Exact Doubles expose their stored binary fraction; ordinary Doubles and Unverified values do not qualify.
 
 Representation selection is centralized after bounded fraction arithmetic; Decimal-domain operations do not use rounded native Decimal arithmetic. Exact Decimal conversion work also obeys intermediate limits. Numeric rounding helpers retain the input's exact domain, while boolean, sign, bitwise, and number-theory results use their integral result representations. Recognized perfect roots of Decimal inputs retain Decimal when exactly representable rather than becoming approximate solely because the input was stored as Decimal. Double inputs remain approximate through root evaluation, and recognized roots of Unverified inputs do not acquire Exact status.
 
@@ -181,10 +182,10 @@ The comparer includes:
 - Context variables and assignments by contents and order, not collection identity.
   Variable names and original definition text are ordinal and case-sensitive, even
   though evaluation looks up names case-insensitively.
-- Previous results and expressions, plus variable expressions. ASTs retain their
-  existing structural equality rules, which ignore source spans and compare numeric
-  literals numerically. Original variable definition text is compared separately.
-- Options using existing record equality. Custom-function collections retain identity
+- Previous results and expressions, plus variable expressions. AST structural
+	equality ignores source spans and compares numeric literals numerically.
+  Original variable definition text is compared separately.
+- Options using record equality. Custom-function collections use identity
   equality; callbacks are not executed or compared for behavioral equivalence.
 
 Default-initialized results can be compared and hashed, but this does not make their
@@ -197,8 +198,6 @@ null throws `ArgumentNullException` for `context`. Use `EvaluationContext.Empty`
 when no session state is needed. Optional null assignments become an empty
 collection, and null options retain the normal defaults. Construction stores
 the supplied context unchanged; it does not update variables or `ans`.
-A failed `TryEvaluate` still returns a default result that must not be used as a
-successful evaluation.
 
 Strongly typed comparisons support both results and `MathValue`. Boxed equality remains
 same-type: a boxed result is not equal to a boxed `MathValue`. Non-generic `IComparable`
@@ -242,23 +241,20 @@ one. `WithOptions(options)` replaces the complete configuration instead of mergi
 in the example, `replacement` uses `common`'s culture, not the German engine's culture.
 Both overloads validate the chosen configuration before returning a new engine.
 
-Construction remains available as `new CalculatorEngine()`, `new CalculatorEngine(options)`,
+Construct an engine with `new CalculatorEngine()`, `new CalculatorEngine(options)`,
 or `new CalculatorEngine(options => options with { ... })`. `ForCulture(culture)` and
 `ForCurrentCulture()` each accept an optional transformation starting from defaults for
 the selected culture. The current culture is captured before a transformation runs.
-Static `CalculatorEngine.WithOptions` is replaced by the instance method; use the
-options constructor when creating an engine from scratch.
 
 Required configuration arguments are strict: explicit null options, required transform
 delegates, or required `Culture`, `CustomFunctions`, and `ResultFormat` members throw
 `ArgumentNullException`. A supplied transform returning null throws `ArgumentException`
-for `configure`, rather than silently reverting to defaults. Out-of-range settings still
-throw `ArgumentOutOfRangeException`, and exceptions from the caller's transform propagate.
+for `configure`. Out-of-range settings throw `ArgumentOutOfRangeException`, and
+exceptions from the caller's transform propagate.
 Use the parameterless constructor for defaults instead of passing null.
 
-Null is still meaningful where explicitly optional: the culture factories' nullable
-`configure` parameter means no customization, and `Normalization = null` intentionally
-selects raw input. These are not invalid configurations. Construction and derivation do
+For optional settings, the culture factories' null `configure` parameter means no
+customization, and `Normalization = null` selects raw input. Construction and derivation do
 not alter per-session variables or `ans`; those remain in `EvaluationContext`.
 
 ---
@@ -273,7 +269,7 @@ not alter per-session variables or `ans`; those remain in `EvaluationContext`.
 
 The default primary display uses at most 24 significant digits with culture-aware digit grouping enabled, stripping insignificant trailing zeros. Automatic notation selection uses the rounded base-10 exponent: fixed notation applies from -24 through 23 inclusive (`MaxFixedDigits = 24`); other magnitudes transition to scientific notation. This threshold governs magnitude, not the total number of fractional digits. `ResultFormatOptions` configures this independently of arithmetic.
 
-Scientific result displays default to compact lowercase e-notation (`Style = ExpressionFormatStyle.NormalizedAscii`), for example `1e-400`. Set `ExponentMarker = ExponentMarker.Uppercase` for `1E-400`. This setting affects only the numeric exponent marker, not identifiers, expression formatting, or machine-readable text. Explicit `TypographicUnicode` and `MathJax` result styles retain their mathematical exponent notation and ignore marker casing. Expression formatting still defaults to typographic Unicode; its normalized ASCII style retains uppercase E.
+Scientific result displays default to compact lowercase e-notation (`Style = ExpressionFormatStyle.NormalizedAscii`), for example `1e-400`. Set `ExponentMarker = ExponentMarker.Uppercase` for `1E-400`. This setting affects only the numeric exponent marker, not identifiers, expression formatting, or machine-readable text. Explicit `TypographicUnicode` and `MathJax` result styles use mathematical exponent notation and ignore marker casing. Expression formatting defaults to typographic Unicode; its normalized ASCII style uses uppercase E.
 
 Digit grouping follows the culture's complete group-size sequence, including variable-sized groups and a terminal zero that stops further grouping. There is no character-output ceiling: signs, separators, exponents, and place-holding zeros can make a display longer than its significant-digit budget. Exact and radix alternatives remain available even when impractical to show inline. See [representation lengths](#representation-lengths).
 
@@ -293,8 +289,7 @@ For finite values, `MachineReadable` / `ToInvariantExpression()` preserve the nu
 
 `MathValue` registers `MathValueJsonConverter` automatically for System.Text.Json.
 Ordinary serialization uses the same canonical object schema as `MathValue.Serialize()`;
-both routes share representation selection and validation rather than enumerating the
-public storage getters:
+both routes share representation selection and validation:
 
 ```csharp
 var value = MathValue.FromFraction(1, 3).WithExactness(CalculationExactness.Unverified);
@@ -308,15 +303,15 @@ and dictionary values, with reflection-based or source-generated serializer meta
 `MathValue?` supports JSON null; a non-nullable `MathValue` rejects it rather than
 silently producing default zero. Numeric strings, including nonfinite Double tokens,
 remain invariant. Serializer naming policies and enum converters do not change the
-canonical fields inside the value object; writer indentation still applies.
+canonical fields inside the value object; writer indentation applies.
 
 Invalid JSON or invalid value metadata throws `JsonException`, with the original
 validation exception retained as its cause where applicable. Calculation-limit violations
 remain `CalculationLimitException`. Converter reads enforce the hard numeric ceilings
 and at most 25,000 UTF-8 bytes per value object, excluding surrounding whitespace; this
 does not limit the enclosing history record's size. The explicit `MathValue.Deserialize`
-helper retains its existing exception behavior, 25,000-character input limit, and
-`maxIntegerBits` parameter for callers imposing a stricter numeric limit.
+helper has a 25,000-character input limit and accepts a `maxIntegerBits` parameter
+for callers imposing a stricter numeric limit.
 
 The converter defines persistence for numbers, not entire evaluation results, formatted
 snapshots, engine options, or sessions. Select the expression and metadata your application
@@ -393,13 +388,13 @@ Passing a result preserves its assignment metadata and prepares the assignment s
 in the selected culture. Passing `.Value` formats only the number, without assignments.
 Neither route changes the source value, its exactness, or its captured settings.
 
-`AssignmentSummary` is prepared using the selected culture and native value formatting, including existing definition text. It is null when there are no assignments. Its text, like the numeric presentations, is unaffected by subsequent current-culture changes.
+`AssignmentSummary` is prepared using the selected culture, native value formatting, and stored definition text. It is null when there are no assignments. Its text, like the numeric presentations, is unaffected by subsequent current-culture changes.
 
-Formatting does not re-evaluate the calculation. Invalid options still throw argument exceptions at the formatting call; numerical component and formatting-work safety bounds remain in force. `TryEvaluate` reports evaluation failures only. There is no separate formatting-diagnostic model or character-limit failure path.
+Formatting does not re-evaluate the calculation. Invalid options throw argument exceptions at the formatting call, and numerical work is subject to safety limits. `TryEvaluate` reports evaluation failures, not formatting failures.
 
 ### Representation Lengths
 
-**24 significant digits is still the default, not a 24-character budget.** Most answers are short, but leading zeros and punctuation need space too. Automatic notation is enough for many calculator UIs; a strict-width field still needs an application decision when the actual text is longer.
+**24 significant digits is the default, not a 24-character budget.** Most answers are short, but leading zeros and punctuation need space too. Automatic notation is enough for many calculator UIs; a strict-width field needs an application decision when the actual text is longer.
 
 All counts below are UTF-16 code units (`string.Length`), not pixels, graphemes, or UTF-8 bytes. Numeric bounds assume values within the current hard limit of 16,384 absolute-magnitude bits per integer or reduced fraction component. Stricter engine limits can reduce them. Explicit .NET format strings are a separate surface from primary-display options.
 
@@ -524,11 +519,9 @@ always use parenthesized reduced slash fractions, independent of `MaxFixedDigits
 Double NumberNodes use their exact stored dyadic fractions or integers, rather than
 decimal strings that an exact-decimal parser would interpret differently.
 
-Typographic and MathJax styles remain presentation formats. Their scientific
+Typographic and MathJax styles are presentation formats. Their scientific
 Integer, Decimal, and Rational displays retain the default 24-significant-digit
 precision; Double nodes retain native general-format precision and notation.
-`ResultFormatOptions` still defaults to 24 significant digits and a fixed-notation
-threshold of 24. Applications may customize their own display budgets independently.
 
 Both `Calculator.FormatExpression(string, options, context)` and the corresponding engine
 method accept an optional context for identifier recognition during parsing. Variables
@@ -544,23 +537,18 @@ string formula = Calculator.FormatExpression("x+ans", ExpressionFormatOptions.As
 // "x + ans", not "7 + 11" or "18".
 ```
 
-Assignments have lower precedence than arithmetic, comparisons, and logical operators. Renderers preserve grouping around nested assignments, including function arguments, while leaving right-associative chains such as `a = b = 2` unwrapped. Grouping also keeps `(10% of 200)x` distinct from `10% of 200x`, and negated comparisons retain explicit parentheses for strict logical-negation parsing. MathJax fraction and root structures provide their own visual grouping.
+Renderers preserve operator precedence and syntactic boundaries, including nested
+assignments, percentage bases, and negated comparisons. Right-associative assignment
+chains such as `a = b = 2` need no extra grouping.
 
-MathJax also groups stored negative numeric literals when used as power bases or
-under unary signs and postfix operators, including negative rational and scientific
-representations. For example, a stored `-5` squared renders as `(-5)^{2}`, not
-`-5^{2}`. Stored rational power bases are grouped regardless of sign, matching
-division ASTs: a stored `1/2` squared renders as `\left(\frac{1}{2}\right)^{2}`.
-Inverse-trigonometric short and long names share standard commands:
-`asin`/`arcsin` render with `\arcsin`, and likewise for cosine and tangent.
+Numeric addition and multiplication are not reassociated: `a + (b + c)` and
+`a * (b * c)` retain their grouping. This matters for rounding, calculation limits,
+and percentage semantics: `200 + (10 + 5%)` is `210.5`, while `200 + 10 + 5%` is `220.5`.
 
-Both expression formatters retain right-hand grouping for nested addition and
-multiplication: `a + (b + c)` and `a * (b * c)` are not flattened into running
-left-associated chains. Regrouping can change percentage markup, Double rounding,
-overflow or underflow, and whether intermediate values exceed calculation limits.
-For example, `200 + (10 + 5%)` is `210.5`, while `200 + 10 + 5%` is `220.5`.
-Ordinary left-associated chains remain uncluttered, and same-operator logical
-chains can still omit redundant grouping without changing short-circuit order.
+MathJax uses fractions and roots for visual grouping, with parentheses where needed
+for signed operands or fractional power bases, such as `\left(\frac{1}{2}\right)^{2}`.
+Inverse-trigonometric aliases use standard commands: `asin` and `arcsin` both render
+with `\arcsin`, and likewise for cosine and tangent.
 
 Re-evaluate the ASCII preset's invariant text in raw mode (`Normalization = null`),
 with appropriate parser options, limits, and variable/function bindings. Presentation
@@ -592,5 +580,5 @@ Numera separates point-in-time calculation state from caller-driven workflow pol
   Its `HasAssignments` is false, `SingleAssignedVariable` is null, and
   `ReferencedVariables` and `VariableReferences` are empty. These mean no recorded
   metadata, not successful calculation. Always check the boolean return and use the
-  diagnostic on failure; no replacement context or assignment collection is created.
+  diagnostic on failure; a default result has no usable evaluation context.
 - **Caller-Controlled Replay & Reactive Recalculation**: By preserving canonical ASTs on variables and context transitions, callers (REPLs, spreadsheet engines, UI dependency graphs) can implement topological re-evaluation and history replay without Numera forcing a heavyweight runtime state machine.
