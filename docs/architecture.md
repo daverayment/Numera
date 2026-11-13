@@ -546,6 +546,14 @@ string formula = Calculator.FormatExpression("x+ans", ExpressionFormatOptions.As
 
 Assignments have lower precedence than arithmetic, comparisons, and logical operators. Renderers preserve grouping around nested assignments, including function arguments, while leaving right-associative chains such as `a = b = 2` unwrapped. Grouping also keeps `(10% of 200)x` distinct from `10% of 200x`, and negated comparisons retain explicit parentheses for strict logical-negation parsing. MathJax fraction and root structures provide their own visual grouping.
 
+Both expression formatters retain right-hand grouping for nested addition and
+multiplication: `a + (b + c)` and `a * (b * c)` are not flattened into running
+left-associated chains. Regrouping can change percentage markup, Double rounding,
+overflow or underflow, and whether intermediate values exceed calculation limits.
+For example, `200 + (10 + 5%)` is `210.5`, while `200 + 10 + 5%` is `220.5`.
+Ordinary left-associated chains remain uncluttered, and same-operator logical
+chains can still omit redundant grouping without changing short-circuit order.
+
 Re-evaluate the ASCII preset's invariant text in raw mode (`Normalization = null`),
 with appropriate parser options, limits, and variable/function bindings. Presentation
 styles and customized non-ASCII symbols are not guaranteed parser input. Formatting

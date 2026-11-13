@@ -396,11 +396,11 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
                 return !isRight;
             }
 
-            // At equal precedence, right operand of binary operator defaults to parentheses
-            // unless the child is a binary node with the same associative operator.
+            // At equal precedence, preserve right grouping unless the same logical
+            // operator can be safely regrouped.
             if (isRight && parent is BinaryNode parentBin)
             {
-                if (child is BinaryNode childBin && childBin.Op == parentBin.Op && IsAssociative(parentBin.Op))
+                if (child is BinaryNode childBin && childBin.Op == parentBin.Op && CanRegroup(parentBin.Op))
                 {
                     return false;
                 }
@@ -430,9 +430,9 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
         return false;
     }
 
-    private static bool IsAssociative(BinaryOperator op) => op switch
+    // Numeric regrouping can change percentages, rounding, or intermediate limits.
+    private static bool CanRegroup(BinaryOperator op) => op switch
     {
-        BinaryOperator.Add or BinaryOperator.Multiply or
         BinaryOperator.LogicalAnd or BinaryOperator.LogicalOr or BinaryOperator.LogicalXor => true,
         _ => false,
     };

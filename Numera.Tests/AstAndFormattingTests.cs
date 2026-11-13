@@ -583,12 +583,12 @@ public sealed class AstAndFormattingTests
         string shiftSh = Calculator.FormatExpression("2 << (3 << 4)", ExpressionFormatOptions.LaTeX);
         Assert.AreEqual(@"2 \ll (3 \ll 4)", shiftSh);
 
-        // Associative operators drop parens on the right: 2 + (3 + 4) -> 2 + 3 + 4, 2 * (3 * 4) -> 2 * 3 * 4
+        // Numeric operators retain right grouping even when these operands are exact.
         string addAdd = Calculator.FormatExpression("2 + (3 + 4)", ExpressionFormatOptions.Typographic);
-        Assert.AreEqual("2 + 3 + 4", addAdd);
+        Assert.AreEqual("2 + (3 + 4)", addAdd);
 
         string mulMul = Calculator.FormatExpression("2 * (3 * 4)", ExpressionFormatOptions.Typographic);
-        Assert.AreEqual("2 × 3 × 4", mulMul);
+        Assert.AreEqual("2 × (3 × 4)", mulMul);
 
         // Unary right operand parenthesized: 2 - (-3) -> 2 - (-3)
         string subNeg = Calculator.FormatExpression("2 - (-3)", ExpressionFormatOptions.LaTeX);

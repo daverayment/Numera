@@ -222,4 +222,150 @@ public sealed class ExpressionRoundTripTests
         Assert.AreEqual(original.Value, restored.Value);
         Assert.AreEqual(original.Context.Variables["x"].Value, restored.Context.Variables["x"].Value);
     }
+
+    [TestMethod]
+    [DataRow("a + (b + c)", "a + (b + c)", "a + (b + c)", "a + (b + c)")]
+    [DataRow("a * (b * c)", "a * (b * c)", "a \u00D7 (b \u00D7 c)", @"a \cdot (b \cdot c)")]
+    [DataRow("2(3x)", "2 (3 x)", "2 (3 x)", "2 (3 x)")]
+    [DataRow("2(3*x)", "2 (3 * x)", "2 (3 \u00D7 x)", @"2 (3 \cdot x)")]
+    [DataRow("a + b + c", "a + b + c", "a + b + c", "a + b + c")]
+    [DataRow("a * b * c", "a * b * c", "a \u00D7 b \u00D7 c", @"a \cdot b \cdot c")]
+    [DataRow("a && (b && c)", "a && b && c", "a && b && c", @"a \land b \land c")]
+    public void NumericRightGroupingAndUnclutteredChainsAreConsistentAcrossStyles(
+        string expression, string ascii, string typographic, string latex)
+    {
+        var context = new EvaluationContext([
+            new Variable("a", new MathValue(12)),
+            new Variable("b", new MathValue(4)),
+            new Variable("c", new MathValue(2)),
+            new Variable("x", new MathValue(5)),
+        ]);
+        Assert.AreEqual(ascii, Engine.FormatExpression(expression, ExpressionFormatOptions.Ascii, context));
+        Assert.AreEqual(typographic, Engine.FormatExpression(expression, ExpressionFormatOptions.Typographic, context));
+        Assert.AreEqual(latex, Engine.FormatExpression(expression, ExpressionFormatOptions.LaTeX, context));
+        Assert.AreEqual(Engine.Evaluate(expression, context).Value, Engine.Evaluate(ascii, context).Value);
+    }
+
+    [TestMethod]
+    [DataRow("200 + (10 + 5%)", "210.5")]
+    [DataRow("100 + (10% + 20%)", "100.3")]
+    [DataRow("10% + (20% + 30%)", "0.6")]
+    [DataRow("-10% + (20% + 30%)", "0.4")]
+    [DataRow("200 + (10 + -5%)", "209.5")]
+    [DataRow("200 + (10 + 5% + 5%)", "211.025")]
+    [DataRow("100 + (20 + (10 + 5%))", "130.5")]
+    [DataRow("200 * (10% + 20%)", "60")]
+    [DataRow("100 + 10% + 20%", "132")]
+    [DataRow("x = 200 + (10 + 5%)", "210.5")]
+    public void PercentageGroupingPreservesValuesAndAssignments(string expression, string expected)
+    {
+        var tree = Engine.Parse(expression);
+        var original = Engine.Evaluate(tree);
+        Assert.AreEqual(new MathValue(decimal.Parse(expected, CultureInfo.InvariantCulture)), original.Value);
+        string text = Engine.FormatExpression(tree, ExpressionFormatOptions.Ascii);
+        var restoredTree = Engine.Parse(text);
+        Assert.AreEqual(tree, restoredTree);
+        var restored = Engine.Evaluate(restoredTree);
+        Assert.AreEqual(original.Value, restored.Value);
+        Assert.AreEqual(CalculationExactness.Exact, restored.Exactness);
+        Assert.AreEqual(original.AssignedVariables.Count, restored.AssignedVariables.Count);
+        foreach (var assignment in original.AssignedVariables)
+        {
+            Assert.AreEqual(assignment.Value, restored.Context.Variables[assignment.Name].Value);
+        }
+    }
+
+    [TestMethod]
+    [DataRow("a + (b + c)", "a + b + c", 1e16, -1e16, 1.0, 1.0)]
+    [DataRow("a * (b * c)", "a * b * c", 1e308, 1e308, 1e-308, double.PositiveInfinity)]
+    [DataRow("a * (b * c)", "a * b * c", 1e-308, 1e-308, 1e308, 0.0)]
+    public void SuppliedDoubleBindingsRetainRoundingOverflowAndUnderflowBehavior(
+        string expression, string regroupedExpression, double a, double b, double c, double regroupedValue)
+    {
+        var context = new EvaluationContext([
+            new Variable("a", new MathValue(a)),
+            new Variable("b", new MathValue(b)),
+            new Variable("c", new MathValue(c)),
+        ]);
+        var original = Engine.Evaluate(expression, context);
+        Assert.IsTrue(double.IsFinite(original.DoubleValue));
+
+        var regrouped = Engine.Evaluate(regroupedExpression, context);
+        Assert.AreEqual(regroupedValue, regrouped.DoubleValue);
+        Assert.AreNotEqual(original.Value, regrouped.Value);
+
+        string text = Engine.FormatExpression(expression, ExpressionFormatOptions.Ascii, context);
+        Assert.AreEqual(expression, text);
+
+        var restored = Engine.Evaluate(text, context);
+        Assert.AreEqual(original.Value, restored.Value);
+        Assert.AreEqual(CalculationExactness.Unverified, restored.Exactness);
+    }
+
+    [TestMethod]
+    [DataRow(BinaryOperator.Add, true)]
+    [DataRow(BinaryOperator.Add, false)]
+    [DataRow(BinaryOperator.Multiply, true)]
+    [DataRow(BinaryOperator.Multiply, false)]
+    public void RightGroupingPreservesIntermediateLimitSuccessAndFailure(BinaryOperator operation, bool groupedSucceeds)
+    {
+        var limited = new CalculatorEngine(Engine.Options with { MaxIntegerBits = 7 });
+        MathValue[] values;
+        string symbol;
+        if (operation == BinaryOperator.Add)
+        {
+            symbol = "+";
+            if (groupedSucceeds)
+            {
+                values = [new MathValue(127), new MathValue(1), new MathValue(-1)];
+            }
+            else
+            {
+                values = [new MathValue(-127), new MathValue(127), new MathValue(1)];
+            }
+        }
+        else if (operation == BinaryOperator.Multiply)
+        {
+            symbol = "*";
+            if (groupedSucceeds)
+            {
+                values = [new MathValue(127), new MathValue(127), MathValue.FromFraction(1, 127)];
+            }
+            else
+            {
+                values = [MathValue.FromFraction(1, 127), new MathValue(127), new MathValue(127)];
+            }
+        }
+        else
+        {
+            throw new ArgumentOutOfRangeException(nameof(operation));
+        }
+
+        var context = new EvaluationContext([
+            new Variable("a", values[0]),
+            new Variable("b", values[1]),
+            new Variable("c", values[2]),
+        ]);
+        string expression = $"a {symbol} (b {symbol} c)";
+        string text = limited.FormatExpression(expression, ExpressionFormatOptions.Ascii, context);
+        Assert.AreEqual(expression, text);
+        Assert.AreEqual(groupedSucceeds, limited.TryEvaluate(expression, out var original, out var originalDiagnostic, context));
+        Assert.AreEqual(groupedSucceeds, limited.TryEvaluate(text, out var restored, out var restoredDiagnostic, context));
+        Assert.AreEqual(!groupedSucceeds, limited.TryEvaluate($"a {symbol} b {symbol} c", out _, out var regroupedDiagnostic, context));
+
+        if (groupedSucceeds)
+        {
+            Assert.AreEqual(new MathValue(127), original.Value);
+            Assert.AreEqual(original.Value, restored.Value);
+            Assert.IsNotNull(regroupedDiagnostic);
+            Assert.AreEqual(EvaluationError.LimitExceeded, regroupedDiagnostic.Code);
+        }
+        else
+        {
+            Assert.IsNotNull(originalDiagnostic);
+            Assert.IsNotNull(restoredDiagnostic);
+            Assert.AreEqual(EvaluationError.LimitExceeded, originalDiagnostic.Code);
+            Assert.AreEqual(originalDiagnostic.Code, restoredDiagnostic.Code);
+        }
+    }
 }
