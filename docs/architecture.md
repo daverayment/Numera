@@ -192,6 +192,14 @@ missing context or assignment collection usable. Content equality distinguishes 
 state from present, empty state. Neither comparer supplies persistent identifiers or
 guarantees identical serialized bytes. Serialization remains a separate contract.
 
+When constructing an `EvaluationResult` explicitly, supply a non-null context;
+null throws `ArgumentNullException` for `context`. Use `EvaluationContext.Empty`
+when no session state is needed. Optional null assignments become an empty
+collection, and null options retain the normal defaults. Construction stores
+the supplied context unchanged; it does not update variables or `ans`.
+A failed `TryEvaluate` still returns a default result that must not be used as a
+successful evaluation.
+
 Strongly typed comparisons support both results and `MathValue`. Boxed equality remains
 same-type: a boxed result is not equal to a boxed `MathValue`. Non-generic `IComparable`
 likewise accepts only its own type (and `null`, which sorts before an instance).

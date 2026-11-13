@@ -9,6 +9,40 @@ public sealed class EvaluationResultEqualityTests
     private static IEqualityComparer<EvaluationResult> Content => EvaluationResultComparers.Content;
 
     [TestMethod]
+    public void ConstructorRejectsNullContext()
+    {
+        var exception = Assert.ThrowsExactly<ArgumentNullException>(() => new EvaluationResult(new MathValue(7), null!));
+        Assert.AreEqual("context", exception.ParamName);
+    }
+
+    [TestMethod]
+    public void ConstructorPreservesContextAndAllowsNullOptionalMembers()
+    {
+        var context = new EvaluationContext([new Variable("x", new MathValue(2))], new MathValue(3));
+        var result = new EvaluationResult(new MathValue(7), context, assignedVariables: null, options: null);
+        Assert.AreEqual(new MathValue(7), result.Value);
+        Assert.AreSame(context, result.Context);
+        Assert.AreSame(VariableCollection.Empty, result.AssignedVariables);
+        Assert.IsNull(result.Options);
+        Assert.IsFalse(result.HasAssignments);
+        Assert.IsNull(result.SingleAssignedVariable);
+        Assert.HasCount(0, result.ReferencedVariables);
+        Assert.HasCount(0, result.VariableReferences);
+        Assert.AreEqual(new MathValue(3), context.PreviousResult);
+
+        var combined = result + new MathValue(1);
+        Assert.AreEqual(new MathValue(8), combined.Value);
+        Assert.AreEqual(new MathValue(8), combined.Context.PreviousResult);
+        Assert.AreEqual(new MathValue(2), combined.Context.Variables["x"].Value);
+        Assert.AreEqual(new MathValue(3), context.PreviousResult);
+
+        var emptyContextResult = new EvaluationResult(new MathValue(7), EvaluationContext.Empty);
+        Assert.AreSame(EvaluationContext.Empty, emptyContextResult.Context);
+        Assert.IsFalse(emptyContextResult.HasAssignments);
+        Assert.HasCount(0, emptyContextResult.ReferencedVariables);
+    }
+
+    [TestMethod]
     [DataRow("0", "0.00")]
     [DataRow("1/2", "0.5")]
     [DataRow("2+3", "x=5")]

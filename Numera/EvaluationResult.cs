@@ -150,12 +150,15 @@ public readonly record struct EvaluationResult :
     /// limits. It does not update the context's variables or <c>ans</c>; supply a context
     /// that already represents the state you want.
     /// </remarks>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="context"/>
+    /// is null.</exception>
     public EvaluationResult(
         MathValue value,
         EvaluationContext context,
         VariableCollection? assignedVariables = null,
         CalculatorOptions? options = null)
     {
+        ArgumentNullException.ThrowIfNull(context);
         Value = value;
         Context = context;
         AssignedVariables = assignedVariables ?? VariableCollection.Empty;
