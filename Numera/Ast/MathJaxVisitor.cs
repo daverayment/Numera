@@ -357,17 +357,19 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
 
     private string Parenthesize(string text, ExpressionNode child, ExpressionNode parent, bool isRight)
     {
-        // A rational's negative sign sits inside its fraction markup.
-        if (child is NumberNode number &&
-            (text.StartsWith('-') ||
-             (number.Value.Kind == MathValue.DataType.Rational && number.Value.Numerator.Sign < 0)))
+        if (child is NumberNode number)
         {
-            if (parent is BinaryNode { Op: BinaryOperator.Power } && !isRight)
+            // A rational's negative sign sits inside its fraction markup.
+            bool isSignedLiteral = text.StartsWith('-') ||
+                (number.Value.Kind == MathValue.DataType.Rational && number.Value.Numerator.Sign < 0);
+            if (parent is BinaryNode { Op: BinaryOperator.Power } && !isRight &&
+                (isSignedLiteral || number.Value.Kind == MathValue.DataType.Rational))
             {
                 return Wrap(text);
             }
 
-            if (parent is UnaryNode { Op: UnaryOperator.Negate or UnaryOperator.Positive or UnaryOperator.Factorial or UnaryOperator.Percent })
+            if (isSignedLiteral &&
+                parent is UnaryNode { Op: UnaryOperator.Negate or UnaryOperator.Positive or UnaryOperator.Factorial or UnaryOperator.Percent })
             {
                 return Wrap(text);
             }

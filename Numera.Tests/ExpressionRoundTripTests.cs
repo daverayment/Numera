@@ -197,6 +197,32 @@ public sealed class ExpressionRoundTripTests
     }
 
     [TestMethod]
+    [DataRow(1, 2)]
+    [DataRow(1, 3)]
+    [DataRow(-1, 2)]
+    public void MathJaxRationalPowerBasesMatchDivisionTreeGrouping(int numerator, int denominator)
+    {
+        var literal = new NumberNode(MathValue.FromFraction(numerator, denominator));
+        var division = new BinaryNode(BinaryOperator.Divide,
+            new NumberNode(new MathValue(numerator)), new NumberNode(new MathValue(denominator)));
+        var two = new NumberNode(new MathValue(2));
+        string fraction = $@"\frac{{{numerator}}}{{{denominator}}}";
+        string expected = $@"\left({fraction}\right)^{{2}}";
+
+        Assert.AreEqual(expected, Engine.FormatExpression(
+            new BinaryNode(BinaryOperator.Power, literal, two), ExpressionFormatOptions.LaTeX));
+        Assert.AreEqual(expected, Engine.FormatExpression(
+            new BinaryNode(BinaryOperator.Power, division, two), ExpressionFormatOptions.LaTeX));
+        Assert.AreEqual($"2^{{{fraction}}}", Engine.FormatExpression(
+            new BinaryNode(BinaryOperator.Power, two, literal), ExpressionFormatOptions.LaTeX));
+        if (numerator > 0)
+        {
+            Assert.AreEqual($@"{fraction}\%", Engine.FormatExpression(
+                new UnaryNode(UnaryOperator.Percent, literal), ExpressionFormatOptions.LaTeX));
+        }
+    }
+
+    [TestMethod]
     [DataRow("asin", "arcsin", @"\arcsin(0.5)")]
     [DataRow("acos", "arccos", @"\arccos(0.5)")]
     [DataRow("atan", "arctan", @"\arctan(0.5)")]

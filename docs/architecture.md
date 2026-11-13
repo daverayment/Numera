@@ -549,7 +549,9 @@ Assignments have lower precedence than arithmetic, comparisons, and logical oper
 MathJax also groups stored negative numeric literals when used as power bases or
 under unary signs and postfix operators, including negative rational and scientific
 representations. For example, a stored `-5` squared renders as `(-5)^{2}`, not
-`-5^{2}`. Inverse-trigonometric short and long names share standard commands:
+`-5^{2}`. Stored rational power bases are grouped regardless of sign, matching
+division ASTs: a stored `1/2` squared renders as `\left(\frac{1}{2}\right)^{2}`.
+Inverse-trigonometric short and long names share standard commands:
 `asin`/`arcsin` render with `\arcsin`, and likewise for cosine and tangent.
 
 Both expression formatters retain right-hand grouping for nested addition and
