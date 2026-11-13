@@ -209,6 +209,9 @@ evaluation. The examples above use moderate arguments.
 | `sigma(12,2)` | `210` | Exact |
 | `totient(12)` | `4` | Exact |
 
+Recommendation: use `totient(n)` for Euler's totient; its `phi(n)` alias shares a name with the
+golden-ratio constant. Write `phi * (n)` when you mean multiplication by that constant.
+
 Variance is **sample variance**, divided by `n-1`. `comb(52,5)` counts unordered
 five-card hands; `perm(10,3)` counts ordered selections without replacement.
 `sigma(12,2)` sums squared divisors. For sufficiently large inputs, primality

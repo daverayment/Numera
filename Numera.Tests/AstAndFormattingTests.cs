@@ -281,6 +281,55 @@ public sealed class AstAndFormattingTests
     }
 
     [TestMethod]
+    [DataRow("phi(12)")]
+    [DataRow("phi (12)")]
+    [DataRow("PHI(12)")]
+    [DataRow("totient(12)")]
+    [DataRow("eulerphi(12)")]
+    public void PhiFunctionCallsResolveToTotientRatherThanConstantProducts(string expression)
+    {
+        var node = Calculator.Parse(expression);
+        Assert.IsInstanceOfType<FunctionCallNode>(node);
+
+        var result = Calculator.Evaluate(node);
+        Assert.AreEqual(new MathValue(4), result.Value);
+        Assert.AreEqual(CalculationExactness.Exact, result.Exactness);
+    }
+
+    [TestMethod]
+    [DataRow("phi * (12)", false)]
+    [DataRow("PHI * (12)", false)]
+    [DataRow("\u03C6(12)", true)]
+    [DataRow("\u03D5(12)", true)]
+    [DataRow("\u03A6(12)", true)]
+    public void PhiConstantProductsRemainDistinctFromTotientCalls(string expression, bool implicitProduct)
+    {
+        var node = Calculator.Parse(expression);
+        Assert.IsInstanceOfType<BinaryNode>(node);
+
+        var product = (BinaryNode)node;
+        Assert.AreEqual(BinaryOperator.Multiply, product.Op);
+        Assert.AreEqual(implicitProduct, product.IsImplicit);
+        Assert.IsInstanceOfType<IdentifierNode>(product.Left);
+        Assert.AreEqual(ConstantKind.Phi, ((IdentifierNode)product.Left).Constant);
+
+        var result = Calculator.Evaluate(node);
+        Assert.AreEqual(Calculator.Evaluate("phi * 12").Value, result.Value);
+        Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
+    }
+
+    [TestMethod]
+    public void DisablingImplicitMultiplicationPreservesExplicitPhiMeanings()
+    {
+        var engine = new CalculatorEngine(new CalculatorOptions { AllowImplicitMultiplication = false });
+        Assert.AreEqual(new MathValue(4), engine.Evaluate("phi(12)").Value);
+        Assert.AreEqual(Calculator.Evaluate("phi * 12").Value, engine.Evaluate("phi * (12)").Value);
+        Assert.IsFalse(engine.TryEvaluate("\u03C6(12)", out _, out var diagnostic));
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(EvaluationError.UnknownFunction, diagnostic.Code);
+    }
+
+    [TestMethod]
     public void Parse_ComparisonOperators_MatchesAllVariations()
     {
         var eq = Calculator.Parse("1 == 1");

@@ -39,6 +39,12 @@ still has Unverified exactness even though it displays `3`. See the
 | `phi` | `φ`, `ϕ`, `Φ` | Golden ratio ($\approx 1.618033988749895$) | `decimal` |
 | `true`, `false` | | Exact truth values `1` and `0` | `decimal` |
 
+The name `phi` is also a function alias for Euler's totient. Known functions own
+their following parentheses: `phi(12)` (including `phi (12)`) means `totient(12)`,
+which is `4`, not multiplication by the golden ratio. Write `phi * (12)` for
+that product. With implicit multiplication enabled, `φ(12)`, `ϕ(12)`, and `Φ(12)`
+are golden-ratio products: the Greek spellings are constant aliases only.
+
 ### Constant Discovery
 
 Use `Constants` to populate autocomplete, constant pickers, or tooltips without
@@ -200,6 +206,9 @@ the recognized root `sqrt(4)` is Exact. Keep exactness and display indicators se
 | `divcount(n)` | `divisorcount` | Number of positive divisors $d(n)$ |
 | `sigma(n[, k])` | `divsum` | Divisor sum $\sigma(n)$ or sum of $k$-th powers $\sigma_k(n)$ |
 | `totient(n)` | `phi`, `eulerphi` | Euler's totient function $\phi(n)$ |
+
+Prefer `totient(n)` in examples and user guidance to avoid confusion with the
+golden-ratio constant `phi`. The aliases remain supported.
 
 ### Special & Probability Functions
 
