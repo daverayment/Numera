@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Numerics;
 using System.Text;
 using Numera.Ast;
@@ -1386,6 +1387,216 @@ public sealed class AstAndFormattingTests
         var maximum = minimum with { MaxFixedDigits = CalculationLimits.MaxSignificantDigits };
         Assert.AreEqual("1" + new string('0', 999), Calculator.FormatExpression("1e999", maximum));
         Assert.AreEqual(largeScientific, Calculator.FormatExpression("1e1000", maximum));
+    }
+
+    [TestMethod]
+    [DataRow("foo(2)", "foo(2)", @"\operatorname{foo}(2)")]
+    [DataRow("foo()", "foo()", @"\operatorname{foo}()")]
+    [DataRow("foo ( )", "foo()", @"\operatorname{foo}()")]
+    [DataRow("foo(1, 2)", "foo(1, 2)", @"\operatorname{foo}(1, 2)")]
+    [DataRow("foo (1, 2)", "foo(1, 2)", @"\operatorname{foo}(1, 2)")]
+    [DataRow("f(x)", "f(x)", @"\operatorname{f}(x)")]
+    [DataRow("foo_bar(x)", "foo_bar(x)", @"\operatorname{foo\_bar}(x)")]
+    [DataRow("foo(bar(x), y)", "foo(bar(x), y)", @"\operatorname{foo}(\operatorname{bar}(x), y)")]
+    public void FormattingUnknownCallsSupportsEveryStyle(string input, string plain, string latex)
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+            (ExpressionFormatOptions Options, string Expected)[] cases =
+            [
+                (ExpressionFormatOptions.Ascii, plain),
+                (ExpressionFormatOptions.Typographic, plain),
+                (ExpressionFormatOptions.LaTeX, latex)
+            ];
+            foreach (var (options, expected) in cases)
+            {
+                Assert.AreEqual(expected, engine.FormatExpression(input, options));
+                Assert.AreEqual(expected, Calculator.FormatExpression(input, options));
+            }
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [TestMethod]
+    [DataRow("foo (2)", "foo * 2")]
+    [DataRow("x (y+1)", "x * (y + 1)")]
+    [DataRow("x\t(y+1)", "x * (y + 1)")]
+    [DataRow("x\n(y+1)", "x * (y + 1)")]
+    [DataRow("foo ((x+1))", "foo * (x + 1)")]
+    [DataRow("foo (bar(1, 2)+1)", "foo * (bar(1, 2) + 1)")]
+    public void FormattingSpacedSingleArgumentsPreservesMultiplication(string input, string expected)
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+
+        Assert.AreEqual(expected, engine.FormatExpression(input, ExpressionFormatOptions.Ascii));
+    }
+
+    [TestMethod]
+    [DataRow("pi(2+3)", "pi * (2 + 3)")]
+    [DataRow("ans(2+3)", "ans * (2 + 3)")]
+    [DataRow("ANS (2+3)", "ANS * (2 + 3)")]
+    [DataRow("x(2+3)", "x * (2 + 3)")]
+    [DataRow("sum((x=2), x(3))", "sum((x = 2), x * 3)")]
+    public void FormattingKeepsConstantsAndKnownVariablesAsIdentifiers(string input, string expected)
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+        var context = new EvaluationContext([new Variable("x", 5)]);
+
+        Assert.AreEqual(expected, engine.FormatExpression(input, ExpressionFormatOptions.Ascii, context));
+        Assert.AreEqual(new MathValue(5), context.Variables["x"].Value);
+        Assert.IsNull(context.PreviousResult);
+        Assert.AreEqual("sum((x = 2), x * 3)", engine.FormatExpression("sum((x=2), x(3))", ExpressionFormatOptions.Ascii));
+    }
+
+    [TestMethod]
+    [DataRow("foo()")]
+    [DataRow("foo(1, 2)")]
+    [DataRow("ans()")]
+    [DataRow("ans(1, 2)")]
+    [DataRow("pi()")]
+    [DataRow("pi(1, 2)")]
+    public void FormattingDoesNotReinterpretKnownIdentifiersAsCalls(string input)
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+        var context = new EvaluationContext([new Variable("foo", 5)]);
+
+        var exception = Assert.ThrowsExactly<ExpressionException>(() => engine.FormatExpression(input, context: context));
+
+        Assert.AreEqual(EvaluationError.InvalidSyntax, exception.Diagnostic.Code);
+    }
+
+    [TestMethod]
+    [DataRow("foo(2)")]
+    [DataRow("foo (2)")]
+    [DataRow("foo()")]
+    [DataRow("foo (1, 2)")]
+    public void FormattingUnknownCallsWorksWithoutImplicitMultiplication(string input)
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture,
+            options => options with { AllowImplicitMultiplication = false });
+        var expected = input.Replace(" ", "", StringComparison.Ordinal).Replace(",", ", ", StringComparison.Ordinal);
+
+        Assert.AreEqual(expected, engine.FormatExpression(input, ExpressionFormatOptions.Ascii));
+        var context = new EvaluationContext([new Variable("foo", 5)]);
+        var exception = Assert.ThrowsExactly<ExpressionException>(() => engine.FormatExpression(input, context: context));
+        Assert.AreEqual(EvaluationError.UnknownFunction, exception.Diagnostic.Code);
+    }
+
+    [TestMethod]
+    [DataRow("x(2+3)")]
+    [DataRow("x (2+3)")]
+    public void DeferredParsingKeepsUnboundProductsAndTheirDependencies(string input)
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+        var node = engine.Parse(input, allowUnboundVariables: true);
+        var context = new EvaluationContext([new Variable("x", 5)]);
+
+        Assert.IsInstanceOfType<BinaryNode>(node);
+        Assert.AreEqual(BinaryOperator.Multiply, ((BinaryNode)node).Op);
+        Assert.IsTrue(((BinaryNode)node).IsImplicit);
+        Assert.HasCount(1, node.GetReferencedVariables());
+        Assert.Contains("x", node.GetReferencedVariables());
+        Assert.AreEqual(new MathValue(25), engine.Evaluate(node, context).Value);
+        Assert.IsTrue(engine.TryParse(input, out var parsed, out var diagnostic, allowUnboundVariables: true), diagnostic?.Message);
+        Assert.AreEqual(node, parsed);
+    }
+
+    [TestMethod]
+    [DataRow("foo()")]
+    [DataRow("foo(1, 2)")]
+    public void DeferredParsingDoesNotAcceptUnknownFunctionCalls(string input)
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+
+        Assert.IsFalse(engine.TryParse(input, out var node, out var diagnostic, allowUnboundVariables: true));
+        Assert.IsNull(node);
+        Assert.AreEqual(EvaluationError.InvalidSyntax, diagnostic.Code);
+        Assert.IsFalse(engine.TryEvaluate(input, out _, out diagnostic));
+        Assert.AreEqual(EvaluationError.UnknownFunction, diagnostic.Code);
+    }
+
+    [TestMethod]
+    [DataRow("en-US", "foo(1, 2)", "foo(1, 2)")]
+    [DataRow("en-US", "foo (1;2)", "foo(1, 2)")]
+    [DataRow("de-DE", "foo(1,5; 2,5)", "foo(1.5, 2.5)")]
+    [DataRow("de-DE", "foo (1,5; 2,5)", "foo(1.5, 2.5)")]
+    [DataRow("en-US", "foo\u00a0(x+1)", "foo * (x + 1)")]
+    public void FormattingUnknownCallsUsesCultureNormalization(string culture, string input, string expected)
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.GetCultureInfo(culture));
+
+        Assert.AreEqual(expected, engine.FormatExpression(input, ExpressionFormatOptions.Ascii));
+    }
+
+    [TestMethod]
+    [DataRow("foo(")]
+    [DataRow("foo(1,)")]
+    [DataRow("foo(1,,2)")]
+    [DataRow("foo (1, )")]
+    [DataRow("foo ((1, 2))")]
+    [DataRow("foo([1,2])")]
+    [DataRow("foo ([1,2])")]
+    [DataRow("foo (1;2)")]
+    public void FormattingUnknownCallsRejectsMalformedRawInput(string input)
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture,
+            options => options with { Normalization = null });
+
+        var exception = Assert.ThrowsExactly<ExpressionException>(() => engine.FormatExpression(input));
+
+        Assert.AreEqual(EvaluationError.InvalidSyntax, exception.Diagnostic.Code);
+    }
+
+    [TestMethod]
+    public void FormattingUnknownCallsPreservesKnownArityAndMappedDiagnostics()
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+        const string input = "= 2 ** 3 + foo(sqrt()) =";
+
+        var exception = Assert.ThrowsExactly<ExpressionException>(() => engine.FormatExpression(input));
+
+        Assert.AreEqual(EvaluationError.InvalidArgumentCount, exception.Diagnostic.Code);
+        Assert.AreEqual(input.IndexOf("sqrt", StringComparison.Ordinal), exception.Diagnostic.Position);
+        Assert.AreEqual(4, exception.Diagnostic.Length);
+    }
+
+    [TestMethod]
+    public void FormattingUnknownCallsDoesNotExecuteCustomFunctionsOrAssignments()
+    {
+        int calls = 0;
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture,
+            options => options with
+            {
+                CustomFunctions = CustomFunctionCollection.Empty.SetItem("tick", () => new MathValue(++calls))
+            });
+
+        Assert.AreEqual("foo(tick(), (x = 2))",
+            engine.FormatExpression("foo(tick(), (x=2))", ExpressionFormatOptions.Ascii));
+        Assert.AreEqual(0, calls);
+        var exception = Assert.ThrowsExactly<ExpressionException>(() => engine.FormatExpression("foo(tick(1))"));
+        Assert.AreEqual(EvaluationError.InvalidArgumentCount, exception.Diagnostic.Code);
+    }
+
+    [TestMethod]
+    public void FormattingUnknownCallsEnforcesParsingLimits()
+    {
+        var shortEngine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture,
+            options => options with { MaxInputLength = 6 });
+        var shallowEngine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture,
+            options => options with { MaxNestingDepth = 3 });
+        var smallIntegerEngine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture,
+            options => options with { MaxIntegerBits = 8 });
+
+        Assert.ThrowsExactly<CalculationLimitException>(() => shortEngine.FormatExpression("foo(12345)"));
+        Assert.ThrowsExactly<CalculationLimitException>(() => shallowEngine.FormatExpression("f(f(f(f(1))))"));
+        Assert.ThrowsExactly<CalculationLimitException>(() => shallowEngine.FormatExpression("f (f (f (f (1))))"));
+        Assert.ThrowsExactly<CalculationLimitException>(() => smallIntegerEngine.FormatExpression("foo(256)"));
     }
 
     private sealed record DummyTestNode() : ExpressionNode(Span: default)

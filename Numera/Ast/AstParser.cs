@@ -16,6 +16,7 @@ internal sealed class AstParser
     private readonly EvaluationContext _context;
     private readonly SourceMap? _sourceMap;
     private readonly bool _allowUnboundVariables;
+    private readonly bool _allowUnknownFunctions;
     private int _pos;
     private int _depth;
     private HashSet<string>? _declaredVariables;
@@ -56,13 +57,15 @@ internal sealed class AstParser
         CalculatorOptions options,
         EvaluationContext? context = null,
         SourceMap? sourceMap = null,
-        bool allowUnboundVariables = false)
+        bool allowUnboundVariables = false,
+        bool allowUnknownFunctions = false)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(options);
         _context = context ?? EvaluationContext.Empty;
         _sourceMap = sourceMap;
         _allowUnboundVariables = allowUnboundVariables;
+        _allowUnknownFunctions = allowUnknownFunctions;
         if (input.Length > options.MaxInputLength)
         {
             throw new CalculationLimitException();
@@ -101,7 +104,7 @@ internal sealed class AstParser
             throw SyntaxError($"Unexpected character '{trailing}'.");
         }
 
-        AstValidator.Validate(result, _options);
+        AstValidator.Validate(result, _options, allowUnknownFunctions: _allowUnknownFunctions);
 
         return result;
     }
@@ -794,10 +797,11 @@ internal sealed class AstParser
         int identifierStart = _pos;
         var identifierSpan = ParseIdentifier();
         string identifier = identifierSpan.ToString();
+        bool hasWhitespaceBeforeParenthesis = char.IsWhiteSpace(Peek());
         SkipWhitespace();
 
-        // A known function owns its parentheses; a bound variable followed by a group
-        // can instead be an implicit product such as x(2+3).
+        // Registered functions take precedence so multiplication and display heuristics
+        // cannot reinterpret a malformed call or bypass its arity checks.
         if (Peek() == '(' && FunctionArity.TryGet(identifier, _options.CustomFunctions, out var signature))
         {
             var args = ParseArgumentList();
@@ -814,6 +818,23 @@ internal sealed class AstParser
             return new FunctionCallNode(identifier, args, Span(identifierStart, _pos - identifierStart));
         }
 
+        // Recognized values must not become display-only functions. In particular, ans
+        // has variable meaning even when no previous answer has been supplied.
+        bool isConstant = ConstantCatalog.TryResolve(identifier, out var constantKind, out _);
+        bool isVariable = _context.TryResolveVariable(identifier, out _) ||
+            _declaredVariables?.Contains(identifier) == true ||
+            (_allowUnknownFunctions && identifier.Equals(EvaluationContext.PreviousResultVariableName, Identifier.Comparison));
+
+        // For unknown display names, attachment signals a call; whitespace leaves room
+        // for ordinary scalar multiplication. Empty or multi-argument groups cannot be
+        // multiplication, so they do not need that adjacency convention.
+        if (_allowUnknownFunctions && Peek() == '(' && !isConstant && !isVariable &&
+            (!hasWhitespaceBeforeParenthesis || !_options.AllowImplicitMultiplication || HasUnambiguousCallArguments()))
+        {
+            var args = ParseArgumentList();
+            return new FunctionCallNode(identifier, args, Span(identifierStart, _pos - identifierStart));
+        }
+
         if (Peek() == '(' && !_options.AllowImplicitMultiplication)
         {
             throw new ExpressionException(Diagnostic(
@@ -825,7 +846,7 @@ internal sealed class AstParser
             ThrowSyntaxErrorBracketsOrSemicolon(Peek());
         }
             
-        if (ConstantCatalog.TryResolve(identifier, out var constantKind, out _))
+        if (isConstant)
         {
             return new IdentifierNode(identifier, constantKind, Span(identifierStart, identifier.Length));
         }
@@ -836,12 +857,13 @@ internal sealed class AstParser
                 EvaluationError.InvalidSyntax, $"Function '{identifier}' requires parentheses.", identifierStart, identifier.Length));
         }
 
-        if (_context.TryResolveVariable(identifier, out _) ||
-            _declaredVariables?.Contains(identifier) == true)
+        if (isVariable)
         {
             return new IdentifierNode(identifier, null, Span(identifierStart, identifier.Length));
         }
 
+        // Deferred parsing must keep x(2) as a product: x remains a variable dependency
+        // that a later evaluation context can supply, not an unknown function binding.
         if (_allowUnboundVariables)
         {
             return new IdentifierNode(identifier, null, Span(identifierStart, identifier.Length));
@@ -855,6 +877,51 @@ internal sealed class AstParser
 
         throw new ExpressionException(Diagnostic(
             EvaluationError.UnknownConstant, $"Unknown constant or variable '{identifier}'.", identifierStart, identifier.Length));
+    }
+
+    private bool HasUnambiguousCallArguments()
+    {
+        // Inspect only the outer group's argument shape without consuming input.
+        // The real parser remains responsible for syntax errors, spans, and limits.
+        int index = _pos + 1;
+        while (index < _input.Length && char.IsWhiteSpace(_input[index]))
+        {
+            index++;
+        }
+
+        if (index < _input.Length && _input[index] == ')')
+        {
+            return true;
+        }
+
+        int depth = 1;
+        for (; index < _input.Length; index++)
+        {
+            char current = _input[index];
+            if (current == '(')
+            {
+                depth++;
+            }
+            else if (current == ')')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    return false;
+                }
+            }
+            else if (current == ',' && depth == 1)
+            {
+                return true;
+            }
+            else if (current is '[' or ']')
+            {
+                // Unsupported bracket contents must not influence call disambiguation.
+                return false;
+            }
+        }
+
+        return false;
     }
 
     private List<ExpressionNode> ParseArgumentList()

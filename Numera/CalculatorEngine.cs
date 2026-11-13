@@ -390,7 +390,14 @@ public sealed class CalculatorEngine
     public ExpressionNode Parse(
         string expression,
         EvaluationContext? context = null,
-        bool allowUnboundVariables = false)
+        bool allowUnboundVariables = false) =>
+        ParseCore(expression, context, allowUnboundVariables, allowUnknownFunctions: false);
+
+    private ExpressionNode ParseCore(
+        string expression,
+        EvaluationContext? context,
+        bool allowUnboundVariables,
+        bool allowUnknownFunctions)
     {
         ArgumentNullException.ThrowIfNull(expression);
 
@@ -411,7 +418,7 @@ public sealed class CalculatorEngine
         }
 
         return new AstParser(
-            text, Options, context, sourceMap, allowUnboundVariables).Parse();
+            text, Options, context, sourceMap, allowUnboundVariables, allowUnknownFunctions).Parse();
     }
 
     /// <summary>
@@ -465,8 +472,12 @@ public sealed class CalculatorEngine
     /// <param name="context">Optional variables and previous answer for identifier
     /// recognition during parsing; their values are not substituted.</param>
     /// <returns>The rendered expression text.</returns>
-    /// <remarks>Variables and ans remain symbolic, including unbound variables.
-    /// Assignments and functions are not executed.</remarks>
+    /// <remarks>
+    /// Formatting does not evaluate expressions or invoke functions. Unregistered calls
+    /// such as <c>foo(x)</c> can be displayed. With <c>x</c> supplied in the context,
+    /// <c>x(2)</c> means multiplication. For an unbound variable, use whitespace:
+    /// <c>x (2)</c> requests multiplication when implicit multiplication is enabled.
+    /// </remarks>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
     /// null.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown if the rendering options are
@@ -480,7 +491,11 @@ public sealed class CalculatorEngine
     {
         ArgumentNullException.ThrowIfNull(expression);
         options?.Validate();
-        return FormatExpression(Parse(expression, context, allowUnboundVariables: true), options);
+
+        // Display-only input can name functions without implementations. Keep this mode
+        // separate from public parsing, which supports deferred variable evaluation.
+        return FormatExpression(
+            ParseCore(expression, context, allowUnboundVariables: true, allowUnknownFunctions: true), options);
     }
 
     /// <summary>
