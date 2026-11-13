@@ -96,6 +96,11 @@ The culture's list separator separates function arguments. **Semicolon is also a
 
 In a comma-separated call, a comma that could also form valid digit grouping is rejected as ambiguous. Numera does not use function arity, later malformed groups, or evaluation results to guess what was intended. To resolve this, use semicolons, remove digit grouping, or put a space after an argument comma so it cannot group digits.
 
+Parentheses after operator keywords (`not`, `and`, `or`, `xor`, `of`) group an
+expression, not function arguments. For example, en-US `not (1,000 == 1000)`
+accepts the grouped number, including with explicit logical negation required.
+Actual function calls nested inside such groups still follow the ambiguity rules.
+
 | Culture | Input | Interpretation |
 | :--- | :--- | :--- |
 | en-US | `pow(2,100)` | Ambiguous: use `pow(2;100)` or `pow(2, 100)` |

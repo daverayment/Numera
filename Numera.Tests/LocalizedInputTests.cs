@@ -43,6 +43,31 @@ public sealed class LocalizedInputTests
     }
 
     [TestMethod]
+    [DataRow("not (1,000 + 2)", "not (1000 + 2)", 0)]
+    [DataRow("not(1,000 == 1000)", "not(1000 == 1000)", 0)]
+    [DataRow("NoT (1,000 == 1000)", "NoT (1000 == 1000)", 0)]
+    [DataRow("1 and (1,000)", "1 and (1000)", 1)]
+    [DataRow("0 or(1,000)", "0 or(1000)", 1)]
+    [DataRow("1 xor (1,000)", "1 xor (1000)", 0)]
+    [DataRow("10% of (1,000)", "10% of (1000)", 100)]
+    [DataRow("2and(1,000)", "2and(1000)", 1)]
+    [DataRow("1 and(not(1,000 == 1000))", "1 and(not(1000 == 1000))", 0)]
+    [DataRow("max(not(1,000 == 1000);2)", "max(not(1000 == 1000),2)", 2)]
+    public void OperatorKeywordsIntroduceGroupingRatherThanFunctionArguments(
+        string input, string normalized, int expectedValue)
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.GetCultureInfo("en-US"),
+            options => options with { RequireExplicitLogicalNegation = true });
+
+        Assert.AreEqual(normalized, ExpressionNormalizer.Normalize(input, engine.Options.Culture));
+        var tree = engine.Parse(input);
+        Assert.AreEqual(new MathValue(expectedValue), engine.Evaluate(tree).Value);
+        Assert.AreEqual(new MathValue(expectedValue), engine.Evaluate(input).Value);
+        var formatted = engine.FormatExpression(input, ExpressionFormatOptions.Ascii);
+        Assert.AreEqual(new MathValue(expectedValue), engine.Evaluate(formatted).Value);
+    }
+
+    [TestMethod]
     [DataRow("en-US", "pow(2,100)")]
     [DataRow("en-US", "max(1,234)")]
     [DataRow("en-US", "max(1,234,567)")]
@@ -52,6 +77,7 @@ public sealed class LocalizedInputTests
     [DataRow("hi-IN", "max(1,23,456)")]
     [DataRow("en-US", "max(1;min(2,100))")]
     [DataRow("en-US", "2max(1,234)")]
+    [DataRow("en-US", "not (max(1,234))")]
     public void AmbiguousCommasFailWithoutArityOrWholeExpressionGuessing(string culture, string input)
     {
         Assert.IsFalse(ExpressionNormalizer.TryNormalize(input, CultureInfo.GetCultureInfo(culture), out var text, out var diagnostic));
@@ -65,6 +91,7 @@ public sealed class LocalizedInputTests
 
     [TestMethod]
     [DataRow("en-US", "1,23")]
+    [DataRow("en-US", "not (1,23)")]
     [DataRow("en-US", "1234,567")]
     [DataRow("en-US", "1,234,56")]
     [DataRow("en-US", "1'23")]

@@ -179,7 +179,8 @@ internal sealed class CultureInputNormalizer
                     word = word[consumed..];
                 }
 
-                bool isCall = !word.IsEmpty && Identifier.IsIdentifierStart(word[0]);
+                bool isCall = !word.IsEmpty && Identifier.IsIdentifierStart(word[0]) &&
+                    !KeywordCatalog.IsOperatorKeyword(word);
                 var container = new Container(isCall);
                 _containers.Add(index, container);
                 stack.Push(container);
@@ -545,7 +546,7 @@ internal sealed class CultureInputNormalizer
         }
 
         return $"Use '{_decimalSeparator}' for decimals and '{_argumentSeparator}' " +
-            "between arguments for culture '{cultureName}'.";
+            $"between arguments for culture '{cultureName}'.";
     }
 
     private void Fail(int position, int length, string message, EvaluationError code = EvaluationError.InvalidNumberFormat)
