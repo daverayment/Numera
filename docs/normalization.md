@@ -127,6 +127,7 @@ This intentionally tightens older permissive behavior: foreign decimal syntax an
 Percentages are part of the Numera grammar, so they are parsed from the original text and keep accurate source spans. The rules favour what a person expects from a calculator over strict programming-language semantics.
 
 - **Postfix or modulo:** `%` is a percentage unless an operand (digit, identifier or `(`) follows it. `10 % 3` and `10%3` are modulo; `100 + 15 %`, `10% + 3` and `10% of 5` are percentages.
+- **Unary operands:** `+` and `-` after `%` remain additive operators, regardless of whitespace: `10 % -3` is `0.1 - 3`, not modulo. Use `10 % (-3)` or `mod(10; -3)` for a signed modulo operand. `10% ~3` is a syntax error; write `10 % (~3)` or `mod(10; ~3)` for modulo with a bitwise-complement operand.
 - **Standalone:** `B%` is `B / 100`, so `50%` is `0.5` and `200 * 15%` is `30`.
 - **Markup and discount:** when the right operand of `+` or `-` is a percentage and the left is not, the result is `L × (1 ± r)`:
   - `200 + 15%` is `230`, `200 - 15%` is `170`.

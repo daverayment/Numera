@@ -76,6 +76,12 @@ public sealed class PercentageTortureTests
     [DataRow("50%", "0.5")]
     [DataRow("100 + 15 %", "115")]
     [DataRow("15 % + 20", "20.15")]
+    [DataRow("10% - 3", "-2.9")]
+    [DataRow("10 % -3", "-2.9")]
+    [DataRow("10%-3", "-2.9")]
+    [DataRow("10% + 3", "3.1")]
+    [DataRow("10 % +3", "3.1")]
+    [DataRow("10%+3", "3.1")]
     [DataRow("(15 %) * 2", "0.3")]
     [DataRow("50 %", "0.5")]
     public void PercentWithOrWithoutWhitespaceIsPostfixWhenNoOperandFollows(string input, string expected) =>
@@ -85,8 +91,30 @@ public sealed class PercentageTortureTests
     [DataRow("10 % 3", "1")]
     [DataRow("10%3", "1")]
     [DataRow("20 % (2 + 3)", "0")]
+    [DataRow("10 % (-3)", "1")]
+    [DataRow("10%(-3)", "1")]
+    [DataRow("10 % (+3)", "1")]
+    [DataRow("10 % (~3)", "2")]
+    [DataRow("mod(10; -3)", "1")]
+    [DataRow("mod(10; ~3)", "2")]
     public void ModuloIsChosenWhenAnOperandFollowsPercent(string input, string expected) =>
         AssertEvaluatesTo(expected, input);
+
+    [TestMethod]
+    [DataRow("10% ~3")]
+    [DataRow("10 % ~3")]
+    [DataRow("10%~3")]
+    public void UnparenthesizedBitwiseComplementAfterPercentIsSyntaxError(string input)
+    {
+        foreach (var engine in new[] { CalculatorEngine.ForCulture(CultureInfo.InvariantCulture), TestEngines.RawEngine })
+        {
+            Assert.IsFalse(engine.TryEvaluate(input, out _, out var diagnostic));
+            Assert.IsNotNull(diagnostic);
+            Assert.AreEqual(EvaluationError.InvalidSyntax, diagnostic.Code);
+            var exception = Assert.ThrowsExactly<ExpressionException>(() => engine.Evaluate(input));
+            Assert.AreEqual(EvaluationError.InvalidSyntax, exception.Diagnostic.Code);
+        }
+    }
 
     [TestMethod]
     [DataRow("50 * 2 + 10%", "110")]
