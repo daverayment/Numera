@@ -15,8 +15,8 @@ namespace Numera;
 /// modify them.
 /// </para>
 /// <para>
-/// Variable names are case-insensitive (ordinal). A variable named <c>ans</c> takes
-/// precedence over <see cref="PreviousResult"/>.
+/// Variable names are case-insensitive (ordinal). The name <c>ans</c> is reserved for
+/// <see cref="PreviousResult"/> and cannot be supplied in <see cref="Variables"/>.
 /// </para>
 /// <para>
 /// Equality is by value: two contexts are equal if they define the same variables (names
@@ -35,6 +35,8 @@ namespace Numera;
 /// </remarks>
 public sealed record EvaluationContext
 {
+    private VariableCollection _variables = VariableCollection.Empty;
+
     /// <summary>
     /// The string comparer used for variable names, forwarding to
     /// <see cref="Identifier.Comparer"/>.
@@ -54,9 +56,29 @@ public sealed record EvaluationContext
 
     /// <summary>
     /// The variables currently assigned to values. Lookups are case-insensitive. The
-    /// returned collection is read-only.
+    /// returned collection is read-only. The name <c>ans</c> is reserved; seed it through
+    /// <see cref="PreviousResult"/> instead.
     /// </summary>
-    public VariableCollection Variables { get; init; } = VariableCollection.Empty;
+    /// <exception cref="ArgumentNullException">The assigned collection is null.
+    /// </exception>
+    /// <exception cref="ArgumentException">The collection contains a variable named
+    /// <c>ans</c>, compared case-insensitively.</exception>
+    public VariableCollection Variables
+    {
+        get => _variables;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (value.ContainsKey(PreviousResultVariableName))
+            {
+                throw new ArgumentException(
+                    "The name 'ans' is reserved for the previous result. Use PreviousResult instead.",
+                    nameof(Variables));
+            }
+
+            _variables = value;
+        }
+    }
 
     /// <summary>
     /// The value of the standard <c>ans</c> variable: the previous calculation result.
@@ -85,6 +107,8 @@ public sealed record EvaluationContext
     /// <param name="previousResult">The previous result to include in the context.
     /// </param>
     /// <param name="previousExpression">The previous canonical expression AST.</param>
+    /// <exception cref="ArgumentException">The variables contain a name equal to
+    /// <c>ans</c>, compared case-insensitively.</exception>
     public EvaluationContext(
         VariableCollection? variables,
         MathValue? previousResult = null,
@@ -106,6 +130,8 @@ public sealed record EvaluationContext
     /// <param name="previousResult">Result from a previous evaluation that can be reused
     /// by subsequent expressions.</param>
     /// <param name="previousExpression">The previous canonical expression AST.</param>
+    /// <exception cref="ArgumentException">The variables contain a name equal to
+    /// <c>ans</c>, compared case-insensitively.</exception>
     public EvaluationContext(IEnumerable<Variable>? variables,
         MathValue? previousResult = null,
         ExpressionNode? previousExpression = null)
@@ -114,8 +140,8 @@ public sealed record EvaluationContext
     }
 
     /// <summary>
-    /// Resolves an identifier to a value. Custom variables take precedence over
-    /// <c>ans</c>.
+    /// Resolves an identifier to a value, using <see cref="PreviousResult"/> for
+    /// the reserved name <c>ans</c>.
     /// </summary>
     /// <param name="name">The identifier to resolve (case-insensitive).</param>
     /// <param name="value">The resolved value, or <c>default</c> if not found.</param>

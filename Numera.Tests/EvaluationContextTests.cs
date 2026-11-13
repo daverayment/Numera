@@ -1,4 +1,5 @@
 using System.Globalization;
+using Numera.Ast;
 
 namespace Numera.Tests;
 
@@ -54,14 +55,44 @@ public sealed class EvaluationContextTests
     }
 
     [TestMethod]
-    public void Constructor_ExplicitVariablesAns_TakesPrecedenceOverPreviousResult()
+    [DataRow("ans")]
+    [DataRow("ANS")]
+    [DataRow("AnS")]
+    public void ContextCreationAndWithExpressionsRejectAnsBindings(string name)
     {
-        var context = new EvaluationContext(
-            variables: Vars(("ans", 42m)),
-            previousResult: new MathValue(100m));
+        var source = Vars((name, 42m));
+        var variables = source.ToVariableCollection();
+        var original = new EvaluationContext(Vars(("x", 7m)), new MathValue(100m));
 
-        // Explicit variable 'ans' should take precedence over PreviousResult.
-        Assert.AreEqual(new MathValue(84m), Calculator.Evaluate("ans * 2", context).Value);
+        foreach (MathValue? previousResult in new MathValue?[] { null, new MathValue(100m) })
+        {
+            var exceptions = new[]
+            {
+                Assert.ThrowsExactly<ArgumentException>(() => new EvaluationContext(source, previousResult)),
+                Assert.ThrowsExactly<ArgumentException>(() => new EvaluationContext(variables, previousResult)),
+                Assert.ThrowsExactly<ArgumentException>(() => new EvaluationContext { Variables = variables, PreviousResult = previousResult }),
+                Assert.ThrowsExactly<ArgumentException>(() => original with { Variables = variables, PreviousResult = previousResult }),
+            };
+
+            foreach (var exception in exceptions)
+            {
+                Assert.AreEqual(nameof(EvaluationContext.Variables), exception.ParamName);
+                Assert.Contains("PreviousResult", exception.Message);
+            }
+        }
+
+        Assert.AreEqual(42m, source[0].Value.DecimalValue);
+        Assert.AreEqual(42m, variables[name].Value.DecimalValue);
+        Assert.AreEqual(7m, original.Variables["x"].Value.DecimalValue);
+        Assert.AreEqual(100m, original.PreviousResult!.Value.DecimalValue);
+    }
+
+    [TestMethod]
+    public void VariablesInitializerRejectsNullWhileConstructorsAllowMissingVariables()
+    {
+        Assert.ThrowsExactly<ArgumentNullException>(() => new EvaluationContext { Variables = null! });
+        Assert.AreSame(VariableCollection.Empty, new EvaluationContext((VariableCollection?)null).Variables);
+        Assert.AreSame(VariableCollection.Empty, new EvaluationContext((IEnumerable<Variable>?)null).Variables);
     }
 
     [TestMethod]
@@ -499,16 +530,71 @@ public sealed class EvaluationContextTests
     }
 
     [TestMethod]
-    public void Ans_ExplicitUserVariable_OverridesPreviousResult()
+    [DataRow("ans")]
+    [DataRow("ANS")]
+    [DataRow("AnS")]
+    public void AnsAssignmentsFailBeforeCallbacksWithoutChangingContext(string name)
+    {
+        int calls = 0;
+        var options = CalculatorOptions.ForCulture(CultureInfo.InvariantCulture) with
+        {
+            CustomFunctions = [CustomFunction.Create("tick", () =>
+            {
+                calls++;
+                return new MathValue(5);
+            })]
+        };
+        var context = new EvaluationContext([new Variable("x", new MathValue(7))], new MathValue(100));
+
+        foreach (var normalization in new NormalizationOptions?[] { NormalizationOptions.Default, null })
+        {
+            var engine = new CalculatorEngine(options with { Normalization = normalization });
+            foreach (string input in new[] { $"{name} = tick()", $"x = {name} = tick()", $"tick() + ({name} = 5)" })
+            {
+                Assert.IsFalse(engine.TryEvaluate(input, out _, out var diagnostic, context));
+                Assert.AreEqual(EvaluationError.InvalidSyntax, diagnostic!.Code);
+                Assert.AreEqual(input.IndexOf(name, StringComparison.Ordinal), diagnostic.Position);
+                Assert.AreEqual(name.Length, diagnostic.Length);
+                Assert.Contains("reserved", diagnostic.Message);
+                Assert.IsFalse(engine.TryParse(input, out _, out var parseDiagnostic, context));
+                Assert.AreEqual(diagnostic, parseDiagnostic);
+                var exception = Assert.ThrowsExactly<ExpressionException>(() => engine.Evaluate(input, context));
+                Assert.AreEqual(diagnostic, exception.Diagnostic);
+                Assert.ThrowsExactly<ExpressionException>(() => engine.FormatExpression(input, context: context));
+            }
+
+            var span = new TextSpan(7, name.Length);
+            var assignment = new AssignmentNode(name, new FunctionCallNode("tick", []), span: span);
+            var tree = new BinaryNode(BinaryOperator.Add, new FunctionCallNode("tick", []), assignment);
+            Assert.IsFalse(engine.TryEvaluate(tree, out _, out var manualDiagnostic, context));
+            Assert.AreEqual(EvaluationError.InvalidSyntax, manualDiagnostic!.Code);
+            Assert.AreEqual(span.Start, manualDiagnostic.Position);
+            Assert.AreEqual(span.Length, manualDiagnostic.Length);
+            Assert.ThrowsExactly<ExpressionException>(() => engine.Evaluate(tree, context));
+            Assert.ThrowsExactly<ExpressionException>(() => engine.FormatExpression(tree));
+            Assert.AreEqual(0, calls);
+            Assert.AreEqual(new MathValue(7), context.Variables["x"].Value);
+            Assert.AreEqual(new MathValue(100), context.PreviousResult!.Value);
+            Assert.IsFalse(context.Variables.ContainsKey(name));
+        }
+    }
+
+    [TestMethod]
+    public void AnsAlwaysUsesPreviousResultAndRetainsItsMetadata()
     {
         var engine = new CalculatorEngine();
-        // Provide previous result 100, but explicit user variable "ans" = 5.
-        var context = new EvaluationContext(
-            new Variable[] { new("ans", new(5m)) },
-            new MathValue(100m));
+        var initial = engine.Evaluate("1/3");
+        var seeded = initial.Context with { PreviousResult = MathValue.FromFraction(2, 3) };
 
-        var result = engine.Evaluate("ans * 2", context);
-        Assert.AreEqual(new MathValue(10m), result.Value);
+        Assert.AreEqual(MathValue.FromFraction(2, 3), engine.Evaluate("ANS", seeded).Value);
+        Assert.IsTrue(seeded.TryResolveFullVariable("AnS", out var variable));
+        Assert.AreEqual(MathValue.FromFraction(2, 3), variable.Value);
+        Assert.AreSame(initial.Context.PreviousExpression, variable.Expression);
+        var next = engine.Evaluate("x = ans * 3", seeded);
+        Assert.AreEqual(new MathValue(2), next.Value);
+        Assert.AreEqual(new MathValue(3), engine.Evaluate("ans + 1", next.Context).Value);
+        Assert.IsFalse(next.Context.Variables.ContainsKey("ans"));
+        Assert.AreEqual(MathValue.FromFraction(1, 3), initial.Context.PreviousResult!.Value);
     }
 
     [TestMethod]

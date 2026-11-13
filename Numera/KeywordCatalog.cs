@@ -26,7 +26,7 @@ internal static class KeywordCatalog
         "xor",
         "not",
         "of",
-        // TODO: "ans"?
+        EvaluationContext.PreviousResultVariableName,
     }.ToFrozenSet(NameComparer);
 
     private static readonly FrozenSet<string> ImplicitMultiplicationBlockers = new[]

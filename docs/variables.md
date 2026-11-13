@@ -49,6 +49,7 @@ x = y = 42       // y becomes 42 first, then x
   - constants (`pi`, `tau`, `e`, `phi`)
   - functions (`sin`, `sqrt`, `gcd`, `factorial`)
   - keywords (`and`, `or`, `xor`, `not`, `of`)
+  - the previous-result name (`ans`)
 
 > [!WARNING]
 > `e` is Euler's number, so `e = 5` is rejected. It is an easy one to trip over when you reach for short names like `a`, `b`, `c`, `d`, `e`.
@@ -89,7 +90,20 @@ Round 2:  ans * 2       => 30
 Round 3:  c = ans + 5   => 35, and c is now 35
 ```
 
-If you define a variable called `ans` yourself, your variable wins over `PreviousResult`.
+`ans` is reserved, case-insensitively: `ans = 5` is rejected with
+`InvalidSyntax`, including in manually constructed assignment ASTs. Rejection happens
+before evaluation, so callbacks do not run and the original context is unchanged.
+Caller-supplied variables named `ans` are also rejected with `ArgumentException`
+when constructing or initializing a context, including through `with` expressions.
+
+To seed or replace the previous answer explicitly, use `PreviousResult`:
+
+```csharp
+var context = EvaluationContext.Empty with { PreviousResult = new MathValue(5) };
+```
+
+Evaluating `5` normally also advances the previous answer to `5`. A null
+`PreviousResult` leaves `ans` undefined; it never falls back to a caller variable.
 
 ---
 
