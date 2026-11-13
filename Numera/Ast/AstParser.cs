@@ -121,9 +121,19 @@ internal sealed class AstParser
             if (Peek() == '=' && Peek(1) != '=')
             {
                 ValidateAssignableIdentifier(identifier, savePos);
+                int assignmentPosition = _pos;
                 Consume(); // '='
 
                 int valueStart = _pos;
+                SkipWhitespace();
+                if (_pos >= _input.Length || Peek() is ')' or ',' or ';')
+                {
+                    throw new ExpressionException(Diagnostic(
+                        EvaluationError.InvalidSyntax,
+                        "An assignment requires a value after '='.",
+                        assignmentPosition,
+                        1));
+                }
 
                 // Right-associative recursion: "a = b = 10" parses as "a = (b = 10)".
                 // Guarded like the other recursive paths so long assignment chains cannot

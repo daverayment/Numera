@@ -475,17 +475,17 @@ public sealed class EvaluationContextTests
     }
 
     [TestMethod]
-    public void TrailingEquals_IsTreatedAsLauncherSuffix_NotIncompleteAssignment()
+    public void TrailingEquals_AfterAnAssignmentTarget_ReportsMissingValue()
     {
-        // The normalizer strips a trailing '=' (e.g. '2 + 2 ='), so 'x =' is just 'x'.
-        // It must never be parsed as an assignment with a missing value.
         var engine = new CalculatorEngine();
         Assert.IsFalse(engine.TryEvaluate("x =", out _, out var diagnostic));
-        Assert.AreEqual(EvaluationError.UnknownConstant, diagnostic!.Code);
+        Assert.AreEqual(EvaluationError.InvalidSyntax, diagnostic!.Code);
+        Assert.AreEqual(2, diagnostic.Position);
+        Assert.AreEqual(1, diagnostic.Length);
 
         var context = new EvaluationContext(Vars(("x", 5m)), null);
-        var result = engine.Evaluate("x =", context);
-        Assert.AreEqual(5m, result.Value.DecimalValue);
+        Assert.IsFalse(engine.TryEvaluate("x =", out _, out var definedDiagnostic, context));
+        Assert.AreEqual(diagnostic, definedDiagnostic);
         Assert.AreEqual(5m, context.Variables["x"].Value.DecimalValue);
     }
 

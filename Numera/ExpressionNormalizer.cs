@@ -207,9 +207,11 @@ public static class ExpressionNormalizer
             offset += 1 + (afterEquals.Length - span.Length);
         }
 
-        // Trailing calculator '=' (e.g. '2 + 2 ='), but NOT '==', '<=', '>=', '!=', '~='.
+        // A lone identifier followed by '=' starts an assignment, not launcher decoration.
+        // The parser remains responsible for checking completeness after other suffixes are removed.
         if (span.EndsWith("=") && !span.EndsWith("==") && !span.EndsWith("<=") &&
-            !span.EndsWith(">=") && !span.EndsWith("!=") && !span.EndsWith("~="))
+            !span.EndsWith(">=") && !span.EndsWith("!=") && !span.EndsWith("~=") &&
+            !Identifier.IsValidIdentifier(span[..^1].TrimEnd(), out _))
         {
             span = span[..^1].TrimEnd();
         }

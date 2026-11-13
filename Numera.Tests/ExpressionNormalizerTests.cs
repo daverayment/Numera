@@ -62,6 +62,23 @@ public sealed class ExpressionNormalizerTests
     [DataRow("2 == 2", "2 == 2")]
     [DataRow("2 <= 4", "2 <= 4")]
     [DataRow("2 != 3", "2 != 3")]
+    [DataRow("x =", "x =")]
+    [DataRow("x=", "x=")]
+    [DataRow("= x =", "x =")]
+    [DataRow("_name2 =", "_name2 =")]
+    [DataRow("\u03c0 =", "\u03c0 =")]
+    [DataRow("x = 5 =", "x = 5")]
+    [DataRow("= x = 5 =", "x = 5")]
+    [DataRow("a = b = 5 =", "a = b = 5")]
+    [DataRow("x = y =", "x = y")]
+    [DataRow("x = 5 + =", "x = 5 +")]
+    [DataRow("x + y =", "x + y")]
+    [DataRow("x == 5 =", "x == 5")]
+    [DataRow("x ==", "x ==")]
+    [DataRow("x <=", "x <=")]
+    [DataRow("x >=", "x >=")]
+    [DataRow("x !=", "x !=")]
+    [DataRow("x ~=", "x ~=")]
     public void LauncherQuirksAreTrimmedCorrectly(string input, string expected)
     {
         string normalized = ExpressionNormalizer.Normalize(input);

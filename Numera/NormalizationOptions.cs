@@ -29,7 +29,8 @@ public sealed record NormalizationOptions
     /// <summary>
     /// Whether to strip leading activation equals ('= 2 + 2') and trailing evaluation
     /// equals ('2 + 2 =') commonly produced by launcher inputs or physical desktop
-    /// calculator habits.
+    /// calculator habits. An equals after a lone identifier remains assignment syntax;
+    /// completed assignments such as 'x = 5 =' may have trailing launcher decoration.
     /// </summary>
     public bool TrimLauncherEquals { get; init; } = true;
 

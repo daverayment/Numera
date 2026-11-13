@@ -55,12 +55,27 @@ x = y = 42       // y becomes 42 first, then x
 
 Assigning to a reserved name fails with `EvaluationError.InvalidSyntax`.
 
-### A trailing `=` is not an assignment
+### Incomplete assignments and launcher decoration
 
-A trailing `=` is stripped by the [normalizer](normalization.md) as launcher decoration, so `x =` is evaluated as plain `x`. If `x` is undefined you get `UnknownConstant`, and if it is defined you get its value back, with nothing assigned.
+`x =` is an incomplete assignment, not a request to evaluate `x`. It reports
+`EvaluationError.InvalidSyntax` with a missing-value message highlighting the `=`,
+whether or not `x` already exists. Parsing fails before evaluation, so no assignments
+are committed and custom functions are not executed.
 
-> [!NOTE]
-> This is deliberate. A user who types `x =` may well have been cut off mid-thought, but guessing at an assignment from incomplete input would be worse than reporting that `x` is unknown.
+Completed expressions and assignments may still have trailing launcher decoration:
+
+- `2 + 2 =` evaluates to `4`.
+- `x = 5 =` assigns `5` to `x`; the stored definition is `5`, without decoration.
+- `a = b = 5 =` assigns `5` to both variables.
+- `x = y =` assigns the existing value of `y` to `x`; an undefined `y` still reports
+  `UnknownConstant`, rather than inventing an assignment value.
+- `x = 5 + =` remains a syntax error: removing decoration cannot complete its value.
+
+These rules do not guess at hypothetical typos. The [normalizer](normalization.md)
+preserves the assignment operator after a lone identifier and removes other eligible
+launcher suffixes; the parser validates the remaining expression. With launcher
+trimming disabled or normalization set to null, `x = 5 =` is not accepted, while
+`x =` still reports a missing assignment value.
 
 ---
 

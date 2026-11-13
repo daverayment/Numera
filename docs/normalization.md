@@ -52,11 +52,18 @@ When called, `ExpressionNormalizer` executes a configurable sequence of passes:
 ### 1. Launcher Equals Trimming
 Strips leading and trailing equals characters without disturbing equality comparison operators:
 - `= 2 + 2 =` $\to$ `2 + 2`
+- `x = 5 =` $\to$ `x = 5` (completed assignment with launcher decoration)
+- `x =` $\to$ preserved as `x =` (incomplete assignment)
 - `x == 10` $\to$ preserved as `x == 10`
 - `x <= 5` $\to$ preserved as `x <= 5`
 
 > [!NOTE]
-> The trailing `=` is removed even from `x =`, so that evaluates as plain `x` rather than as an unfinished assignment. See [Variables and Context](variables.md).
+> An equals after a lone identifier is an assignment operator, not launcher decoration.
+> `x =` reports `InvalidSyntax` at that operator whether or not `x` already exists.
+> Other eligible trailing equals are removed once, and the parser checks the remaining
+> syntax: `x = 5 + =` still fails because its value expression is incomplete. Disabling
+> `TrimLauncherEquals` (or using raw mode) disables decoration removal, not assignment
+> validation. See [Variables and Context](variables.md).
 
 ### 2. Typographic & Unicode Sanitization
 Converts copied Unicode mathematical symbols, dashes, and Fortran/Python power operators to standard ASCII equivalents:
