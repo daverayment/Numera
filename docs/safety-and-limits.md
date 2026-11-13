@@ -62,6 +62,21 @@ Completed-result arithmetic checks the captured operands and the final value aga
 
 Composition also applies the selected structural AST limits to its metadata, without evaluating that metadata. This prevents repeated shared-expression composition from creating an exponentially large inspection workload. Metadata is not required to resolve functions against the receiving engine: its captured values are already authoritative.
 
+### Manually Constructed Expression Trees
+
+Evaluation validates the entire AST before executing any node or custom callback.
+Variable references, assignment targets, and function names must satisfy
+`Identifier.IsValidIdentifier`; malformed names such as `1x` or `a b` report
+`InvalidSyntax`, with the offending node's source span when supplied. Existing
+constant markings, reserved assignment names, function bindings, arity checks,
+and structural limits are also enforced.
+
+Formatting an existing AST still tolerates unknown function names, including
+display-only names that are not executable identifiers. Variable references and
+assignment targets must have valid identifier syntax. Captured-result metadata
+continues to receive structural validation only; arithmetic uses the stored
+values and does not execute that metadata.
+
 ---
 
 ## Error Handling Patterns

@@ -203,6 +203,127 @@ public class AstValidationTests
     }
 
     [TestMethod]
+    [DataRow("")]
+    [DataRow("   ")]
+    [DataRow("1x")]
+    [DataRow("a b")]
+    [DataRow("a-b")]
+    [DataRow(" x")]
+    [DataRow("x ")]
+    [DataRow("x!")]
+    [DataRow("x\n")]
+    [DataRow("\u03C0x")]
+    [DataRow("x\u03C0")]
+    [DataRow("x\u0661")]
+    public void MalformedManualNamesFailBeforeCallbacksWithNodeSpans(string name)
+    {
+        int calls = 0;
+        var engine = new CalculatorEngine(new CalculatorOptions
+        {
+            CustomFunctions = [CustomFunction.Create("tick", () =>
+            {
+                calls++;
+                return new MathValue(7);
+            })]
+        });
+        var context = new EvaluationContext([new Variable("existing", new MathValue(42))], new MathValue(11));
+        var span = new TextSpan(7, Math.Max(1, name.Length));
+        var invalidNodes = new ExpressionNode[]
+        {
+            new IdentifierNode(name, Span: span),
+            new AssignmentNode(name, new FunctionCallNode("tick", []), span: span),
+            new FunctionCallNode(name, [new FunctionCallNode("tick", [])], span),
+        };
+
+        foreach (var invalidNode in invalidNodes)
+        {
+            var tree = new BinaryNode(BinaryOperator.Add, new FunctionCallNode("tick", []), invalidNode);
+            Assert.IsFalse(engine.TryEvaluate(tree, out _, out var diagnostic, context));
+            Assert.IsNotNull(diagnostic);
+            Assert.AreEqual(EvaluationError.InvalidSyntax, diagnostic.Code);
+            Assert.AreEqual(span.Start, diagnostic.Position);
+            Assert.AreEqual(span.Length, diagnostic.Length);
+            Assert.IsFalse(string.IsNullOrWhiteSpace(diagnostic.Message));
+            var exception = Assert.ThrowsExactly<ExpressionException>(() => engine.Evaluate(tree, context));
+            Assert.AreEqual(diagnostic, exception.Diagnostic);
+            Assert.AreEqual(0, calls);
+
+            Assert.IsFalse(Calculator.TryEvaluate(invalidNode, out _, out var facadeDiagnostic, context));
+            Assert.AreEqual(diagnostic, facadeDiagnostic);
+            if (invalidNode is not FunctionCallNode)
+            {
+                foreach (var style in new[] { ExpressionFormatOptions.Ascii, ExpressionFormatOptions.Typographic, ExpressionFormatOptions.LaTeX })
+                {
+                    var formatException = Assert.ThrowsExactly<ExpressionException>(() => engine.FormatExpression(tree, style));
+                    Assert.AreEqual(diagnostic, formatException.Diagnostic);
+                    var facadeException = Assert.ThrowsExactly<ExpressionException>(() => Calculator.FormatExpression(invalidNode, style));
+                    Assert.AreEqual(diagnostic, facadeException.Diagnostic);
+                }
+            }
+            Assert.AreEqual(0, calls);
+        }
+
+        Assert.AreEqual(new MathValue(42), context.Variables["existing"].Value);
+        Assert.AreEqual(new MathValue(11), context.PreviousResult);
+        Assert.AreEqual(new MathValue(7), engine.Evaluate(new FunctionCallNode("tick", [])).Value);
+        Assert.AreEqual(1, calls);
+    }
+
+    [TestMethod]
+    [DataRow("_")]
+    [DataRow("_x")]
+    [DataRow("alpha2")]
+    [DataRow("UPPER_case")]
+    [DataRow("\u03B1")]
+    [DataRow("\u53D8\u91CF2")]
+    public void ValidManualNamesMatchParsedAssignmentsAndRegisteredFunctions(string name)
+    {
+        var engine = new CalculatorEngine();
+        var assignment = new AssignmentNode(name, Num(42m));
+        var result = engine.Evaluate(assignment);
+        Assert.AreEqual(engine.Evaluate($"{name} = 42").Value, result.Value);
+        Assert.AreEqual(new MathValue(42), result.Context.Variables[name].Value);
+        var identifier = new IdentifierNode(name);
+        Assert.AreEqual(result.Value, engine.Evaluate(identifier, result.Context).Value);
+        Assert.AreEqual(name, engine.FormatExpression(identifier, ExpressionFormatOptions.Ascii));
+        Assert.AreEqual($"{name} = 42", engine.FormatExpression(assignment, ExpressionFormatOptions.Ascii));
+
+        var customEngine = new CalculatorEngine(new CalculatorOptions
+        {
+            CustomFunctions = [CustomFunction.Create(name, value => value)]
+        });
+        var call = new FunctionCallNode(name, [Num(42m)]);
+        Assert.AreEqual(new MathValue(42), customEngine.Evaluate(call).Value);
+        Assert.AreEqual(customEngine.Evaluate($"{name}(42)").Value, customEngine.Evaluate(call).Value);
+    }
+
+    [TestMethod]
+    [DataRow("my_func", @"\operatorname{my\_func}(1)", EvaluationError.UnknownFunction)]
+    [DataRow("my-func", @"\operatorname{my-func}(1)", EvaluationError.InvalidSyntax)]
+    public void DisplayOnlyUnknownFunctionNamesRemainFormattable(string name, string expectedLatex, EvaluationError evaluationError)
+    {
+        var call = new FunctionCallNode(name, [Num()]);
+        Assert.AreEqual(expectedLatex, Calculator.FormatExpression(call, ExpressionFormatOptions.LaTeX));
+        Assert.AreEqual($"{name}(1)", Calculator.FormatExpression(call, ExpressionFormatOptions.Ascii));
+        Assert.IsFalse(Calculator.TryEvaluate(call, out _, out var diagnostic));
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(evaluationError, diagnostic.Code);
+    }
+
+    [TestMethod]
+    public void CapturedResultMetadataIsNotRequiredToBeExecutableSyntax()
+    {
+        var metadata = new IdentifierNode("display only");
+        var value = new MathValue(5);
+        var captured = new EvaluationResult(value, new EvaluationContext(VariableCollection.Empty, value, metadata));
+        Assert.AreEqual(new MathValue(6), (captured + new MathValue(1)).Value);
+        Assert.AreEqual(new MathValue(-5), (-captured).Value);
+        Assert.IsFalse(Calculator.TryEvaluate(metadata, out _, out var diagnostic));
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(EvaluationError.InvalidSyntax, diagnostic.Code);
+    }
+
+    [TestMethod]
     public void FiveThousandTermManualSumEvaluatesOrThrowsLimit()
     {
         ExpressionNode sum = Num();

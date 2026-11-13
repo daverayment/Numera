@@ -154,6 +154,10 @@ internal static class AstValidator
                 {
                     throw Invalid(node, EvaluationError.InvalidSyntax, "Function call cannot have null name or arguments.");
                 }
+                if (!allowUnknownFunctions)
+                {
+                    ValidateIdentifierName(node, call.FunctionName);
+                }
                 if (!FunctionArity.TryGet(call.FunctionName, options.CustomFunctions, out var signature))
                 {
                     if (allowUnknownFunctions)
@@ -209,6 +213,9 @@ internal static class AstValidator
                 {
                     throw Invalid(node, EvaluationError.InvalidSyntax, "Identifier cannot have a null name.");
                 }
+
+                ValidateIdentifierName(node, identifier.Name);
+
                 if (identifier.Constant is { } declared)
                 {
                     if (!ConstantCatalog.TryResolve(identifier.Name, out var resolved, out _) || resolved != declared)
@@ -222,6 +229,7 @@ internal static class AstValidator
                     // would silently be looked up as a variable.
                     throw Invalid(node, EvaluationError.InvalidSyntax, $"Identifier '{identifier.Name}' is a constant and must be marked as one.");
                 }
+
                 break;
 
             case AssignmentNode assignment:
@@ -229,28 +237,44 @@ internal static class AstValidator
                 {
                     throw Invalid(node, EvaluationError.InvalidSyntax, "Assignment must specify a valid variable name.");
                 }
+
+                ValidateIdentifierName(node, assignment.VariableName);
+
                 if (assignment.Value is null)
                 {
                     // TODO: possible?
                     throw Invalid(node, EvaluationError.InvalidSyntax, "Assignment must specify a value.");
                 }
+
                 if (ConstantCatalog.TryResolve(assignment.VariableName, out _, out _))
                 {
                     throw Invalid(node, EvaluationError.InvalidSyntax, $"Cannot assign to constant name '{assignment.VariableName}'.");
                 }
+
                 if (FunctionCatalog.TryGetInfo(assignment.VariableName, out _))
                 {
                     throw Invalid(node, EvaluationError.InvalidSyntax, $"Cannot assign to function name '{assignment.VariableName}'.");
                 }
+
                 if (options.CustomFunctions.TryGetFunction(assignment.VariableName, out _))
                 {
                     throw Invalid(node, EvaluationError.InvalidSyntax, $"Cannot assign to function name '{assignment.VariableName}'.");
                 }
+
                 if (KeywordCatalog.IsReserved(assignment.VariableName))
                 {
                     throw Invalid(node, EvaluationError.InvalidSyntax, $"Cannot assign to reserved name '{assignment.VariableName}'.");
                 }
+
                 break;
+        }
+    }
+
+    private static void ValidateIdentifierName(ExpressionNode node, string name)
+    {
+        if (!Identifier.IsValidIdentifier(name, out var errorMessage))
+        {
+            throw Invalid(node, EvaluationError.InvalidSyntax, errorMessage);
         }
     }
 

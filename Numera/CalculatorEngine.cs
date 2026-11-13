@@ -246,7 +246,8 @@ public sealed class CalculatorEngine
 
     /// <summary>
     /// Evaluates an already parsed tree, enabling single-parse workflows that both format
-    /// and evaluate. The tree is validated against this engine's limits first.
+    /// and evaluate. The tree's syntax invariants, identifier names, and limits are
+    /// validated before evaluation or callbacks execute.
     /// </summary>
     /// <param name="node">The tree to evaluate, typically from <see cref="Parse"/>.
     /// </param>
@@ -482,7 +483,8 @@ public sealed class CalculatorEngine
 
     /// <summary>
     /// Renders an existing expression tree. Unknown function names are tolerated so
-    /// partially understood input can still be displayed; nesting limits still apply.
+    /// partially understood input can still be displayed. Variable and assignment names
+    /// must be syntactically valid identifiers; nesting limits still apply.
     /// </summary>
     /// <param name="node">The tree to render.</param>
     /// <param name="options">Rendering style; defaults to
