@@ -27,6 +27,32 @@ namespace Numera;
 /// </remarks>
 public static class Calculator
 {
+    [ThreadStatic]
+    private static CalculatorEngine? _cachedEngine;
+
+    private static CalculatorEngine GetDefaultEngine()
+    {
+        var culture = CultureInfo.CurrentCulture;
+        bool canCache = culture.IsReadOnly;
+
+        // Culture names are not unique configurations: two en-US instances can have
+        // different separators. Writable cultures bypass reuse because their settings
+        // can change. One entry per thread avoids locking and an unbounded culture cache.
+        if (canCache && _cachedEngine is { } cached &&
+            ReferenceEquals(cached.Options.Culture, culture))
+        {
+            return cached;
+        }
+
+        var engine = new CalculatorEngine(new CalculatorOptions { Culture = culture });
+        if (canCache)
+        {
+            _cachedEngine = engine;
+        }
+
+        return engine;
+    }
+
     /// <summary>
     /// Evaluates a mathematical expression and returns a result containing a polymorphic
     /// <see cref="MathValue"/>.
@@ -42,7 +68,7 @@ public static class Calculator
     /// parsed, or evaluation fails. Check <see cref="NumeraException.Diagnostic"/> for
     /// structured details.</exception>
     public static EvaluationResult Evaluate(string expression, EvaluationContext? context = null) =>
-        CalculatorEngine.Default.Evaluate(expression, context);
+        GetDefaultEngine().Evaluate(expression, context);
 
     /// <summary>
     /// Evaluates an already parsed expression tree, so a caller that both formats and
@@ -60,7 +86,7 @@ public static class Calculator
     /// <exception cref="NumeraException">Thrown if the tree breaches limits or evaluation
     /// fails; check <see cref="NumeraException.Diagnostic"/>.</exception>
     public static EvaluationResult Evaluate(ExpressionNode node, EvaluationContext? context = null) =>
-        CalculatorEngine.Default.Evaluate(node, context);
+        GetDefaultEngine().Evaluate(node, context);
 
     /// <summary>
     /// Attempts to evaluate an expression without throwing for expected failures. Invalid
@@ -82,7 +108,7 @@ public static class Calculator
         out EvaluationResult result,
         [NotNullWhen(false)] out EvaluationDiagnostic? diagnostic,
         EvaluationContext? context = null) =>
-        CalculatorEngine.Default.TryEvaluate(expression, out result, out diagnostic, context);
+        GetDefaultEngine().TryEvaluate(expression, out result, out diagnostic, context);
 
     /// <summary>
     /// Attempts to evaluate an already parsed expression tree without throwing for
@@ -102,7 +128,7 @@ public static class Calculator
         out EvaluationResult result,
         [NotNullWhen(false)] out EvaluationDiagnostic? diagnostic,
         EvaluationContext? context = null) =>
-        CalculatorEngine.Default.TryEvaluate(node, out result, out diagnostic, context);
+        GetDefaultEngine().TryEvaluate(node, out result, out diagnostic, context);
 
     /// <summary>
     /// Parses an expression into an abstract syntax tree without evaluating it.
@@ -124,7 +150,7 @@ public static class Calculator
         string expression,
         EvaluationContext? context = null,
         bool allowUnboundVariables = false) =>
-        CalculatorEngine.Default.Parse(expression, context, allowUnboundVariables);
+        GetDefaultEngine().Parse(expression, context, allowUnboundVariables);
 
     /// <summary>
     /// Attempts to parse an expression without throwing for syntax or normalization
@@ -147,7 +173,7 @@ public static class Calculator
         [NotNullWhen(false)] out EvaluationDiagnostic? diagnostic,
         EvaluationContext? context = null,
         bool allowUnboundVariables = false) =>
-        CalculatorEngine.Default.TryParse(expression, out node, out diagnostic, context, allowUnboundVariables);
+        GetDefaultEngine().TryParse(expression, out node, out diagnostic, context, allowUnboundVariables);
 
     /// <summary>
     /// Parses and re-renders an expression, for example to show a tidied or typeset
@@ -174,7 +200,7 @@ public static class Calculator
         string expression,
         ExpressionFormatOptions? options = null,
         EvaluationContext? context = null) =>
-        CalculatorEngine.Default.FormatExpression(expression, options, context);
+        GetDefaultEngine().FormatExpression(expression, options, context);
 
     /// <summary>
     /// Renders an existing expression tree. Unknown function names are tolerated so
@@ -190,7 +216,7 @@ public static class Calculator
     /// <exception cref="NumeraException">Thrown if the tree breaches nesting or length
     /// limits.</exception>
     public static string FormatExpression(ExpressionNode node, ExpressionFormatOptions? options = null) =>
-        CalculatorEngine.Default.FormatExpression(node, options);
+        GetDefaultEngine().FormatExpression(node, options);
 
     /// <summary>
     /// Formats a result using library display defaults and current culture at call time,
@@ -220,7 +246,7 @@ public static class Calculator
         ResultFormatOptions? options = null,
         CultureInfo? culture = null,
         bool prefixRadixOutput = true) =>
-        CalculatorEngine.Default.FormatResult(result, options, culture, prefixRadixOutput);
+        GetDefaultEngine().FormatResult(result, options, culture, prefixRadixOutput);
 
     /// <summary>
     /// Formats a value using library display defaults and current culture at call time.
@@ -244,5 +270,5 @@ public static class Calculator
         ResultFormatOptions? options = null,
         CultureInfo? culture = null,
         bool prefixRadixOutput = true) =>
-        CalculatorEngine.Default.FormatResult(value, options, culture, prefixRadixOutput);
+        GetDefaultEngine().FormatResult(value, options, culture, prefixRadixOutput);
 }

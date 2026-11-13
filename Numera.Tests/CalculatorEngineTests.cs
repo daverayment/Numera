@@ -225,6 +225,251 @@ public class CalculatorEngineTests
     }
 
     [TestMethod]
+    public void FacadeReusesReadOnlyCultureConfigurationWithoutSharingSessionState()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            var culture = CultureInfo.ReadOnly(new CultureInfo("en-US"));
+            CultureInfo.CurrentCulture = culture;
+            var firstContext = new EvaluationContext([new Variable("x", 2)], previousResult: 3);
+            var secondContext = new EvaluationContext([new Variable("x", 11)], previousResult: 7);
+            var first = Calculator.Evaluate("ans+x", firstContext);
+            var second = Calculator.Evaluate("ans+x", secondContext);
+
+            Assert.AreSame(first.Options, second.Options);
+            Assert.AreSame(culture, first.Culture);
+            Assert.AreEqual(new MathValue(5), first.Value);
+            Assert.AreEqual(new MathValue(18), second.Value);
+            Assert.AreEqual(new MathValue(3), firstContext.PreviousResult);
+            Assert.AreEqual(new MathValue(7), secondContext.PreviousResult);
+
+            var node = Calculator.Parse("2+3");
+            Assert.AreSame(first.Options, Calculator.Evaluate(node).Options);
+            Assert.IsTrue(Calculator.TryEvaluate("2+3", out var attempted, out var diagnostic), diagnostic?.Message);
+            Assert.AreSame(first.Options, attempted.Options);
+            Assert.IsTrue(Calculator.TryEvaluate(node, out attempted, out diagnostic), diagnostic?.Message);
+            Assert.AreSame(first.Options, attempted.Options);
+            Assert.IsFalse(Calculator.TryEvaluate("ans", out _, out diagnostic));
+            Assert.AreEqual(EvaluationError.UnknownConstant, diagnostic.Code);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [TestMethod]
+    public void FacadeDistinguishesReadOnlyCultureReferencesWithTheSameName()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            var firstCulture = CultureInfo.ReadOnly(new CultureInfo("en-US"));
+            var customized = new CultureInfo("en-US");
+            customized.NumberFormat.NumberDecimalSeparator = ",";
+            customized.NumberFormat.NumberGroupSeparator = ".";
+            customized.TextInfo.ListSeparator = ";";
+            var secondCulture = CultureInfo.ReadOnly(customized);
+            Assert.AreEqual(firstCulture.Name, secondCulture.Name);
+            Assert.IsTrue(secondCulture.NumberFormat.IsReadOnly);
+            Assert.IsTrue(secondCulture.TextInfo.IsReadOnly);
+
+            CultureInfo.CurrentCulture = firstCulture;
+            var first = Calculator.Evaluate("1000+2.5");
+            Assert.AreEqual("1,002.5", first.PrimaryDisplay);
+
+            CultureInfo.CurrentCulture = secondCulture;
+            var second = Calculator.Evaluate("1000+2,5");
+            Assert.AreEqual("1.002,5", second.PrimaryDisplay);
+            Assert.AreEqual(2.5m, Calculator.Evaluate("max(1,5; 2,5)").DecimalValue);
+            Assert.AreSame(secondCulture, second.Culture);
+            Assert.AreNotSame(first.Options, second.Options);
+            Assert.AreEqual("1,002.5", first.PrimaryDisplay);
+
+            CultureInfo.CurrentCulture = firstCulture;
+            var returned = Calculator.Evaluate("1000+2.5");
+            Assert.AreEqual("1,002.5", returned.PrimaryDisplay);
+            Assert.AreSame(firstCulture, returned.Culture);
+            Assert.AreNotSame(first.Options, returned.Options);
+            Assert.AreSame(returned.Options, Calculator.Evaluate("42").Options);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [TestMethod]
+    public void FacadeDoesNotCacheWritableCulturesAndObservesTheirMutations()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            var culture = new CultureInfo("en-US");
+            CultureInfo.CurrentCulture = culture;
+            var first = Calculator.Evaluate("max(1.5, 2.5)");
+            var repeated = Calculator.Evaluate("max(1.5, 2.5)");
+            Assert.IsFalse(culture.IsReadOnly);
+            Assert.AreNotSame(first.Options, repeated.Options);
+            Assert.AreEqual("2.5", first.PrimaryDisplay);
+
+            culture.NumberFormat.NumberDecimalSeparator = ",";
+            culture.NumberFormat.NumberGroupSeparator = ".";
+            culture.TextInfo.ListSeparator = ";";
+            var changed = Calculator.Evaluate("max(1,5; 2,5)");
+
+            Assert.AreEqual(2.5m, changed.DecimalValue);
+            Assert.AreEqual("2,5", changed.PrimaryDisplay);
+            Assert.AreSame(culture, changed.Culture);
+            Assert.AreNotSame(repeated.Options, changed.Options);
+            Assert.AreEqual("1.002,5", Calculator.FormatResult(Calculator.Evaluate("1000+2,5")).PrimaryDisplay);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [TestMethod]
+    public void PublicDefaultFactoriesContinueToCreateFreshInstances()
+    {
+        var first = CalculatorEngine.Default;
+        var second = CalculatorEngine.Default;
+        var firstOptions = CalculatorOptions.Default;
+        var secondOptions = CalculatorOptions.Default;
+
+        Assert.AreNotSame(first, second);
+        Assert.AreNotSame(first.Options, second.Options);
+        Assert.AreNotSame(firstOptions, secondOptions);
+        Assert.AreSame(CultureInfo.CurrentCulture, first.Options.Culture);
+    }
+
+    [TestMethod]
+    public async Task FacadeCacheIsThreadLocalWhileCurrentCultureFlows()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            var culture = CultureInfo.ReadOnly(new CultureInfo("de-DE"));
+            CultureInfo.CurrentCulture = culture;
+            var parent = Calculator.Evaluate("1,5+1");
+            var worker = await Task.Factory.StartNew(() =>
+            {
+                Assert.AreSame(culture, CultureInfo.CurrentCulture);
+                var first = Calculator.Evaluate("1,5+1");
+                var second = Calculator.Evaluate("1,5+1");
+                Assert.AreSame(first.Options, second.Options);
+                Assert.AreEqual(2.5m, second.DecimalValue);
+                return first;
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+            Assert.AreNotSame(parent.Options, worker.Options);
+            Assert.AreSame(culture, worker.Culture);
+            Assert.AreSame(culture, CultureInfo.CurrentCulture);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [TestMethod]
+    public async Task FacadeFollowsEachAsyncFlowsCulture()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        (CultureInfo Culture, string Input, string Expected)[] cases =
+        [
+            (CultureInfo.ReadOnly(new CultureInfo("en-US")), "1000+2.5", "1,002.5"),
+            (CultureInfo.ReadOnly(new CultureInfo("de-DE")), "1000+2,5", "1.002,5")
+        ];
+
+        await Task.WhenAll(cases.Select(item => Task.Run(async () =>
+        {
+            CultureInfo.CurrentCulture = item.Culture;
+            for (int i = 0; i < 16; i++)
+            {
+                await Task.Yield();
+                var result = Calculator.Evaluate(item.Input);
+                Assert.AreSame(item.Culture, result.Culture);
+                Assert.AreEqual(item.Expected, result.PrimaryDisplay);
+            }
+        })));
+
+        Assert.AreSame(originalCulture, CultureInfo.CurrentCulture);
+    }
+
+    [TestMethod]
+    public void WarmedUpFacadeAllocationsMatchARetainedEngineForEveryRoute()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.ReadOnly(new CultureInfo("en-US"));
+            var engine = CalculatorEngine.ForCurrentCulture();
+            var node = engine.Parse("2+3");
+            var result = engine.Evaluate(node);
+            (string Name, Action Facade, Action Retained)[] operations =
+            [
+                ("Evaluate text", () => Calculator.Evaluate("2+3"), () => engine.Evaluate("2+3")),
+                ("Evaluate AST", () => Calculator.Evaluate(node), () => engine.Evaluate(node)),
+                ("TryEvaluate text", () => Calculator.TryEvaluate("2+3", out _, out _), () => engine.TryEvaluate("2+3", out _, out _)),
+                ("TryEvaluate AST", () => Calculator.TryEvaluate(node, out _, out _), () => engine.TryEvaluate(node, out _, out _)),
+                ("Parse", () => Calculator.Parse("2+3"), () => engine.Parse("2+3")),
+                ("TryParse", () => Calculator.TryParse("2+3", out _, out _), () => engine.TryParse("2+3", out _, out _)),
+                ("FormatExpression text", () => Calculator.FormatExpression("2+3"), () => engine.FormatExpression("2+3")),
+                ("FormatExpression AST", () => Calculator.FormatExpression(node), () => engine.FormatExpression(node)),
+                ("FormatResult result", () => Calculator.FormatResult(result), () => engine.FormatResult(result)),
+                ("FormatResult value", () => Calculator.FormatResult(result.Value), () => engine.FormatResult(result.Value))
+            ];
+            Action fresh = () => CalculatorEngine.Default.TryEvaluate("2+3", out _, out _);
+
+            for (int i = 0; i < 64; i++)
+            {
+                foreach (var operation in operations)
+                {
+                    operation.Facade();
+                    operation.Retained();
+                }
+                fresh();
+            }
+
+            foreach (var operation in operations)
+            {
+                long retainedBytes = MeasureAllocations(operation.Retained);
+                long facadeBytes = MeasureAllocations(operation.Facade);
+                Assert.AreEqual(retainedBytes, facadeBytes, operation.Name);
+            }
+
+            long freshBytes = MeasureAllocations(fresh);
+            long cachedBytes = MeasureAllocations(() => Calculator.TryEvaluate("2+3", out _, out _));
+            Assert.IsTrue(cachedBytes < freshBytes, $"Cached: {cachedBytes} bytes; fresh: {freshBytes} bytes.");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    private static long MeasureAllocations(Action operation)
+    {
+        // The lowest of repeated samples excludes incidental runtime initialization
+        // without allowing any extra per-call allocations in the facade.
+        long minimum = long.MaxValue;
+        for (int sample = 0; sample < 5; sample++)
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 128; i++)
+            {
+                operation();
+            }
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            minimum = Math.Min(minimum, allocated);
+        }
+        return minimum;
+    }
+
+    [TestMethod]
     public void SharedEngine_IsSafeAcrossThreads()
     {
         var engine = TestEngines.DegreesEngine;
