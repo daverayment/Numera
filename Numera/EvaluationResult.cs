@@ -915,8 +915,11 @@ public readonly record struct EvaluationResult :
     /// <see langword="null"/> if none.
     /// </summary>
     /// <remarks>Includes only <see cref="AssignedVariables"/>, not every variable in the
-    /// context.</remarks>
-    public string? AssignmentSummary => HasAssignments ? AssignedVariables.ToString() : null;
+    /// context. Values use the result's display options and culture, falling back to
+    /// library defaults and current culture when absent.</remarks>
+    public string? AssignmentSummary => HasAssignments ?
+        AssignedVariables.FormatSummary(Culture, FormatOptions ?? ResultFormatOptions.Default) :
+        null;
 
     // Formatting interfaces.
 

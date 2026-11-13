@@ -384,11 +384,9 @@ The culture rules to be aware of:
 `result.FormatResult()` and the engine and facade formatting routes return an immutable `FormattedCalculation`. All representations and summaries are prepared before returning. `PrimaryDisplay` and `MachineReadable` are non-null, and `IsDisplayRounded` is a boolean. Alternatives are null only when unavailable for the value, such as binary for a third or an exact fraction for an Unverified result. Reading properties, caching the snapshot, or switching views does not trigger formatting or new formatting exceptions.
 
 Both engine and facade provide separate `EvaluationResult` and `MathValue` overloads.
-Passing a result preserves its assignment metadata and prepares the assignment summary
-in the selected culture. Passing `.Value` formats only the number, without assignments.
+Passing a result includes assignment metadata and a summary under the selected display
+policy. Passing `.Value` formats only the number, without assignments.
 Neither route changes the source value, its exactness, or its captured settings.
-
-`AssignmentSummary` is prepared using the selected culture, native value formatting, and stored definition text. It is null when there are no assignments. Its text, like the numeric presentations, is unaffected by subsequent current-culture changes.
 
 Formatting does not re-evaluate the calculation. Invalid options throw argument exceptions at the formatting call, and numerical work is subject to safety limits. `TryEvaluate` reports evaluation failures, not formatting failures.
 
@@ -458,7 +456,7 @@ if (formatted.BinaryRepresentation is string binary)
 
 Custom cultures can supply arbitrarily long signs, decimal/group separators, or nonfinite symbols. Substitute their actual lengths into the formulas; do not assume one character per symbol. The exponent's minus sign remains a single ASCII `-`. Nonfinite primary displays use the configured symbols rather than a significant-digit budget; invariant machine tokens are `NaN`, `Infinity`, and `-Infinity` (3, 8, and 9 characters).
 
-`AssignmentSummary` combines multiple names, native value text, definitions, and delimiters, so it has no fixed overhead relative to one answer's digits. Other application decorations, such as an approximation indicator or unit, are not part of these strings and need their own allowance. For custom cultures, summaries, UTF-8 buffers, or actual visual fitting, inspect/measure the prepared representation rather than assuming these common-case character counts are display widths.
+`AssignmentSummary` combines multiple names, formatted values, definitions, and delimiters, so it has no fixed overhead relative to one answer's digits. Other application decorations, such as an approximation indicator or unit, are not part of these strings and need their own allowance. For custom cultures, summaries, UTF-8 buffers, or actual visual fitting, inspect/measure the prepared representation rather than assuming these common-case character counts are display widths.
 
 ---
 

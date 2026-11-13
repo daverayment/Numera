@@ -67,7 +67,8 @@ public sealed record FormattedCalculation
 
     /// <summary>
     /// Creates a snapshot from prepared representations. If an assignment summary is not
-    /// supplied, prepares it using current culture. Numeric text is stored as supplied.
+    /// supplied, prepares it using default result formatting and current culture.
+    /// Numeric text is stored as supplied.
     /// </summary>
     /// <param name="value">The calculated value.</param>
     /// <param name="primaryDisplay">The primary display.</param>
@@ -104,7 +105,8 @@ public sealed record FormattedCalculation
         AssignedVariables = assignedVariables;
         IsDisplayRounded = isDisplayRounded;
         FractionRepresentation = fractionRepresentation;
-        AssignmentSummary = assignmentSummary ?? assignedVariables?.FormatSummary(null);
+        AssignmentSummary =
+            assignmentSummary ?? assignedVariables?.FormatSummary(null, ResultFormatOptions.Default);
     }
 
     /// <summary>Deconstructs the original seven-field presentation surface.</summary>

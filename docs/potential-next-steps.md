@@ -3,6 +3,18 @@
 These are optional post-v1 investigations, not requirements for the initial release.
 Prioritize release readiness over expanding the numerical model.
 
+## MathValue Default Formatting
+
+Review the boundary between representation-native `MathValue.ToString()` and
+calculator presentation. Integer, Decimal, and Double use native .NET formatting;
+Rational general formatting uses the result formatter's default display policy.
+Default native formatting does not consistently apply decimal display-scale metadata.
+
+Consider whether default formatting should be uniform across representations while
+keeping explicit numeric format strings representation-native. Account for character
+and UTF-8 span formatting and interpolation. `EvaluationResult.ToString()` and
+`FormatResult()` provide calculator presentation independently of this decision.
+
 ## Exact Rational Multiples of Pi
 
 Investigate a bounded value representation for `q * pi`, where `q` is a reduced

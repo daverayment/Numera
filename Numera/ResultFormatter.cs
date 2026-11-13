@@ -81,6 +81,6 @@ internal static class ResultFormatter
             assignedVariables: assignedVariables,
             fractionRepresentation: ResultValueFormatter.FormatExactFraction(value),
             isDisplayRounded: isRounded,
-            assignmentSummary: assignedVariables?.FormatSummary(culture));
+            assignmentSummary: assignedVariables?.FormatSummary(culture, options));
     }
 }
