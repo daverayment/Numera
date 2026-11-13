@@ -49,7 +49,8 @@ public enum FunctionCategory
     StatisticalAndAggregation,
 
     /// <summary>
-    /// Combinatorics, permutations, factorials, and discrete integer operations (factorial).
+    /// Combinatorics, permutations, factorials, and discrete integer operations
+    /// (factorial).
     /// </summary>
     CombinatoricsAndNumberTheory,
 
@@ -64,7 +65,9 @@ public enum FunctionCategory
     SpecialAndProbability,
 
     /// <summary>
-    /// Floating-point and numerical property classification (e.g. isnan, isfinite, isinf).
+    /// Reserved for numerical property inspection functions; no built-in expression
+    /// functions currently use this category. Inspect calculated values through
+    /// <see cref="MathValue.IsNaN"/> and <see cref="MathValue.IsFinite"/> instead.
     /// </summary>
     Inspection,
 
