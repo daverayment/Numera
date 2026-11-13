@@ -207,17 +207,30 @@ public static class ExpressionNormalizer
             offset += 1 + (afterEquals.Length - span.Length);
         }
 
-        // A lone identifier followed by '=' starts an assignment, not launcher decoration.
-        // The parser remains responsible for checking completeness after other suffixes are removed.
-        if (span.EndsWith("=") && !span.EndsWith("==") && !span.EndsWith("<=") &&
-            !span.EndsWith(">=") && !span.EndsWith("!=") && !span.EndsWith("~=") &&
-            !Identifier.IsValidIdentifier(span[..^1].TrimEnd(), out _))
+        if (CanTrimTrailingEquals(span))
         {
             span = span[..^1].TrimEnd();
         }
 
         map = SourceMap.Slice(offset, span.Length, text.Length);
         return span.ToString();
+    }
+
+    private static bool CanTrimTrailingEquals(ReadOnlySpan<char> text)
+    {
+        if (text.IsEmpty || text[^1] != '=')
+        {
+            return false;
+        }
+
+        if (text.Length > 1 &&
+            text[^2] is '=' or '<' or '>' or '!' or '~')
+        {
+            return false;
+        }
+
+        // An equals after a lone identifier is an assignment operator, not decoration.
+        return !Identifier.IsValidIdentifier(text[..^1].TrimEnd(), out _);
     }
 
     private static string SanitizeUnicodeOperators(string text, out SourceMap map)

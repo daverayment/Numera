@@ -146,7 +146,6 @@ public class NumericTests
     [TestMethod]
     [DataRow("floor(0.3 / 0.1)", "3")]
     [DataRow("floor(0.30 / 0.10)", "3")]
-    [DataRow("floor(tan(pi / 4))", "1")]
     [DataRow("floor((3033554.11 - 3033359.71 - 194) * 100)", "40")]
     public void FloorPreservesExactValuesWhereBinaryFloatFails(string expression, string expected)
     {
@@ -598,10 +597,7 @@ public class NumericTests
     [DataRow("pow(-4, 0.5)", EvaluationError.UndefinedMathResult)]
     [DataRow("0^-1", EvaluationError.DivisionByZero)]
     [DataRow("pow(0, -1)", EvaluationError.DivisionByZero)]
-    [DataRow("tan(pi/2)", EvaluationError.UndefinedMathResult)]
-    [DataRow("tan(3*pi/2)", EvaluationError.UndefinedMathResult)]
     [DataRow("cot(0)", EvaluationError.UndefinedMathResult)]
-    [DataRow("cot(pi)", EvaluationError.UndefinedMathResult)]
     public void MathDomainErrorsProduceStructuredDiagnostics(string expression, EvaluationError expectedError)
     {
         Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic));
@@ -862,11 +858,11 @@ public class NumericTests
     [DataRow("sin(grad2rad(100))", 1.0)]
     [DataRow("cos(grad(200))", -1.0)]
     [DataRow("tan(grad(50))", 1.0)]
-    public void TrigonometricFunctionsPreserveExactPrecisionWithRadAndGradHelpers(string expression, double expected)
+    public void TrigonometricFunctionsApproximateValuesWithRadAndGradHelpers(string expression, double expected)
     {
         var result = Calculator.Evaluate(expression);
         Assert.AreEqual(MathValue.DataType.Double, result.Kind);
-        Assert.AreEqual(expected, result.DoubleValue, 0.0);
+        Assert.AreEqual(expected, result.DoubleValue, 1e-15);
     }
 
     [TestMethod]
@@ -1154,17 +1150,37 @@ public class NumericTests
     }
 
     [TestMethod]
-    [DataRow("cot(rad(90))", 0.0)]
-    [DataRow("cot(pi/2)", 0.0)]
-    [DataRow("tan(pi/4)", 1.0)]
-    [DataRow("tan(-pi/4)", -1.0)]
-    [DataRow("sin(pi)", 0.0)]
-    [DataRow("cos(pi/2)", 0.0)]
-    [DataRow("cos(3*pi/2)", 0.0)]
-    public void RadiansModePreservesExactCardinalValuesForPiMultiples(string expression, double expected)
+    [DataRow("cot", "rad(90)")]
+    [DataRow("cot", "pi/2")]
+    [DataRow("tan", "pi/4")]
+    [DataRow("tan", "-pi/4")]
+    [DataRow("sin", "pi")]
+    [DataRow("cos", "pi/2")]
+    [DataRow("cos", "3*pi/2")]
+    [DataRow("tan", "pi/2")]
+    [DataRow("tan", "3*pi/2")]
+    [DataRow("cot", "pi")]
+    [DataRow("sec", "pi/2")]
+    [DataRow("sec", "3*pi/2")]
+    [DataRow("csc", "pi")]
+    [DataRow("tan", "rad(90)")]
+    [DataRow("cot", "rad(180)")]
+    public void RadiansModeEvaluatesRoundedPiMultiplesWithoutSnapping(string function, string argument)
     {
-        var result = Calculator.Evaluate(expression);
+        double angle = Calculator.Evaluate(argument).AsDouble();
+        double expected = function switch
+        {
+            "sin" => Math.Sin(angle),
+            "cos" => Math.Cos(angle),
+            "tan" => Math.Tan(angle),
+            "cot" => Math.Cos(angle) / Math.Sin(angle),
+            "sec" => 1.0 / Math.Cos(angle),
+            "csc" => 1.0 / Math.Sin(angle),
+            _ => throw new ArgumentException("Unsupported trigonometric function.", nameof(function)),
+        };
+        var result = Calculator.Evaluate($"{function}({argument})");
         Assert.AreEqual(MathValue.DataType.Double, result.Kind);
+        Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.AreEqual(expected, result.DoubleValue, 0.0);
     }
 
@@ -1188,13 +1204,9 @@ public class NumericTests
     }
 
     [TestMethod]
-    [DataRow("sec(pi/2)", EvaluationError.UndefinedMathResult)]
-    [DataRow("sec(3*pi/2)", EvaluationError.UndefinedMathResult)]
     [DataRow("csc(0)", EvaluationError.UndefinedMathResult)]
-    [DataRow("csc(pi)", EvaluationError.UndefinedMathResult)]
-    [DataRow("tan(rad(90))", EvaluationError.UndefinedMathResult)]
-    [DataRow("cot(rad(180))", EvaluationError.UndefinedMathResult)]
-    public void RadianAsymptotesAndConvertedSingularitiesProduceDiagnostics(string expression, EvaluationError expectedError)
+    [DataRow("cot(0)", EvaluationError.UndefinedMathResult)]
+    public void RadianReciprocalFunctionsAtZeroProduceDiagnostics(string expression, EvaluationError expectedError)
     {
         Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic));
         Assert.IsNotNull(diagnostic);
@@ -1207,17 +1219,13 @@ public class NumericTests
     [TestMethod]
     [DataRow("sin(180)")]
     [DataRow("sin(360)")]
-    [DataRow("sin(pi)")]
     [DataRow("cos(90)")]
     [DataRow("cos(270)")]
-    [DataRow("cos(pi/2)")]
     [DataRow("tan(180)")]
     [DataRow("cot(90)")]
     public void TrigonometricCardinalZerosProducePositiveZero(string expression)
     {
-        var result = expression.Contains("pi")
-            ? Calculator.Evaluate(expression)
-            : TestEngines.DegreesEngine.Evaluate(expression);
+        var result = TestEngines.DegreesEngine.Evaluate(expression);
 
         Assert.AreEqual(0.0, result.DoubleValue, 0.0);
         Assert.AreEqual(0L, BitConverter.DoubleToInt64Bits(result.DoubleValue), $"{expression} must evaluate to +0.0, not -0.0.");
@@ -1241,29 +1249,6 @@ public class NumericTests
         var result = TestEngines.GradiansEngine.Evaluate(expression);
         Assert.AreEqual(MathValue.DataType.Double, result.Kind);
         Assert.AreEqual(expected, result.DoubleValue, 0.0);
-    }
-
-    [TestMethod]
-    [DataRow("cos(pi / 2)", 0.0)]
-    [DataRow("sin(pi)", 0.0)]
-    [DataRow("cot(pi / 2)", 0.0)]
-    [DataRow("tan(pi / 4)", 1.0)]
-    public void TrigCardinalSnappingIsExact(string expression, double expected)
-    {
-        var result = Calculator.Evaluate(expression);
-        Assert.AreEqual(expected, result.DoubleValue, 0.0);
-    }
-
-    [TestMethod]
-    [DataRow("tan(pi / 2)", EvaluationError.UndefinedMathResult)]
-    [DataRow("sec(pi / 2)", EvaluationError.UndefinedMathResult)]
-    [DataRow("cot(0)", EvaluationError.UndefinedMathResult)]
-    [DataRow("cot(pi)", EvaluationError.UndefinedMathResult)]
-    public void TrigAsymptotesThrowUndefinedResult(string expression, EvaluationError expected)
-    {
-        Assert.IsFalse(Calculator.TryEvaluate(expression, out _, out var diagnostic));
-        Assert.IsNotNull(diagnostic);
-        Assert.AreEqual(expected, diagnostic.Code);
     }
 
     [TestMethod]
@@ -1324,8 +1309,6 @@ public class NumericTests
         Assert.AreEqual(0.5, cosResult.DoubleValue, 1e-15);
 
         // 400,000,050 gradians is 1,000,000 revolutions + 50 gradians (45 degrees).
-        // Beyond MaxSnappingRevolutions (100.0 revs), it falls back to double.TanPi with
-        // reduced remainder.
         var gradians = TestEngines.GradiansEngine;
         var tanGradResult = gradians.Evaluate("tan(400000050)");
         Assert.AreEqual(1.0, tanGradResult.DoubleValue, 1e-15);

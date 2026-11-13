@@ -26,7 +26,7 @@ Keep the initial domain narrow:
 - Treat operations outside the domain, such as `pi + 1` or `pi * pi`, as explicit
   approximation boundaries producing Unverified results.
 - Recognize special-angle identities only from proven values, never numeric proximity
-  or the existing tolerance-based cardinal-angle checks.
+	or tolerance-based cardinal-angle checks.
 - Consider the corresponding exact rational-angle path for degrees and gradians.
 - Leave irrational outputs such as `sin(pi/4)` approximate; exact radicals, general
   identity rewriting, and expression provenance/replay are out of scope.
@@ -48,3 +48,23 @@ Design work before implementation:
 - Preserve domain errors, argument evaluation, and callback execution counts.
 
 This is a cross-cutting numeric-model extension, not a prerequisite for v1.
+
+### Current Trigonometric Behavior and Motivation
+
+Radian functions evaluate the numeric argument without proximity-based snapping.
+The current `pi` constant and angle-conversion helpers do not retain symbolic pi
+provenance: `sin(pi)` can have a small nonzero residual, and `tan(pi/2)` or
+`sec(rad(90))` can produce large finite values rather than pole diagnostics.
+Likewise, `floor(tan(pi/4))` operates on the approximation, not the exact identity.
+These results remain Unverified.
+
+This avoids incorrectly turning small nonzero angles into zero or rejecting
+valid values near a pole. Degrees and gradians retain special cases for exact
+cardinal values after numeric angle projection, without a tolerance; finite
+precision during projection and evaluation still applies.
+
+A future rational-multiple-of-pi representation could restore proven radian
+identities and exact pole detection, including through variables and `ans`.
+It must distinguish symbolic `pi/2` from a nearby numeric approximation, not
+reintroduce snapping. An exact rational-angle evaluation path for degrees and
+gradians could also preserve offsets too small to survive Double projection.

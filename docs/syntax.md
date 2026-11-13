@@ -113,7 +113,15 @@ Evaluation follows standard mathematical and scientific computing precedence (hi
 Function names are case-insensitive.
 
 ### Trigonometric Functions
-Trigonometric routines operate in radians by default, or in degrees/gradians when configured via `CalculatorOptions.AngleUnit` on a `CalculatorEngine`. Cardinal-angle special cases can give clean numeric results, but ordinary floating-point function results remain Unverified; a whole-number display is not an exactness guarantee.
+Trigonometric routines operate in radians by default, or in degrees/gradians when configured via `CalculatorOptions.AngleUnit` on a `CalculatorEngine`. Exact cardinal values after degree/gradian angle projection have special cases, without proximity-based snapping. Trigonometric results remain Unverified; a whole-number display is not an exactness guarantee.
+
+Radians use the numeric argument, not a symbolic identity. For example, `sin(pi)`
+can have a small nonzero residual, while `tan(pi/2)` can return a large finite
+approximation instead of a pole diagnostic. The same applies to radians obtained
+with `rad` or `grad2rad`. Small nonzero angles and values near poles are not
+snapped to cardinal values. Finite-precision projection and evaluation still
+apply in every angle mode. Exact symbolic pi support is a
+[potential next step](potential-next-steps.md#exact-rational-multiples-of-pi).
 
 | Function | Aliases | Description |
 | :--- | :--- | :--- |

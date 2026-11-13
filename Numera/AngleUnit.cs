@@ -7,6 +7,7 @@ public enum AngleUnit
 {
     /// <summary>
     /// Angles are measured in radians. This is the default mathematical standard.
+    /// Numeric arguments are evaluated without snapping to symbolic multiples of pi.
     /// </summary>
     Radians,
 

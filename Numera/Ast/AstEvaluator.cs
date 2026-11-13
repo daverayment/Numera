@@ -1376,75 +1376,38 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         return ExactFunctionFraction(integral, scale, input);
     }
 
-    // 100 revolutions (800 quarter-turns) provides ample range for practical angular
-    // calculations while keeping error accumulation from IEEE 754 float representation
-    // well within CardinalEpsilon (1e-12).
-    private const double MaxSnappingRevolutions = 100.0;
-    private const double CardinalEpsilon = 1e-12;
-
     /// <summary>
-    /// Normalizes an angle into multiples of 45 degrees (pi/4 radians, 50 gradians)
-    /// across all supported angle units within a bounded revolution ceiling.
-    /// Used by all trigonometric functions to ensure exact cardinal values and detect
-    /// asymptotes.
+    /// Recognizes exact multiples of 45 degrees or 50 gradians after angle projection.
+    /// Rounded radian values do not establish an exact multiple of pi.
     /// </summary>
-    private bool TryGetQuarterTurn(double v, out long step45)
+    private bool TryGetExactEighthTurn(double angle, out long step45)
     {
-        if (!double.IsFinite(v))
+        step45 = 0;
+        if (_options.AngleUnit == AngleUnit.Radians || !double.IsFinite(angle))
         {
-            step45 = 0;
             return false;
         }
 
-        if (_options.AngleUnit == AngleUnit.Radians)
-        {
-            // Radians: heuristic snap for near-zero canonical multiples of pi (within
-            // 100 revs).
-            if (Math.Abs(v) <= MaxSnappingRevolutions * (2.0 * Math.PI))
-            {
-                double reduced = Math.IEEERemainder(v, 2.0 * Math.PI);
-                double k = reduced / (Math.PI / 4.0);
-                double roundK = Math.Round(k);
-
-                if (Math.Abs(k - roundK) < CardinalEpsilon)
-                {
-                    step45 = (long)roundK;
-                    return true;
-                }
-            }
-
-            step45 = 0;
-            return false;
-        }
-
-        // Degrees & Gradians: exact integer reduction valid up to 2^53 (9e15).
-        var (revSize, stepSize) = _options.AngleUnit switch
+        var (revolutionSize, stepSize) = _options.AngleUnit switch
         {
             AngleUnit.Degrees => (360.0, 45.0),
             _ => (400.0, 50.0),
         };
 
-        if (Math.Abs(v) <= 9_007_199_254_740_992.0) // 2^53
+        double reducedAngle = Math.IEEERemainder(angle, revolutionSize);
+        if (reducedAngle % stepSize != 0.0)
         {
-            double reduced = Math.IEEERemainder(v, revSize);
-            double k = reduced / stepSize;
-            double roundK = Math.Round(k);
-
-            if (Math.Abs(k - roundK) < CardinalEpsilon)
-            {
-                step45 = (long)roundK;
-                return true;
-            }
+            return false;
         }
 
-        step45 = 0;
-        return false;
+        step45 = (long)(reducedAngle / stepSize);
+        return true;
     }
 
     private double EvaluateSin(double v)
     {
         // A 90-degree step occurs whenever step45 is even.
-        if (TryGetQuarterTurn(v, out long step45) && (step45 % 2 == 0))
+        if (TryGetExactEighthTurn(v, out long step45) && (step45 % 2 == 0))
         {
             return (((step45 / 2 % 4) + 4) % 4) switch
             {
@@ -1466,7 +1429,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
     private double EvaluateCos(double v)
     {
-        if (TryGetQuarterTurn(v, out long step45) && (step45 % 2 == 0))
+        if (TryGetExactEighthTurn(v, out long step45) && (step45 % 2 == 0))
         {
             return (((step45 / 2 % 4) + 4) % 4) switch
             {
@@ -1488,7 +1451,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
     private double EvaluateTan(double v)
     {
-        if (TryGetQuarterTurn(v, out long step45))
+        if (TryGetExactEighthTurn(v, out long step45))
         {
             return (((step45 % 4) + 4) % 4) switch
             {
@@ -1519,7 +1482,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
     private double EvaluateCot(double v)
     {
-        if (TryGetQuarterTurn(v, out long step45))
+        if (TryGetExactEighthTurn(v, out long step45))
         {
             return (((step45 % 4) + 4) % 4) switch
             {
