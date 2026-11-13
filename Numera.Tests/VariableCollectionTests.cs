@@ -218,6 +218,30 @@ public sealed class VariableCollectionTests
         Assert.AreEqual($"{vars[0]}, {vars[1]}", vars.ToString());
     }
 
+    [TestMethod]
+    [DataRow("en-US", "a = 1000000, b = 12.5 (25/2), c = 42")]
+    [DataRow("de-DE", "a = 1000000, b = 12,5 (25/2), c = 42")]
+    public void ToString_UsesCurrentCultureAndNativeValues(string cultureName, string expected)
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(cultureName);
+            VariableCollection variables =
+            [
+                new Variable("a", new MathValue(1000000)),
+                V("b", 12.5m, "25/2"),
+                V("c", 42m, "42")
+            ];
+
+            Assert.AreEqual(expected, variables.ToString());
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
     // SetItem.
 
     [TestMethod]

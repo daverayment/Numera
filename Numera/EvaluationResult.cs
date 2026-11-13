@@ -910,17 +910,6 @@ public readonly record struct EvaluationResult :
     /// </remarks>
     public string MachineReadable => Value.ToInvariantExpression();
 
-    /// <summary>
-    /// Gets a text summary of variables assigned by this evaluation, or
-    /// <see langword="null"/> if none.
-    /// </summary>
-    /// <remarks>Includes only <see cref="AssignedVariables"/>, not every variable in the
-    /// context. Values use the result's display options and culture, falling back to
-    /// library defaults and current culture when absent.</remarks>
-    public string? AssignmentSummary => HasAssignments ?
-        AssignedVariables.FormatSummary(Culture, FormatOptions ?? ResultFormatOptions.Default) :
-        null;
-
     // Formatting interfaces.
 
     /// <summary>

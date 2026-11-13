@@ -283,13 +283,13 @@ public sealed class IntegrationAndArchitectureTests
     }
 
     [TestMethod]
-    public void EvaluationResult_AssignmentSummary_And_Formatting()
+    public void EvaluationResult_AssignedVariables_And_Formatting()
     {
         var res = Calculator.Evaluate("x = 42");
 
         // Direct result inspection.
         Assert.IsTrue(res.HasAssignments);
-        Assert.AreEqual("x = 42", res.AssignmentSummary);
+        Assert.AreEqual(new MathValue(42), res.AssignedVariables["x"].Value);
         Assert.AreEqual("42", res.PrimaryDisplay);
 
         // Directly format to presentation card.
@@ -297,9 +297,8 @@ public sealed class IntegrationAndArchitectureTests
         Assert.AreEqual("42", card.PrimaryDisplay);
         Assert.AreEqual("42", card.MachineReadable);
 
-        // Card preserves AssignedVariables and AssingmentSummary.
         Assert.IsNotNull(card.AssignedVariables);
         Assert.AreEqual(1, card.AssignedVariables.Count);
-        Assert.AreEqual("x = 42", card.AssignmentSummary);
+        Assert.AreSame(res.AssignedVariables, card.AssignedVariables);
     }
 }

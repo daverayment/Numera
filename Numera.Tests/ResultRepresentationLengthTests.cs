@@ -108,7 +108,7 @@ public sealed class ResultRepresentationLengthTests
         Assert.AreEqual(formatted.MachineReadable, formatted.FractionRepresentation);
         Assert.IsNotNull(formatted.HexRepresentation);
         Assert.IsNotNull(formatted.OctalRepresentation);
-        Assert.IsNull(formatted.AssignmentSummary);
+        Assert.IsNull(formatted.AssignedVariables);
     }
 
     [TestMethod]
@@ -187,30 +187,5 @@ public sealed class ResultRepresentationLengthTests
         Assert.AreEqual("NaN", formatted.MachineReadable);
         Assert.IsFalse(formatted.IsDisplayRounded);
         Assert.IsNull(formatted.FractionRepresentation);
-    }
-
-    [TestMethod]
-    public void AssignmentSummariesArePreparedWithTheSelectedCultureAndRemainStable()
-    {
-        var engine = CalculatorEngine.ForCulture(CultureInfo.GetCultureInfo("de-DE"));
-        var result = engine.Evaluate("x=1234,50");
-        var formatted = result.FormatResult();
-        string? summary = formatted.AssignmentSummary;
-        Assert.IsNotNull(summary);
-        Assert.AreEqual("x = 1.234,50 (1234.50)", summary);
-        Assert.AreEqual("x = 1,234.50 (1234.50)", result.FormatResult(culture: CultureInfo.InvariantCulture).AssignmentSummary);
-
-        var originalCulture = CultureInfo.CurrentCulture;
-        try
-        {
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
-            Assert.AreEqual(summary, formatted.AssignmentSummary);
-            Assert.AreEqual(summary, result.AssignmentSummary);
-            Assert.AreEqual("1.234,50", formatted.PrimaryDisplay);
-        }
-        finally
-        {
-            CultureInfo.CurrentCulture = originalCulture;
-        }
     }
 }

@@ -61,14 +61,8 @@ public sealed record FormattedCalculation
     public string? FractionRepresentation { get; }
 
     /// <summary>
-    /// Gets the prepared assignment summary, or null if absent.
-    /// </summary>
-    public string? AssignmentSummary { get; }
-
-    /// <summary>
-    /// Creates a snapshot from prepared representations. If an assignment summary is not
-    /// supplied, prepares it using default result formatting and current culture.
-    /// Numeric text is stored as supplied.
+    /// Creates a snapshot from prepared representations. Numeric text is stored as
+    /// supplied.
     /// </summary>
     /// <param name="value">The calculated value.</param>
     /// <param name="primaryDisplay">The primary display.</param>
@@ -79,7 +73,6 @@ public sealed record FormattedCalculation
     /// <param name="assignedVariables">The assigned variables, if any.</param>
     /// <param name="isDisplayRounded">Whether the primary display rounded the value.</param>
     /// <param name="fractionRepresentation">The exact fraction alternative, or null.</param>
-    /// <param name="assignmentSummary">The prepared assignment summary, or null.</param>
     /// <exception cref="ArgumentNullException">Required display text is null.</exception>
     public FormattedCalculation(
         MathValue value,
@@ -90,8 +83,7 @@ public sealed record FormattedCalculation
         string? octalRepresentation = null,
         VariableCollection? assignedVariables = null,
         bool isDisplayRounded = false,
-        string? fractionRepresentation = null,
-        string? assignmentSummary = null)
+        string? fractionRepresentation = null)
     {
         ArgumentNullException.ThrowIfNull(primaryDisplay);
         ArgumentNullException.ThrowIfNull(machineReadable);
@@ -105,8 +97,6 @@ public sealed record FormattedCalculation
         AssignedVariables = assignedVariables;
         IsDisplayRounded = isDisplayRounded;
         FractionRepresentation = fractionRepresentation;
-        AssignmentSummary =
-            assignmentSummary ?? assignedVariables?.FormatSummary(null, ResultFormatOptions.Default);
     }
 
     /// <summary>Deconstructs the original seven-field presentation surface.</summary>

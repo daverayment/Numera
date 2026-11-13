@@ -298,16 +298,11 @@ public sealed class FormattingGuideTests
         var moreDigits = options with { SignificantDigits = 5 };
 
         Assert.AreEqual("12,3", result.FormatResult().PrimaryDisplay);
-        Assert.AreEqual("amount = 12,3 (12.345)", result.AssignmentSummary);
-        Assert.AreEqual(result.AssignmentSummary, result.FormatResult().AssignmentSummary);
         Assert.AreEqual("12,3", result.FormatResult(culture: null).PrimaryDisplay);
         Assert.AreEqual("12,345", result.FormatResult(moreDigits).PrimaryDisplay);
-        Assert.AreEqual("amount = 12,345 (12.345)", result.FormatResult(moreDigits).AssignmentSummary);
         Assert.AreEqual("12.3", result.FormatResult(culture: CultureInfo.InvariantCulture).PrimaryDisplay);
-        Assert.AreEqual("amount = 12.3 (12.345)", result.FormatResult(culture: CultureInfo.InvariantCulture).AssignmentSummary);
         var overridden = result.FormatResult(moreDigits, CultureInfo.InvariantCulture);
         Assert.AreEqual("12.345", overridden.PrimaryDisplay);
-        Assert.AreEqual("amount = 12.345", overridden.AssignmentSummary);
         Assert.AreEqual("12.345", overridden.MachineReadable);
         Assert.AreEqual("2469/200", overridden.FractionRepresentation);
         Assert.AreSame(result.AssignedVariables, overridden.AssignedVariables);
@@ -318,12 +313,10 @@ public sealed class FormattingGuideTests
             ResultFormat = options with { SignificantDigits = 4 }
         });
         Assert.AreEqual("12.34", receiving.FormatResult(result).PrimaryDisplay);
-        Assert.AreEqual("amount = 12.34 (12.345)", receiving.FormatResult(result).AssignmentSummary);
         Assert.AreEqual("12.34", receiving.FormatResult(result.Value).PrimaryDisplay);
         Assert.AreEqual("12.34", receiving.FormatResult(result, null, null).PrimaryDisplay);
         Assert.AreEqual("12.34", receiving.FormatResult(result.Value, null, null).PrimaryDisplay);
         Assert.AreEqual("12,345", receiving.FormatResult(result, moreDigits, German).PrimaryDisplay);
-        Assert.AreEqual("amount = 12,345 (12.345)", receiving.FormatResult(result, moreDigits, German).AssignmentSummary);
         Assert.AreEqual("12,345", receiving.FormatResult(result.Value, moreDigits, German).PrimaryDisplay);
         Assert.AreSame(result.AssignedVariables, receiving.FormatResult(result).AssignedVariables);
         Assert.AreEqual("12,3", result.PrimaryDisplay);
@@ -388,10 +381,7 @@ public sealed class FormattingGuideTests
                 Assert.AreEqual("1234.5", raw.MachineReadable);
                 Assert.IsFalse(formatted.IsDisplayRounded);
                 Assert.AreSame(result.AssignedVariables, formatted.AssignedVariables);
-                Assert.AreEqual($"amount = {expected} (1234.5)", formatted.AssignmentSummary);
-                Assert.IsNotNull(formatted.AssignmentSummary);
                 Assert.IsNull(raw.AssignedVariables);
-                Assert.IsNull(raw.AssignmentSummary);
                 Assert.AreEqual(CalculatorEngine.Default.FormatResult(result), formatted);
                 Assert.AreEqual(CalculatorEngine.Default.FormatResult(result.Value), raw);
                 Assert.AreEqual(formatted, Calculator.FormatResult(result, null, null));
@@ -399,8 +389,6 @@ public sealed class FormattingGuideTests
             }
 
             Assert.AreEqual("1230", captured.PrimaryDisplay);
-            Assert.AreEqual("amount = 1230 (1234.5)", captured.AssignmentSummary);
-            Assert.AreEqual(captured.AssignmentSummary, result.AssignmentSummary);
             Assert.IsTrue(captured.IsDisplayRounded);
             Assert.AreEqual(captured, result.FormatResult());
             Assert.AreSame(context, result.Context);
@@ -426,15 +414,15 @@ public sealed class FormattingGuideTests
             });
             var result = origin.Evaluate("amount=12,345");
             var custom = new ResultFormatOptions { SignificantDigits = 4, GroupDigits = false };
-            (ResultFormatOptions? Options, CultureInfo? Culture, string Expected, string Summary)[] cases =
+            (ResultFormatOptions? Options, CultureInfo? Culture, string Expected)[] cases =
             [
-                (null, null, "12.345", "amount = 12.345"),
-                (custom, null, "12.34", "amount = 12.34 (12.345)"),
-                (null, German, "12,345", "amount = 12,345 (12.345)"),
-                (custom, German, "12,34", "amount = 12,34 (12.345)")
+                (null, null, "12.345"),
+                (custom, null, "12.34"),
+                (null, German, "12,345"),
+                (custom, German, "12,34")
             ];
 
-            foreach (var (options, culture, expected, summary) in cases)
+            foreach (var (options, culture, expected) in cases)
             {
                 var formatted = Calculator.FormatResult(result, options, culture);
                 var raw = Calculator.FormatResult(result.Value, options, culture);
@@ -444,9 +432,7 @@ public sealed class FormattingGuideTests
                 Assert.AreEqual("2469/200", formatted.FractionRepresentation);
                 Assert.AreEqual(formatted.FractionRepresentation, raw.FractionRepresentation);
                 Assert.AreSame(result.AssignedVariables, formatted.AssignedVariables);
-                Assert.AreEqual(summary, formatted.AssignmentSummary);
                 Assert.IsNull(raw.AssignedVariables);
-                Assert.IsNull(raw.AssignmentSummary);
                 Assert.AreEqual(CalculatorEngine.Default.FormatResult(result, options, culture), formatted);
                 Assert.AreEqual(CalculatorEngine.Default.FormatResult(result.Value, options, culture), raw);
                 Assert.AreEqual(result.Value.Serialize(), formatted.Value.Serialize());
@@ -495,12 +481,12 @@ public sealed class FormattingGuideTests
     }
 
     [TestMethod]
-    [DataRow("x=1000000", "1,000,000", "x = 1,000,000 (1000000)")]
-    [DataRow("x=1/3", "0.333333333333", "x = 0.333333333333 (1/3)")]
-    [DataRow("x=1.00+0", "1.00", "x = 1.00 (1.00+0)")]
-    [DataRow("x=exp(1)", "2.71828182846", "x = 2.71828182846 (exp(1))")]
-    public void AssignmentSummariesUseCapturedDisplayPolicyAcrossRepresentations(
-        string expression, string expectedDisplay, string expectedSummary)
+    [DataRow("x=1000000", "1,000,000")]
+    [DataRow("x=1/3", "0.333333333333")]
+    [DataRow("x=1.00+0", "1.00")]
+    [DataRow("x=exp(1)", "2.71828182846")]
+    public void FormattingPreservesAssignmentsAcrossRepresentations(
+        string expression, string expectedDisplay)
     {
         var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture,
             options => options with
@@ -512,15 +498,14 @@ public sealed class FormattingGuideTests
         var formatted = result.FormatResult();
 
         Assert.AreEqual(expectedDisplay, formatted.PrimaryDisplay);
-        Assert.AreEqual(expectedSummary, result.AssignmentSummary);
-        Assert.AreEqual(expectedSummary, formatted.AssignmentSummary);
-        Assert.AreEqual(expectedSummary, engine.FormatResult(result).AssignmentSummary);
         Assert.AreEqual(storedValue, result.Value.Serialize());
         Assert.AreSame(result.AssignedVariables, formatted.AssignedVariables);
+        Assert.AreSame(result.AssignedVariables, engine.FormatResult(result).AssignedVariables);
+        Assert.AreEqual(result.Value.Serialize(), formatted.AssignedVariables!["x"].Value.Serialize());
     }
 
     [TestMethod]
-    public void AssignmentSummariesFormatEveryCapturedValueWithoutReplayingCallbacks()
+    public void FormattingPreservesAssignmentMetadataWithoutReplayingCallbacks()
     {
         int calls = 0;
         var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture,
@@ -530,70 +515,27 @@ public sealed class FormattingGuideTests
                 CustomFunctions = CustomFunctionCollection.Empty.SetItem("tick", () => new MathValue(++calls))
             });
         var result = engine.Evaluate("sum((a=1000000), (b=1/3), (c=1.00+0), (d=tick()))");
-        const string expected = "a = 1,000,000 (1000000), b = 0.3333 (1/3), c = 1.00 (1.00+0), d = 1 (tick())";
 
-        Assert.AreEqual(expected, result.AssignmentSummary);
-        Assert.AreEqual(expected, result.FormatResult().AssignmentSummary);
-        Assert.AreEqual(expected, engine.FormatResult(result).AssignmentSummary);
+        Assert.AreSame(result.AssignedVariables, result.FormatResult().AssignedVariables);
+        Assert.AreSame(result.AssignedVariables, engine.FormatResult(result).AssignedVariables);
         Assert.AreEqual(1, calls);
+        Assert.HasCount(4, result.AssignedVariables);
         Assert.AreEqual(MathValue.FromFraction(1, 3), result.AssignedVariables["b"].Value);
+        Assert.AreEqual("tick()", result.AssignedVariables["d"].Definition);
     }
 
     [TestMethod]
-    [DataRow(ExpressionFormatStyle.NormalizedAscii, "1.23E6")]
-    [DataRow(ExpressionFormatStyle.TypographicUnicode, "1.23 × 10^6")]
-    [DataRow(ExpressionFormatStyle.MathJax, @"1.23 \times 10^{6}")]
-    public void AssignmentSummariesRespectSelectedScientificStyle(
-        ExpressionFormatStyle style, string expected)
+    public void SnapshotConstructionPreservesSuppliedTextAndAssignmentMetadata()
     {
-        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
-        var result = engine.Evaluate("x=1234567");
-        var options = new ResultFormatOptions
-        {
-            SignificantDigits = 3,
-            Notation = NumericNotation.Scientific,
-            Style = style,
-            ExponentMarker = ExponentMarker.Uppercase
-        };
-        var formatted = result.FormatResult(options);
+        VariableCollection assignments = [new Variable("x", MathValue.FromFraction(1, 3), "1/3")];
+        var supplied = new FormattedCalculation(new MathValue(42), "supplied display", "42",
+            assignedVariables: assignments);
 
-        Assert.AreEqual(expected, formatted.PrimaryDisplay);
-        Assert.AreEqual($"x = {expected} (1234567)", formatted.AssignmentSummary);
-        Assert.AreEqual(formatted.AssignmentSummary, engine.FormatResult(result, options).AssignmentSummary);
-        Assert.AreEqual("x = 1,234,567 (1234567)", result.AssignmentSummary);
-    }
-
-    [TestMethod]
-    public void AssignmentSummariesWithoutCapturedPolicyUseDisplayDefaults()
-    {
-        var originalCulture = CultureInfo.CurrentCulture;
-        try
-        {
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
-            VariableCollection assignments = [new Variable("x", new MathValue(1000000))];
-            var result = new EvaluationResult(new MathValue(1000000), EvaluationContext.Empty, assignments);
-            var formatted = new FormattedCalculation(result.Value, "supplied display", "1000000",
-                assignedVariables: assignments);
-            var suppliedSummary = new FormattedCalculation(result.Value, "supplied display", "1000000",
-                assignedVariables: assignments, assignmentSummary: "supplied summary");
-
-            Assert.AreEqual("x = 1,000,000", result.AssignmentSummary);
-            Assert.AreEqual("x = 1,000,000", result.FormatResult().AssignmentSummary);
-            Assert.AreEqual("x = 1,000,000", formatted.AssignmentSummary);
-            Assert.AreEqual("supplied summary", suppliedSummary.AssignmentSummary);
-            Assert.AreEqual("x = 1000000", assignments.ToString());
-            Assert.AreEqual("1000000", result.Value.ToString());
-
-            CultureInfo.CurrentCulture = German;
-            Assert.AreEqual("x = 1.000.000", result.AssignmentSummary);
-            Assert.AreEqual("x = 1,000,000", formatted.AssignmentSummary);
-            Assert.IsNull(default(EvaluationResult).AssignmentSummary);
-            Assert.IsNull(new EvaluationResult(MathValue.Zero, EvaluationContext.Empty).AssignmentSummary);
-        }
-        finally
-        {
-            CultureInfo.CurrentCulture = originalCulture;
-        }
+        Assert.AreSame(assignments, supplied.AssignedVariables);
+        Assert.AreEqual("supplied display", supplied.PrimaryDisplay);
+        Assert.AreEqual("42", supplied.MachineReadable);
+        Assert.AreEqual(MathValue.FromFraction(1, 3), supplied.AssignedVariables!["x"].Value);
+        Assert.AreEqual("1/3", supplied.AssignedVariables["x"].Definition);
     }
 
     [TestMethod]

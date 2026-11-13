@@ -401,9 +401,7 @@ public sealed class VariableCollection : IReadOnlyList<Variable>
         Count == 0 ? "{Empty}" : $"Count = {Count}: {ToString()}";
 
     /// <inheritdoc/>
-    public override string ToString() => FormatSummary(null);
-
-    internal string FormatSummary(IFormatProvider? provider, ResultFormatOptions? options = null)
+    public override string ToString()
     {
         if (Count == 0)
         {
@@ -412,9 +410,7 @@ public sealed class VariableCollection : IReadOnlyList<Variable>
 
         return string.Join(", ", this.Select(variable =>
         {
-            string text = options is null ?
-                variable.Value.ToString(null, provider) :
-                ResultValueFormatter.Format(variable.Value, options, provider).Text;
+            string text = variable.Value.ToString();
             if (variable.Definition is string definition && definition != text)
             {
                 return $"{variable.Name} = {text} ({definition})";

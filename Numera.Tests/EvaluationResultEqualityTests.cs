@@ -77,7 +77,6 @@ public sealed class EvaluationResultEqualityTests
         Assert.IsNull(result.SingleAssignedVariable);
         Assert.IsEmpty(result.ReferencedVariables);
         Assert.IsEmpty(result.VariableReferences);
-        Assert.IsNull(result.AssignmentSummary);
         Assert.IsNull(result.Context);
         Assert.IsNull(result.AssignedVariables);
     }

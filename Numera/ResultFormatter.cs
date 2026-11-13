@@ -80,7 +80,6 @@ internal static class ResultFormatter
             octalRepresentation: value.ToOctalString(prefixRadixOutput),
             assignedVariables: assignedVariables,
             fractionRepresentation: ResultValueFormatter.FormatExactFraction(value),
-            isDisplayRounded: isRounded,
-            assignmentSummary: assignedVariables?.FormatSummary(culture, options));
+            isDisplayRounded: isRounded);
     }
 }
