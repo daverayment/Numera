@@ -5,6 +5,8 @@ namespace Numera;
 /// before evaluation. These flags only switch individual passes on or off; the culture
 /// used to read numbers comes from <see cref="CalculatorOptions.Culture"/> (or is passed
 /// directly to <see cref="ExpressionNormalizer"/>), and culture handling always runs.
+/// Malformed or ambiguous localized numbers are rejected before parsing. Set
+/// <see cref="CalculatorOptions.Normalization"/> to null for raw invariant parsing.
 /// </summary>
 public sealed record NormalizationOptions
 {

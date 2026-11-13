@@ -127,7 +127,7 @@ The result overloads preserve assignment metadata; raw-value overloads have none
 
 `FormattedCalculation` is an immutable, fully prepared snapshot: reading properties or switching views does not perform more formatting. `PrimaryDisplay` and `MachineReadable` are always present; null alternatives mean that view is unavailable for the value. Text has no character ceiling, so even long exact fractions and radix strings remain accessible. The default is still 24 significant digits, not 24 characters. Callers can check `.Length` to decide what fits their UI; see [representation lengths](docs/architecture.md#representation-lengths) for sizing guidance. Invalid options and numerical safety violations still throw when formatting, not when reading the snapshot.
 
-For deterministic machine-authored input, explicitly use `CalculatorEngine.ForCulture(CultureInfo.InvariantCulture)`. `MachineReadable` and serialization remain invariant. Matching input and display cultures avoids separator-related misinterpretation, but rounded display text does not preserve the original value. Evaluate machine-readable expressions with an invariant-culture engine. Manually constructed results without options use current culture when formatted.
+For deterministic machine-authored input, use `new CalculatorEngine(CalculatorOptions.ForCulture(CultureInfo.InvariantCulture) with { Normalization = null })`. This bypasses human-input grouping and ambiguity rules. `MachineReadable` and serialization remain invariant. Matching input and display cultures avoids separator-related misinterpretation, but rounded display text does not preserve the original value. Manually constructed results without options use current culture when formatted.
 
 ### Exact Fractions, Exactness, and Display
 
@@ -310,6 +310,8 @@ Your application can inspect `result.Type` to distinguish provably exact answers
 ## Normalizing Human Input
 
 Numera normalizes human input automatically before passing culture-invariant syntax to its core parser. The static facade uses current culture; an engine uses its captured culture.
+
+Only that culture is interpreted; Numera does not guess another culture. Malformed grouping and ambiguous commas fail with positioned diagnostics before evaluation. For example, en-US `pow(2,100)` is ambiguous: use `pow(2;100)` or `pow(2, 100)`. German input uses decimal commas and semicolon arguments, such as `max(1,5;2,5)`. Do not mix argument-separator styles within a call.
 
 For interactive desktop applications, launchers, or search boxes, evaluate the original input directly. To select a particular culture:
 

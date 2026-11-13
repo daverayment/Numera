@@ -197,17 +197,16 @@ public sealed class ExpressionNormalizerTests
     }
 
     [TestMethod]
-    public void NonThreeDigitSeparatorsArePreservedAsDelimiters()
+    public void SeparatorsAreValidatedAgainstTheSelectedCulture()
     {
-        // 1,2 is not thousands grouping (only 1 digit after comma) -> preserved in US culture
         var us = new CultureInfo("en-US");
         Assert.AreEqual("max(1, 2)", ExpressionNormalizer.Normalize("max(1, 2)", us));
-        Assert.AreEqual("1,23", ExpressionNormalizer.Normalize("1,23", us));
+        Assert.AreEqual("1.2", ExpressionNormalizer.Normalize("1.2", us));
+        Assert.ThrowsExactly<ExpressionException>(() => ExpressionNormalizer.Normalize("1,23", us));
 
-        // 1.2 is decimal in US or non-grouping in DE -> preserved appropriately
         var de = new CultureInfo("de-DE");
-        Assert.AreEqual("1.2", ExpressionNormalizer.Normalize("1.2", de));
-        Assert.AreEqual("max(1.5, 2.5)", ExpressionNormalizer.Normalize("max(1.5, 2.5)", de));
+        Assert.ThrowsExactly<ExpressionException>(() => ExpressionNormalizer.Normalize("1.2", de));
+        Assert.ThrowsExactly<ExpressionException>(() => ExpressionNormalizer.Normalize("max(1.5, 2.5)", de));
     }
 
     [TestMethod]
@@ -290,11 +289,11 @@ public sealed class ExpressionNormalizerTests
     [TestMethod]
     public void DigitGroupingEdgeCasesAreCovered()
     {
-        // Space grouping with 2-digit groups after space (e.g. "1 23 45") preserves spaces
-        Assert.AreEqual("1 23 45", ExpressionNormalizer.Normalize("1 23 45"));
+        Assert.IsFalse(ExpressionNormalizer.TryNormalize("1 23 45", null, out _, out var grouping));
+        Assert.AreEqual(EvaluationError.InvalidNumberFormat, grouping!.Code);
 
-        // Comma in DE culture inside parentheses without semicolon
-        Assert.AreEqual("max(1, 2)", ExpressionNormalizer.Normalize("max(1, 2)", new CultureInfo("de-DE")));
+        Assert.IsFalse(ExpressionNormalizer.TryNormalize("max(1, 2)", new CultureInfo("de-DE"), out _, out var arguments));
+        Assert.AreEqual(EvaluationError.InvalidSyntax, arguments!.Code);
     }
 
     [TestMethod]

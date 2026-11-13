@@ -2,6 +2,8 @@
 
 Numera's grammar is deliberately small and unambiguous: a recursive-descent parser over real scalar numbers. This page lists every literal, operator and built-in function.
 
+Examples use decimal-point syntax. Human input follows the configured culture's decimal and argument separators; ambiguous grouping/argument commas are rejected rather than guessed. Use semicolons for explicit arguments, such as `pow(2;100)`, or space after commas in comma-list cultures, such as `pow(2, 100)`. See [Expression Normalization](normalization.md) for localized syntax and raw invariant mode.
+
 > [!TIP]
 > Looking for variables and assignment (`x = 5`, `ans`)? See [Variables and Context](variables.md).
 
@@ -203,6 +205,26 @@ the recognized root `sqrt(4)` is Exact. Keep exactness and display indicators se
 | `lgamma(x)` | Natural logarithm of the absolute value of the gamma function $\ln|\Gamma(x)|$ |
 | `beta(a, b)` | Euler beta function $B(a, b) = \frac{\Gamma(a)\Gamma(b)}{\Gamma(a+b)}$ |
 | `zeta(s)` | Riemann zeta function $\zeta(s)$ |
+
+Gamma, log-Gamma, Beta, and Zeta evaluate using Double arithmetic and return
+**Unverified** approximations, even when a particular result is a whole number.
+Scaled Gamma evaluation and reflection avoid overflowing intermediate
+factors when the final answer is representable. Negative Gamma uses direct reflection
+while its positive reflected Gamma is finite, preserving ordinary-case accuracy;
+otherwise it uses logarithmic reflection to retain subnormal results. Beta combines its Lanczos terms
+instead of subtracting nearly equal log-Gamma values, including for highly unequal
+arguments: `beta(1, 1e16)` is approximately `1e-16`, not `1`.
+
+These routines do not extend Double's output range. Genuine overflow produces
+signed infinity; very small results may be subnormal or round to signed zero.
+`lgamma` can represent the logarithmic magnitude of Gamma values that are too large
+to return directly. Existing pole/domain checks still report `UndefinedMathResult`;
+Zeta's negative-even-integer zeros remain explicitly handled.
+
+Negative infinity in `gamma`, `lgamma`, or either `beta` argument reports an
+infinity-specific `UndefinedMathResult` diagnostic. Beta with positive-infinite
+arguments retains its existing NaN convention; these changes do not redefine
+infinite-input limits. NaN propagation still takes precedence over domain errors.
 
 ### General Math & Rounding
 

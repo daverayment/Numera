@@ -98,9 +98,8 @@ public static class ExpressionNormalizer
 
     /// <summary>
     /// Safely attempts to normalize an expression, reporting failures with the same
-    /// <see cref="EvaluationDiagnostic"/> type the calculator uses. The only failure
-    /// is null input; malformed numbers are not rejected here and surface as positioned
-    /// parse diagnostics instead.
+    /// <see cref="EvaluationDiagnostic"/> type the calculator uses. Malformed or
+    /// ambiguous localized numbers are rejected before parsing or evaluation.
     /// </summary>
     /// <param name="input">The raw user expression. A null input is reported as a
     /// diagnostic rather than thrown.</param>
@@ -112,7 +111,8 @@ public static class ExpressionNormalizer
     /// <see cref="EvaluationError.InvalidSyntax"/> for null input); otherwise
     /// <c>null</c>.</param>
     /// <param name="sourceMap">On success, a map that translates positions in the
-    /// normalized text back to the caller's original input; otherwise <c>null</c>.
+    /// normalized text back to the caller's original input; on failure, an identity
+    /// map for the input.
     /// </param>
     /// <param name="options">Optional pass configuration; defaults to
     /// <see cref="NormalizationOptions.Default"/>.</param>
@@ -137,8 +137,9 @@ public static class ExpressionNormalizer
         options ??= NormalizationOptions.Default;
         string current = input;
 
-        // Maps are chained as each pass runs: every pass describes its output in terms of its own input,
-        // and composing them yields output-to-original-input without re-deriving any offsets.
+        // Maps are chained as each pass runs: every pass describes its output in terms of
+        // its own input, and composing them yields output-to-original-input without re-
+        // deriving any offsets.
         sourceMap = SourceMap.Identity(input.Length);
 
         // Pass 1: Launcher quirks (leading / trailing '=').
@@ -164,9 +165,20 @@ public static class ExpressionNormalizer
 
         // Pass 4: Culture & number formatting (decimal comma, digit grouping, argument
         // semicolons).
-        current = NormalizeCultureAndSeparators(current, culture, out var cultureMap);
+        if (!new CultureInputNormalizer(current, culture).TryNormalize(out var cultureText, out var cultureMap, out diagnostic))
+        {
+            if (diagnostic.Position is int position)
+            {
+                var span = sourceMap.MapSpan(new Ast.TextSpan(position, diagnostic.Length));
+                diagnostic = diagnostic with { Position = span.Start, Length = span.Length };
+            }
+            normalized = null;
+            sourceMap = SourceMap.Identity(input.Length);
+            return false;
+        }
+
         sourceMap = cultureMap.Compose(sourceMap);
-        normalized = current;
+        normalized = cultureText;
         diagnostic = null;
         return true;
     }
@@ -389,7 +401,7 @@ public static class ExpressionNormalizer
     /// Reads one numeric literal from the start of the span: 0x/0b/0o radix integers, or a decimal with an
     /// optional exponent. This is the single definition of "number" used for both sides of the colon.
     /// </summary>
-    private static bool TryConsumeNumber(ReadOnlySpan<char> span, out int consumed)
+    internal static bool TryConsumeNumber(ReadOnlySpan<char> span, out int consumed)
     {
         consumed = 0;
 
@@ -470,141 +482,4 @@ public static class ExpressionNormalizer
 
     private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 
-    private static string NormalizeCultureAndSeparators(
-        string text,
-        CultureInfo? culture,
-        out SourceMap map)
-    {
-        // If culture is null, check for standard Swiss apostrophe or ISO thin space digit grouping
-        // e.g., 1'000'000.50
-        bool usesCommaDecimal = culture is not null && culture.NumberFormat.NumberDecimalSeparator == ",";
-
-        var sb = new StringBuilder(text.Length);
-        var starts = new List<int>(text.Length);
-        var ends = new List<int>(text.Length);
-        int parenDepth = 0;
-
-        // Every kept or rewritten character maps 1:1 to the input character at the same index; deleted
-        // grouping characters are simply never emitted, so they fall into the gaps between ranges.
-        void Emit(char output, int index)
-        {
-            sb.Append(output);
-            starts.Add(index);
-            ends.Add(index + 1);
-        }
-
-        for (int i = 0; i < text.Length; i++)
-        {
-            char c = text[i];
-            if (c == '(')
-            {
-                parenDepth++;
-            }
-            else if (c == ')')
-            {
-                parenDepth = Math.Max(0, parenDepth - 1);
-            }
-
-            // Swiss digit grouping: apostrophe between digits (e.g. 1'000'000 or 1’000’000).
-            // Supports both straight apostrophe (U+0027) and typographic/curly apostrophe (U+2019).
-            if ((c == '\'' || c == '\u2019') && i > 0 && i + 1 < text.Length && char.IsDigit(text[i - 1]) && char.IsDigit(text[i + 1]))
-            {
-                // Discard grouping separator
-                continue;
-            }
-
-            // Non-breaking space, thin/narrow space, or regular space between groups of digits
-            // e.g. 1 000 000 or 1\u00A0000\u00A0000 or 1\u202F000\u202F000 (SI standard)
-            if ((c == ' ' || c == '\u00A0' || c == '\u202F') &&
-                i > 0 && i + 1 < text.Length && char.IsDigit(text[i - 1]) && char.IsDigit(text[i + 1]))
-            {
-                // Peek ahead: check if this is a 3-digit group (e.g. " 000")
-                if (IsDigitGroupingSpace(text, i))
-                {
-                    continue;
-                }
-            }
-
-            // Semicolons inside parentheses '(...)' are always function argument separators
-            // (e.g. Excel/European pasted formulas like max(1; 2) or round(2.5; 1)),
-            // leaving square brackets '[...]' free for future matrix rows.
-            if (c == ';' && parenDepth > 0)
-            {
-                Emit(',', i);
-                continue;
-            }
-
-            if (usesCommaDecimal)
-            {
-                // In European culture:
-                // Period '.' is thousands separator (e.g. 1.000.000,50)
-                // Comma ',' is decimal separator (e.g. 1,5)
-                if (c == '.' && i > 0 && i + 1 < text.Length && char.IsDigit(text[i - 1]) && char.IsDigit(text[i + 1]))
-                {
-                    // If it's followed by exactly 3 digits and then another '.' or ',' or boundary, it's grouping
-                    if (IsThreeDigitGroup(text, i + 1))
-                    {
-                        continue; // Discard thousands period
-                    }
-                }
-
-                if (c == ',')
-                {
-                    // Disambiguate: is ',' decimal or argument separator?
-                    // Inside function calls, if argument separator is ';', ',' is decimal.
-                    // If between digits with no spaces: '1,5' -> '1.5'
-                    if (i > 0 && i + 1 < text.Length && char.IsDigit(text[i - 1]) && char.IsDigit(text[i + 1]))
-                    {
-                        Emit('.', i);
-                        continue;
-                    }
-                }
-            }
-            else
-            {
-                // In standard/US culture:
-                // Comma ',' between digits with 3 digits following is thousands grouping (e.g. 1,000,000)
-                if (c == ',' && i > 0 && i + 1 < text.Length && char.IsDigit(text[i - 1]) && char.IsDigit(text[i + 1]))
-                {
-                    if (IsThreeDigitGroup(text, i + 1))
-                    {
-                        continue; // Discard thousands comma
-                    }
-                }
-            }
-
-            Emit(c, i);
-        }
-
-        map = SourceMap.FromRanges(starts, ends, text.Length);
-        return sb.ToString();
-    }
-
-    private static bool IsThreeDigitGroup(string text, int startIndex)
-    {
-        int count = 0;
-        int idx = startIndex;
-        while (idx < text.Length && char.IsDigit(text[idx]))
-        {
-            count++;
-            idx++;
-        }
-
-        // Standard grouping has 3 digits
-        return count == 3;
-    }
-
-    private static bool IsDigitGroupingSpace(string text, int spaceIndex)
-    {
-        // Check if characters before and after form digit groups
-        int afterCount = 0;
-        int idx = spaceIndex + 1;
-        while (idx < text.Length && char.IsDigit(text[idx]))
-        {
-            afterCount++;
-            idx++;
-        }
-
-        return afterCount == 3;
-    }
 }

@@ -34,7 +34,7 @@ public class LanguageTests
     [TestMethod]
     [DataRow("8+", EvaluationError.InvalidSyntax)]
     [DataRow("[8+2)", EvaluationError.InvalidSyntax)]
-    [DataRow("3..1", EvaluationError.InvalidSyntax)]
+    [DataRow("3..1", EvaluationError.InvalidNumberFormat)]
     [DataRow("1 || min()", EvaluationError.InvalidArgumentCount)]
     [DataRow("0 && pow(4)", EvaluationError.InvalidArgumentCount)]
     [DataRow("1 || absent(7)", EvaluationError.UnknownFunction)]

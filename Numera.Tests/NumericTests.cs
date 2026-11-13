@@ -465,11 +465,11 @@ public class NumericTests
     }
 
     [TestMethod]
-    public void NonAsciiDigit_ThrowsInvalidSyntax()
+    public void NonAsciiDigit_ThrowsInvalidNumberFormat()
     {
         // Devanagari digit zero '०' (U+0966) or Arabic digit '١' (U+0661) must not be accepted as digits.
         var ex = Assert.Throws<ExpressionException>(() => Calculator.Evaluate("١23"));
-        Assert.AreEqual(EvaluationError.InvalidSyntax, ex.Diagnostic.Code);
+        Assert.AreEqual(EvaluationError.InvalidNumberFormat, ex.Diagnostic.Code);
     }
 
     [TestMethod]
@@ -1962,7 +1962,7 @@ public class NumericTests
         Assert.AreEqual(double.PositiveInfinity, SpecialFunctions.LogGamma(double.PositiveInfinity));
         Assert.AreEqual(double.PositiveInfinity, SpecialFunctions.Gamma(double.PositiveInfinity));
         Assert.AreEqual(1.0, SpecialFunctions.Zeta(double.PositiveInfinity));
-        Assert.AreEqual(double.PositiveInfinity, SpecialFunctions.Gamma(175.0)); // > 171.614 overflow guard
+        Assert.AreEqual(double.PositiveInfinity, SpecialFunctions.Gamma(175.0)); // Genuine Double overflow.
 
         // Asymptotic zeta for large s.
         Assert.AreEqual(1.0 + Math.Pow(2.0, -65.0), SpecialFunctions.Zeta(65.0), 1e-15);
@@ -1970,7 +1970,8 @@ public class NumericTests
         // Beta where a+b is non-positive integer => Gamma(a+b) pole => Beta = 0.
         Assert.AreEqual(0.0, SpecialFunctions.Beta(-1.5, -0.5)); // sum = -2.0
 
-        // Beta for large/negative arguments requiring sign tracking / LogGamma path.
+        // Beta for large/negative arguments uses range-safe Lanczos terms and sign
+        // tracking.
         var betaLarge = SpecialFunctions.Beta(200.0, 200.0);
         Assert.IsTrue(double.IsFinite(betaLarge));
         Assert.IsGreaterThan(0.0, betaLarge);

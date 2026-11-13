@@ -12,7 +12,7 @@ Percentage idioms (`15% of 200`, `100 + 20%`), postfix factorials (`5!`) and imp
 
 ### Why Normalization is Separate from Parsing
 
-The normalizer only rewrites text that the grammar has no way to express, so it never changes meaning:
+The normalizer accepts one configured localized syntax and rewrites it into invariant grammar. It does not detect cultures or try alternative interpretations:
 
 1. **Locale is not grammar.** A decimal comma, a Swiss apostrophe or a thousands space cannot be interpreted without knowing the user's culture, which the parser deliberately does not know.
 2. **Pasted decoration is not grammar.** Launcher `=` signs and typographic operators (`×`, `−`) are artefacts of where the text came from.
@@ -72,10 +72,46 @@ Rewrites a European ratio colon to `/` only when the left side is a number (deci
 - Colons inside square brackets are left alone. Brackets are reserved for future syntax and are an error in expressions today.
 
 ### 4. Culture & Digit Grouping Normalization
-Disambiguates decimal points, digit separators, and argument delimiters based on `CalculatorOptions.Culture`:
-- **Swiss & ISO Grouping:** Apostrophe thousands separators (`1'000'000.50`) and space or non-breaking space grouping (`1 000 000.50`) are stripped to standard format `1000000.50`.
-- **European Cultures (Comma Decimal):** Period grouping (`1.000.000,50`) is stripped and the decimal comma is normalized to `1000000.50`. Semicolon argument separators inside parentheses (`max(1,5; 2,5)` or `round(2,5; 1)`) are normalized to standard commas (`max(1.5, 2.5)`). Semicolons inside square brackets (`[...]`) are intentionally preserved for future matrix row definitions.
-- **US / Standard Culture:** Comma grouping (`1,000,000.50`) is stripped to `1000000.50`. Non-grouping commas inside functions (`max(1, 2)`) are preserved.
+Uses `NumberDecimalSeparator`, `NumberGroupSeparator`, `NumberGroupSizes`, and `TextInfo.ListSeparator` from `CalculatorOptions.Culture`. A null culture passed directly to `ExpressionNormalizer` means invariant culture, not current culture.
+
+#### Decimal and grouping rules
+
+- Only the configured decimal separator is accepted. German `1,25` and leading `,5` become `1.25` and `.5`; invariant-looking decimal points are not a fallback.
+- Grouping is validated across the complete integer part before any separators are removed, working right-to-left through the culture's group sizes. This includes Indian grouping (`12,34,567`) and custom group sizes ending in zero (no further separators).
+- A grouped integer cannot have leading zeroes. Thus German `1.234` means `1234`, but `0.123` is rejected rather than silently becoming `123`. Use `0,123` for that decimal value.
+- If culture data uses the same decimal and grouping separator, numbers that admit both interpretations are rejected too; Numera does not silently prefer decimals. Omit grouping or use raw invariant input to avoid such collisions.
+- Straight/curly apostrophes and ordinary, non-breaking, narrow non-breaking, and thin spaces remain portable grouping forms. They must obey the configured group sizes. Do not mix native punctuation, apostrophe, and space grouping families within one number.
+- Grouping is not allowed in fractional parts, exponents, or radix literals. For example, `1.2.3`, `1 23 456` in en-US, and `0x10 000` are invalid. Numeric literals use ASCII digits `0` through `9`; identifier digits are not normalized as numbers.
+
+#### Argument separators and ambiguity
+
+The culture's list separator separates function arguments. **Semicolon is also an explicit alternative in every culture.** A direct semicolon selects semicolon style for that entire call, including numbers before it. Other argument separators cannot be mixed into that call; commas may still occur as valid decimal or grouping punctuation.
+
+In a comma-separated call, a comma that could also form valid digit grouping is rejected as ambiguous. Numera does not use function arity, later malformed groups, or evaluation results to guess what was intended. To resolve this, use semicolons, remove digit grouping, or put a space after an argument comma so it cannot group digits.
+
+| Culture | Input | Interpretation |
+| :--- | :--- | :--- |
+| en-US | `pow(2,100)` | Ambiguous: use `pow(2;100)` or `pow(2, 100)` |
+| en-US | `max(1,234,567)` | Ambiguous: grouping or arguments |
+| en-US | `max(1,234,56)` | Still ambiguous; the later group does not settle the earlier comma |
+| en-US | `max(1,000+2,000,3,000+9,000)` | Ambiguous |
+| en-US | `max(1,000+2,000;3,000+9,000)` | Two arguments; result `12000` |
+| en-US | `max(1000+2000,3000+9000)` | Two ungrouped arguments; result `12000` |
+| en-US | `max((1,234), 567)` | Grouped literal inside ordinary parentheses; result `1234` |
+| de-DE | `max(1,234)` | One decimal argument: `1.234` |
+| de-DE | `max(1,234;567)` | Two arguments: `1.234` and `567` |
+| de-DE | `max(1,234,567)` or `max(1,234,567.890)` | Invalid repeated decimal separators |
+| de-DE | `max(1, 2)` | Invalid separator: use `max(1; 2)` |
+
+Each nested call selects its own separator style. Ordinary grouping parentheses also isolate grouped literals. This is a bounded structural scan, not a second expression parser: an identifier followed by `(` is treated conservatively as a potential call, without resolving functions or variables. For a variable multiplied by a grouped literal, write `x * (1,234)` in en-US rather than the call-like `x(1,234)`.
+
+The culture pass leaves square-bracket contents unchanged, and their semicolons do not select a surrounding call's separator style. Brackets remain unsupported by the expression parser; their punctuation is reserved for future matrix syntax.
+
+#### Diagnostics
+
+Malformed or ambiguous localized numbers fail with `InvalidNumberFormat`; invalid or mixed argument-separator styles fail with `InvalidSyntax`. Messages explain the ambiguity or suggest the expected separator. Positions and lengths refer to the **original input**, even after earlier normalization passes changed its offsets. `TryNormalize`, `TryParse`, and `TryEvaluate` report these diagnostics; throwing APIs raise `ExpressionException`. Rejection happens before evaluation, so custom functions are not invoked.
+
+This intentionally tightens older permissive behavior: foreign decimal syntax and compact ambiguous argument commas are no longer guessed or silently stripped.
 
 ---
 
@@ -120,12 +156,18 @@ var engine = new CalculatorEngine(options);
 - `new CalculatorOptions()` and each access to `CalculatorOptions.Default` capture current culture with all passes enabled.
 - `new CalculatorEngine()` and each access to `CalculatorEngine.Default` create an engine capturing current culture. `ForCurrentCulture()` also captures at call time. Existing options and engines do not follow later culture changes.
 - `Calculator` resolves current culture per call; its results retain the culture used for evaluation.
-- Explicitly select `CultureInfo.InvariantCulture` for machine-authored expressions, including `MachineReadable` output. Machine text and serialization never use the display culture.
+- For machine-authored expressions, including `MachineReadable` output, use raw invariant parsing as shown below. Merely choosing invariant culture still enables human-input grouping validation and comma-ambiguity checks.
 - An engine is bound to one culture. Applications serving users with different cultures should keep one engine per culture.
 - Set `Normalization = null` for raw mode, which passes text to the parser untouched. This suits serialized or machine-generated expressions.
 - Angle units are never changed implicitly. Opt in explicitly with `with { AngleUnit = AngleUnit.Degrees }`.
 - Variables and the previous result (`ans`) are per-call state and are passed in an `EvaluationContext`, not in the options.
 
-Normalization itself never rejects a number; malformed ones such as `1.2.3,4` fail in the parser with a position in your original text.
+```csharp
+var machineEngine = new CalculatorEngine(
+	CalculatorOptions.ForCulture(CultureInfo.InvariantCulture) with { Normalization = null });
 
-`ExpressionNormalizer` remains public for callers that only want the text cleanup; it takes the culture as a parameter and reports failures as `EvaluationDiagnostic`.
+// Commas are always argument separators in raw mode, never digit grouping.
+var machineResult = machineEngine.Evaluate("pow(2,100)");
+```
+
+Raw mode does not accept localized numbers, semicolon arguments, or launcher/typographic rewrites. `ExpressionNormalizer` remains public for callers that only want text normalization and its diagnostics. Its output is invariant parser input: do not normalize it a second time.

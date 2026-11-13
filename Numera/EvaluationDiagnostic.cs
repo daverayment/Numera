@@ -60,20 +60,22 @@ public enum EvaluationError
     UndefinedMathResult,
 
     /// <summary>
-    /// A logical negation was applied directly to a comparison expression without explicit parentheses,
-    /// violating the configured requirement for unambiguous parenthesization.
+    /// A logical negation was applied directly to a comparison expression without
+    /// explicit parentheses, violating the configured requirement for unambiguous
+    /// parenthesization.
     /// </summary>
     AmbiguousLogicalNegation,
 
     /// <summary>
-    /// Reserved for human-formatted input that normalization rejects, for example because digit grouping
-    /// or decimal separators are ambiguous for the configured culture. Normalization does not reject any
-    /// input today, so this is not currently produced; it stays so callers can rely on a stable enum.
+    /// Human-formatted input contains malformed or ambiguous digit grouping or decimal
+    /// separators for the configured culture. Rejected during normalization, before
+    /// evaluation.
     /// </summary>
     InvalidNumberFormat,
 
     /// <summary>
-    /// A custom function callback threw an unhandled exception or failed during evaluation.
+    /// A custom function callback threw an unhandled exception or failed during
+    /// evaluation.
     /// </summary>
     EvaluationFailed,
 }
@@ -85,11 +87,15 @@ public enum EvaluationError
 /// APIs, positions refer to the caller's input, even when it was normalized before
 /// parsing.
 /// </summary>
-/// <param name="Code">The stable error category; use it for programmatic decisions and localization.</param>
-/// <param name="Message">A human-readable description; not intended to be matched against.</param>
-/// <param name="Position">Zero-based UTF-16 offset of the problem in the source text, or <c>null</c>
-/// when there is no source location (for example, normalization failures).</param>
-/// <param name="Length">Number of UTF-16 code units the problem spans; zero can mark the end of input.</param>
+/// <param name="Code">The stable error category; use it for programmatic decisions and
+/// localization.</param>
+/// <param name="Message">A human-readable description; not intended to be matched
+/// against.</param>
+/// <param name="Position">Zero-based UTF-16 offset of the problem in the source text, or
+/// <c>null</c> when there is no source location (for example, normalization failures).
+/// </param>
+/// <param name="Length">Number of UTF-16 code units the problem spans; zero can mark the
+/// end of input.</param>
 /// <remarks>
 /// Consumers should use Code for programmatic decisions or localization rather than
 /// matching message text, which is intended for human-readable diagnostics.
@@ -100,6 +106,7 @@ public sealed record EvaluationDiagnostic(EvaluationError Code, string Message, 
 /// A malformed expression or evaluation error with a structured diagnostic.
 /// </summary>
 /// <param name="diagnostic">The structured diagnostic describing the failure.</param>
-/// <param name="innerException">The optional underlying exception that caused the error.</param>
+/// <param name="innerException">The optional underlying exception that caused the error.
+/// </param>
 public sealed class ExpressionException(EvaluationDiagnostic diagnostic, Exception? innerException = null)
     : NumeraException(diagnostic, innerException);

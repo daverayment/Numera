@@ -252,10 +252,10 @@ internal static class SpecialFunctions
         return Math.Sin(x) / x;
     }
 
-    // Lanczos approximation parameters for g = 7, n = 9.
-    // Coefficients originally derived by Paul Godfrey / Numerical Recipes / CEPHES.
+    // Lanczos approximation with 15 coefficients and g = 607/128.
     private const double LanczosG = 607.0 / 128.0; // 4.7421875
     private static readonly double SqrtTwoPi = Math.Sqrt(2.0 * Math.PI);
+    private static readonly double LogPi = Math.Log(Math.PI);
 
     private static ReadOnlySpan<double> LanczosCoefficients =>
     [
@@ -309,10 +309,18 @@ internal static class SpecialFunctions
             return double.PositiveInfinity;
         }
 
+        if (double.IsNegativeInfinity(x))
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UndefinedMathResult,
+                "lgamma is undefined for negative infinity."));
+        }
+
         if (x <= 0.0 && x == Math.Floor(x))
         {
             throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.UndefinedMathResult, "lgamma is undefined for non-positive integers."));
+                EvaluationError.UndefinedMathResult,
+                "lgamma is undefined for non-positive integers."));
         }
 
         // Reflection formula for x < 0.5:
@@ -327,7 +335,7 @@ internal static class SpecialFunctions
                     EvaluationError.UndefinedMathResult, "lgamma is undefined for non-positive integers."));
             }
 
-            return Math.Log(Math.PI) - Math.Log(sinPiX) - LogGamma(1.0 - x);
+            return LogPi - LogAbsSinPi(x) - LogGamma(1.0 - x);
         }
 
         double z = x - 1.0;
@@ -363,7 +371,12 @@ internal static class SpecialFunctions
                 EvaluationError.UndefinedMathResult, "gamma is undefined for non-positive integers (poles)."));
         }
 
-        // Reflection formula for x < 0.5:
+        if (x > 0.0 && x < 0.5)
+        {
+            return Gamma(1.0 + x) / x;
+        }
+
+        // Reflection formula for negative non-integers:
         // Gamma(x) = pi / (sin(pi * x) * Gamma(1 - x))
         if (x < 0.5)
         {
@@ -374,10 +387,18 @@ internal static class SpecialFunctions
                     EvaluationError.UndefinedMathResult, "gamma is undefined for non-positive integers (poles)."));
             }
 
-            return Math.PI / (sinPiX * Gamma(1.0 - x));
+            double reflectedGamma = Gamma(1.0 - x);
+            if (double.IsFinite(reflectedGamma))
+            {
+                return Math.PI / (sinPiX * reflectedGamma);
+            }
+
+            // Preserve subnormals even when the positive reflected Gamma overflows.
+            double logMagnitude = LogPi - LogAbsSinPi(x) - LogGamma(1.0 - x);
+            return Math.CopySign(Math.Exp(logMagnitude), sinPiX);
         }
 
-        // Exact values for small integers n = 1..10 to avoid floating point drift.
+        // Small integer factorial products avoid approximation drift.
         if (x is >= 1.0 and <= 20.0 && x == Math.Floor(x))
         {
             var n = (int)x;
@@ -390,7 +411,7 @@ internal static class SpecialFunctions
             return fact;
         }
 
-        if (x > 171.6144788718994)
+        if (x >= 172.0)
         {
             return double.PositiveInfinity;
         }
@@ -398,7 +419,10 @@ internal static class SpecialFunctions
         var z = x - 1.0;
         var sum = LanczosSum(z);
         var t = z + LanczosG + 0.5;
-        return SqrtTwoPi * Math.Pow(t, z + 0.5) * Math.Exp(-t) * sum;
+
+        // Split the power and exponential so only the final product can overflow.
+        double halfPower = Math.Pow(t, (z + 0.5) * 0.5) * Math.Exp(-t * 0.5);
+        return halfPower * (halfPower * (SqrtTwoPi * sum));
     }
 
     /// <summary>
@@ -411,16 +435,25 @@ internal static class SpecialFunctions
             return double.NaN;
         }
 
+        if (double.IsNegativeInfinity(a) || double.IsNegativeInfinity(b))
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UndefinedMathResult,
+                "beta is undefined when an argument is negative infinity."));
+        }
+
         if (a <= 0.0 && a == Math.Floor(a))
         {
             throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.UndefinedMathResult, "beta is undefined when an argument is a non-positive integer."));
+                EvaluationError.UndefinedMathResult,
+                "beta is undefined when an argument is a non-positive integer."));
         }
 
         if (b <= 0.0 && b == Math.Floor(b))
         {
             throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.UndefinedMathResult, "beta is undefined when an argument is a non-positive integer."));
+                EvaluationError.UndefinedMathResult,
+                "beta is undefined when an argument is a non-positive integer."));
         }
 
         double sum = a + b;
@@ -430,29 +463,101 @@ internal static class SpecialFunctions
             return 0.0;
         }
 
-        // For moderate positive values where Gamma doesn't overflow, compute directly for higher speed & precision
-        if (a > 0.0 && b > 0.0 && sum < 170.0)
+        if (double.IsPositiveInfinity(a) || double.IsPositiveInfinity(b))
         {
-            return (Gamma(a) * Gamma(b)) / Gamma(sum);
+            return double.NaN;
         }
 
-        // For large or negative arguments, compute via LogGamma with sign tracking
-        double signA = a > 0.0 || double.SinPi(a) > 0.0 ? 1.0 : -1.0;
-        double signB = b > 0.0 || double.SinPi(b) > 0.0 ? 1.0 : -1.0;
-        double signSum = sum > 0.0 || double.SinPi(sum) > 0.0 ? 1.0 : -1.0;
-        double totalSign = signA * signB * signSum;
+        if (a > 0.0 && b > 0.0)
+        {
+            return Math.Exp(LogBetaPositive(a, b));
+        }
 
-        double logVal = LogGamma(a) + LogGamma(b) - LogGamma(sum);
-        return totalSign * Math.Exp(logVal);
+        // Reflect negative arguments into positive Beta evaluations, avoiding log-Gamma
+        // cancellation.
+        double sign;
+        double logMagnitude;
+        if (a < 0.0 && b < 0.0)
+        {
+            sign = double.SinPi(sum) * double.SinPi(a) * double.SinPi(b);
+            logMagnitude = LogPi + LogAbsSinPi(sum) - LogAbsSinPi(a) - LogAbsSinPi(b) +
+                Math.Log(-sum) - Math.Log(-a) - Math.Log(-b) - LogBetaPositive(-a, -b);
+        }
+        else
+        {
+            double negative = Math.Min(a, b);
+            double positive = Math.Max(a, b);
+            if (sum > 0.0)
+            {
+                sign = double.SinPi(negative);
+                logMagnitude = LogPi - LogAbsSinPi(negative) - Math.Log(-negative) -
+                    LogBetaPositive(-negative, sum);
+            }
+            else
+            {
+                sign = double.SinPi(sum) * double.SinPi(negative);
+                logMagnitude = LogAbsSinPi(sum) - LogAbsSinPi(negative) +
+                    LogBetaPositive(positive, 1.0 - sum);
+            }
+        }
+
+        return Math.CopySign(Math.Exp(logMagnitude), sign);
+    }
+
+    private static double LogBetaPositive(double a, double b)
+    {
+        double correction = 0.0;
+        if (a < 0.5)
+        {
+            correction = Math.Log(a + b) - Math.Log(a);
+            a += 1.0;
+        }
+
+        if (b < 0.5)
+        {
+            correction += Math.Log(a + b) - Math.Log(b);
+            b += 1.0;
+        }
+
+        if (a > b)
+        {
+            (a, b) = (b, a);
+        }
+
+        // Combine the Lanczos powers before taking logs. Neither a+b nor two nearly equal
+        // log-Gamma values need to be represented accurately.
+        double shiftedA = a + LanczosG - 0.5;
+        double shiftedB = b + LanczosG - 0.5;
+        double logRatio = Log1p(a / shiftedB);
+        double logSum = Math.Log(shiftedB) + logRatio;
+        double logPowers = (a - 0.5) * (Math.Log(shiftedA / shiftedB) - logRatio) -
+            (b - 0.5) * logRatio;
+        double logCoefficients = Math.Log(LanczosSum(a - 1.0)) +
+            Math.Log(LanczosSum(b - 1.0)) - Math.Log(LanczosSum(a + b - 1.0));
+
+        return correction + Math.Log(SqrtTwoPi) - (LanczosG - 0.5)
+            + logCoefficients - 0.5 * logSum + logPowers;
+    }
+
+    private static double LogAbsSinPi(double x)
+    {
+        double reduced = x - Math.Round(x);
+        if (Math.Abs(reduced) < 0.25)
+        {
+            // Keep the tiny argument out of a product that could underflow.
+            return LogPi + Math.Log(Math.Abs(reduced)) + Math.Log(Sinc(Math.PI * reduced));
+        }
+
+        return Math.Log(Math.Abs(double.SinPi(x)));
     }
 
     /// <summary>
-    /// Evaluates the Riemann zeta function zeta(s) using Borwein's algorithm (1995)
-    /// and the functional reflection equation for s &lt; 0.
+    /// Evaluates the Riemann zeta function zeta(s) using Euler-Maclaurin summation and
+    /// the functional reflection equation for s &lt; 0.
     /// </summary>
     public static double Zeta(double s)
     {
-        if (double.IsNaN(s))
+        if (double.IsNaN(s) || double.IsNegativeInfinity(s))
         {
             return double.NaN;
         }
@@ -470,7 +575,8 @@ internal static class SpecialFunctions
 
         // Reflection formula for s < 0:
         // zeta(s) = 2^s * pi^(s - 1) * sin(pi * s / 2) * Gamma(1 - s) * zeta(1 - s)
-        if (s < 0.0)
+        // Near zero, summation avoids rounding the reflected argument 1-s to its pole.
+        if (s <= -0.5)
         {
             // Trivial zeros at negative even integers: -2, -4, -6, ...
             if (s % 2.0 == 0.0)
@@ -479,12 +585,10 @@ internal static class SpecialFunctions
             }
 
             double sinTerm = double.SinPi(s * 0.5);
-            double term1 = Math.Pow(2.0, s);
-            double term2 = Math.Pow(Math.PI, s - 1.0);
-            double gammaTerm = Gamma(1.0 - s);
             double zetaReflect = Zeta(1.0 - s);
-
-            return term1 * term2 * sinTerm * gammaTerm * zetaReflect;
+            double logMagnitude = s * Math.Log(2.0) + (s - 1.0) * LogPi
+                + LogAbsSinPi(s * 0.5) + LogGamma(1.0 - s) + Math.Log(zetaReflect);
+            return Math.CopySign(Math.Exp(logMagnitude), sinTerm);
         }
 
         if (s == 0.0)
