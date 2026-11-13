@@ -1451,7 +1451,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
     private double EvaluateTan(double v)
     {
-        if (double.IsNaN(v))
+        if (!double.IsFinite(v))
         {
             return double.NaN;
         }
@@ -1487,7 +1487,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
     private double EvaluateCot(double v)
     {
-        if (double.IsNaN(v))
+        if (!double.IsFinite(v))
         {
             return double.NaN;
         }
@@ -1524,7 +1524,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
     private double EvaluateSec(double v)
     {
-        if (double.IsNaN(v))
+        if (!double.IsFinite(v))
         {
             return double.NaN;
         }
@@ -1548,7 +1548,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
     private double EvaluateCsc(double v)
     {
-        if (double.IsNaN(v))
+        if (!double.IsFinite(v))
         {
             return double.NaN;
         }

@@ -36,21 +36,41 @@ public sealed class TrigonometricStabilityTests
     [DataRow(AngleUnit.Radians)]
     [DataRow(AngleUnit.Degrees)]
     [DataRow(AngleUnit.Gradians)]
-    public void InfiniteAnglesRetainExistingDomainDiagnostics(AngleUnit unit)
+    public void InfiniteAnglesProduceNaNConsistentlyAcrossTrigonometricFunctions(AngleUnit unit)
     {
         var engine = CreateEngine(unit);
-        foreach (var angle in new[] { MathValue.PositiveInfinity, MathValue.NegativeInfinity })
+        var context = new EvaluationContext(
+        [
+            new Variable("positiveInfinity", MathValue.PositiveInfinity),
+            new Variable("negativeInfinity", MathValue.NegativeInfinity)
+        ]);
+        foreach (string function in new[] { "sin", "cos", "tan", "cot", "sec", "csc" })
         {
-            var context = new EvaluationContext([new Variable("x", angle)]);
-            foreach (string function in new[] { "tan", "cot", "sec", "csc" })
+            foreach (string argument in new[] { "positiveInfinity", "negativeInfinity", "exp(1000)", "-exp(1000)" })
             {
-                string expression = $"{function}(x)";
-                Assert.IsFalse(engine.TryEvaluate(expression, out _, out var diagnostic, context), expression);
-                Assert.AreEqual(EvaluationError.UndefinedMathResult, diagnostic!.Code);
-                Assert.AreEqual(0, diagnostic.Position);
-                Assert.AreEqual(expression.Length, diagnostic.Length);
+                string expression = $"{function}({argument})";
+                var result = engine.Evaluate(expression, context);
+                Assert.IsTrue(result.IsNaN, expression);
+                Assert.AreEqual(MathValue.DataType.Double, result.Kind);
+                Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
+                Assert.IsFalse(result.HasExactFraction);
+                Assert.IsTrue(engine.TryEvaluate(expression, out var triedResult, out var diagnostic, context), expression);
+                Assert.IsNull(diagnostic);
+                Assert.IsTrue(triedResult.IsNaN);
             }
         }
+    }
+
+    [TestMethod]
+    [DataRow("cot")]
+    [DataRow("csc")]
+    public void FiniteAnglesWithOverflowingReciprocalsStillReportDiagnostics(string function)
+    {
+        var engine = CreateEngine(AngleUnit.Radians);
+        var context = new EvaluationContext([new Variable("x", new MathValue(double.Epsilon))]);
+
+        Assert.IsFalse(engine.TryEvaluate($"{function}(x)", out _, out var diagnostic, context));
+        Assert.AreEqual(EvaluationError.UndefinedMathResult, diagnostic!.Code);
     }
 
     [TestMethod]

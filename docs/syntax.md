@@ -129,9 +129,10 @@ snapped to cardinal values. Finite-precision projection and evaluation still
 apply in every angle mode. Exact symbolic pi support is a
 [potential next step](potential-next-steps.md#exact-rational-multiples-of-pi).
 
-`tan`, `cot`, `sec`, and `csc` propagate NaN inputs as Unverified NaN results,
-like `sin` and `cos`, rather than reporting them as poles. Existing pole and
-infinite-input diagnostics are unchanged.
+`sin`, `cos`, `tan`, `cot`, `sec`, and `csc` return Unverified NaN for NaN or
+positive/negative Infinity inputs in every angle mode, including infinities produced
+by expressions such as `exp(1000)`. Nonfinite arguments are not reported as poles.
+Finite-input pole and reciprocal-overflow checks remain in place.
 
 | Function | Aliases | Description |
 | :--- | :--- | :--- |
