@@ -9,8 +9,8 @@ namespace Numera;
 /// standard, unambiguous Numera mathematical grammar.
 /// </summary>
 /// <remarks>
-/// Passes run in a fixed order: launcher equals, Unicode operators, division colons, then
-/// culture and number formatting. Colons inside square brackets are left alone, so they
+/// Passes run in a fixed order: launcher equals, Unicode operators, culture and number
+/// formatting, then division colons. Colons inside square brackets are left alone, so they
 /// are never rewritten to division. Normalization can change character offsets. Overloads
 /// that return a source map allow offsets in the normalized text to be translated back to
 /// the original input. Calculator string APIs apply this map when parsing, so their
@@ -156,14 +156,7 @@ public static class ExpressionNormalizer
             sourceMap = passMap.Compose(sourceMap);
         }
 
-        // Pass 3: European ratio colon as division.
-        if (options.ReplaceDivisionColon)
-        {
-            current = ReplaceDivisionColons(current, out var passMap);
-            sourceMap = passMap.Compose(sourceMap);
-        }
-
-        // Pass 4: Culture & number formatting (decimal comma, digit grouping, argument
+        // Pass 3: Culture & number formatting (decimal comma, digit grouping, argument
         // semicolons).
         if (!new CultureInputNormalizer(current, culture).TryNormalize(out var cultureText, out var cultureMap, out diagnostic))
         {
@@ -178,7 +171,16 @@ public static class ExpressionNormalizer
         }
 
         sourceMap = cultureMap.Compose(sourceMap);
-        normalized = cultureText;
+        current = cultureText;
+
+        // Pass 4: Recognize division colons using validated invariant numbers.
+        if (options.ReplaceDivisionColon)
+        {
+            current = ReplaceDivisionColons(current, out var passMap);
+            sourceMap = passMap.Compose(sourceMap);
+        }
+
+        normalized = current;
         diagnostic = null;
         return true;
     }

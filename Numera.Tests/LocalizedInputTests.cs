@@ -108,6 +108,8 @@ public sealed class LocalizedInputTests
     [DataRow("en-US", "\u0661\u0662\u0663")]
     [DataRow("de-DE", "0.123")]
     [DataRow("de-DE", "1.23")]
+    [DataRow("de-DE", "1.00.000 : 2")]
+    [DataRow("de-DE", "6 : 1.00.000")]
     [DataRow("de-DE", "max(1,234,567)")]
     [DataRow("de-DE", "max(1,234,567.890)")]
     [DataRow("de-DE", "max(1.5;2.5)")]
@@ -177,12 +179,73 @@ public sealed class LocalizedInputTests
     }
 
     [TestMethod]
+    [DataRow("de-DE", "1.000.000 : 2", "1000000 / 2", 500000.0)]
+    [DataRow("de-DE", "1.000.000,5 : 2,5", "1000000.5 / 2.5", 400000.2)]
+    [DataRow("de-DE", "2 : 1.000.000", "2 / 1000000", 0.000002)]
+    [DataRow("de-DE", "6 :,5", "6 /.5", 12.0)]
+    [DataRow("de-DE", "1.000.000 : -2", "1000000 / -2", -500000.0)]
+    [DataRow("de-DE", "1.000.000 : (2 + 3)", "1000000 / (2 + 3)", 200000.0)]
+    [DataRow("en-US", "1,000,000 : 2", "1000000 / 2", 500000.0)]
+    [DataRow("hi-IN", "10,00,000 : 2", "1000000 / 2", 500000.0)]
+    [DataRow("fr-FR", "1\u202f000\u202f000 : 2", "1000000 / 2", 500000.0)]
+    [DataRow("de-CH", "1'000'000 : 2", "1000000 / 2", 500000.0)]
+    public void DivisionColonsUseValidatedLocalizedNumbers(
+        string culture, string input, string normalized, double expected)
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.GetCultureInfo(culture));
+
+        Assert.AreEqual(normalized, ExpressionNormalizer.Normalize(input, engine.Options.Culture));
+        Assert.AreEqual(expected, engine.Evaluate(input).AsDouble());
+        Assert.AreEqual(expected, engine.Evaluate(engine.Parse(input)).AsDouble());
+        var rawEngine = engine.WithOptions(options => options with { Normalization = null });
+        Assert.AreEqual(expected, rawEngine.Evaluate(engine.FormatExpression(input, ExpressionFormatOptions.Ascii)).AsDouble());
+    }
+
+    [TestMethod]
+    [DataRow("item1:1.000.000", "item1:1000000")]
+    [DataRow("pi:1.000.000", "pi:1000000")]
+    [DataRow("2.000x:3", "2000x:3")]
+    [DataRow("6:2.000x", "6:2000x")]
+    [DataRow("6 : - 2.000", "6 : - 2000")]
+    [DataRow("[1.000.000:2]", "[1.000.000:2]")]
+    public void LocalizedDivisionColonsPreserveNonOperandAndBracketSafeguards(string input, string expected)
+    {
+        Assert.AreEqual(expected, ExpressionNormalizer.Normalize(input, CultureInfo.GetCultureInfo("de-DE")));
+    }
+
+    [TestMethod]
+    public void LocalizedDivisionColonsPreserveSourceSpansAndCanBeDisabled()
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.GetCultureInfo("de-DE"));
+        const string input = "= 1.000.000 : 0 =";
+        Assert.IsTrue(ExpressionNormalizer.TryNormalize(input, engine.Options.Culture,
+            out var normalized, out _, out var map));
+        Assert.AreEqual("1000000 / 0", normalized);
+        Assert.AreEqual(new TextSpan(input.IndexOf(':'), 1), map.MapSpan(new TextSpan(normalized.IndexOf('/'), 1)));
+
+        var tree = (BinaryNode)engine.Parse(input);
+        Assert.AreEqual(new TextSpan(2, 9), tree.Left.Span);
+        Assert.AreEqual(new TextSpan(14, 1), tree.Right.Span);
+        Assert.IsFalse(engine.TryEvaluate(input, out _, out var diagnostic));
+        Assert.AreEqual(EvaluationError.DivisionByZero, diagnostic!.Code);
+        Assert.AreEqual(tree.Span.Start, diagnostic.Position);
+        Assert.AreEqual(tree.Span.Length, diagnostic.Length);
+
+        var options = new NormalizationOptions { ReplaceDivisionColon = false };
+        Assert.AreEqual("1000000 : 2", ExpressionNormalizer.Normalize("1.000.000 : 2", engine.Options.Culture, options));
+        Assert.IsFalse(engine.WithOptions(engine.Options with { Normalization = options })
+            .TryEvaluate("1.000.000 : 2", out _, out var disabledDiagnostic));
+        Assert.AreEqual(EvaluationError.InvalidSyntax, disabledDiagnostic!.Code);
+    }
+
+    [TestMethod]
     public void MultiCharacterNumberSeparatorsMapToTheirOriginalRanges()
     {
         var culture = (CultureInfo)CultureInfo.InvariantCulture.Clone();
         culture.NumberFormat.NumberDecimalSeparator = "::";
         culture.NumberFormat.NumberGroupSeparator = "_";
         var options = new NormalizationOptions { ReplaceDivisionColon = false };
+        Assert.AreEqual("1234.50", ExpressionNormalizer.Normalize("1_234::50", culture));
         Assert.IsTrue(ExpressionNormalizer.TryNormalize("1_234::50", culture, out var text, out _, out var map, options));
         Assert.AreEqual("1234.50", text);
         Assert.AreEqual(new TextSpan(5, 2), map.MapSpan(new TextSpan(4, 1)));
