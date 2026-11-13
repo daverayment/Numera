@@ -19,7 +19,38 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
 
     public string Visit(NumberNode node)
     {
-        if (RendersScientific(node))
+        if (_options.Style == ExpressionFormatStyle.NormalizedAscii)
+        {
+            if (node.Value.Kind == MathValue.DataType.Rational)
+            {
+                return $"({node.Value.Numerator.ToString(CultureInfo.InvariantCulture)}/{node.Value.Denominator.ToString(CultureInfo.InvariantCulture)})";
+            }
+
+            string invariantText = node.Value.ToInvariantExpression();
+            if (node.Value.Kind == MathValue.DataType.Double)
+            {
+                if (invariantText.Contains('/'))
+                {
+                    return $"({invariantText})";
+                }
+
+                return invariantText;
+            }
+
+            if (RendersScientific(node))
+            {
+                return FormatExactScientific(invariantText);
+            }
+
+            return invariantText;
+        }
+
+        string text;
+        if (node.Value.Kind == MathValue.DataType.Double)
+        {
+            text = node.Value.DoubleValue.ToString("G", CultureInfo.InvariantCulture);
+        }
+        else if (RendersScientific(node))
         {
             var formatOptions = new ResultFormatOptions
             {
@@ -31,18 +62,66 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
                 // result displays.
                 ExponentMarker = ExponentMarker.Uppercase,
             };
+
             return ResultValueFormatter.Format(node.Value, formatOptions, CultureInfo.InvariantCulture).Text;
         }
+        else
+        {
+            text = node.Value.Kind == MathValue.DataType.Rational
+                ? $"({node.Value.ToInvariantExpression()})"
+                : node.Value.ToString(CultureInfo.InvariantCulture);
+        }
 
-        string text = node.Value.Kind == MathValue.DataType.Rational
-            ? $"({node.Value.ToInvariantExpression()})"
-            : node.Value.ToString(CultureInfo.InvariantCulture);
         if (_options.UseUnicodeMinus && text.StartsWith('-'))
         {
             return "−" + text[1..];
         }
 
         return text;
+    }
+
+    private static string FormatExactScientific(string invariantText)
+    {
+        bool isNegative = invariantText.StartsWith('-');
+        string magnitude = invariantText;
+        if (isNegative)
+        {
+            magnitude = magnitude[1..];
+        }
+
+        int decimalPoint = magnitude.IndexOf('.');
+        int integerDigits = magnitude.Length;
+        if (decimalPoint >= 0)
+        {
+            integerDigits = decimalPoint;
+        }
+
+        string digits = magnitude.Replace(".", string.Empty, StringComparison.Ordinal);
+        int firstNonzero = 0;
+        while (digits[firstNonzero] == '0')
+        {
+            firstNonzero++;
+        }
+
+        int lastNonzero = digits.Length - 1;
+        while (digits[lastNonzero] == '0')
+        {
+            lastNonzero--;
+        }
+
+        int exponent = integerDigits - firstNonzero - 1;
+        string mantissa = digits[firstNonzero..(lastNonzero + 1)];
+        if (mantissa.Length > 1)
+        {
+            mantissa = mantissa.Insert(1, ".");
+        }
+
+        if (isNegative)
+        {
+            mantissa = "-" + mantissa;
+        }
+
+        return mantissa + "E" + exponent.ToString(CultureInfo.InvariantCulture);
     }
 
     public string Visit(IdentifierNode node)
@@ -121,7 +200,7 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
         {
             // Juxtaposition binds tighter than explicit * / %, so such a left operand must be grouped or
             // it would reparse with a different structure, e.g. (a/b)x as a/(bx).
-            string leftImplicit = node.Left is BinaryNode { Op: BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo, IsImplicit: false }
+            string leftImplicit = node.Left is BinaryNode { Op: BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo or BinaryOperator.Of, IsImplicit: false }
                 ? $"({rawLeft})"
                 : leftText;
             string rightImplicit = FormatChild(node.Right, node, isRight: true);
@@ -234,14 +313,34 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
         return Parenthesize(child.Accept(this), child, parent, isRight);
     }
 
-    private string Parenthesize(string text, ExpressionNode child, ExpressionNode parent, bool isRight) =>
-        NeedsParentheses(child, parent, isRight) ? $"({text})" : text;
+    private string Parenthesize(string text, ExpressionNode child, ExpressionNode parent, bool isRight)
+    {
+        if (child is NumberNode && (text.StartsWith('-') || text.StartsWith('−')))
+        {
+            if (parent is BinaryNode { Op: BinaryOperator.Power } && !isRight)
+            {
+                return $"({text})";
+            }
+
+            if (parent is UnaryNode { Op: UnaryOperator.Negate or UnaryOperator.Positive or UnaryOperator.Factorial or UnaryOperator.Percent })
+            {
+                return $"({text})";
+            }
+        }
+
+        return NeedsParentheses(child, parent, isRight) ? $"({text})" : text;
+    }
 
     private bool NeedsParentheses(ExpressionNode child, ExpressionNode parent, bool isRight)
     {
         if (parent is FunctionCallNode)
         {
             return child is AssignmentNode;
+        }
+
+        if (parent is UnaryNode { Op: UnaryOperator.LogicalNot } && child is ComparisonChainNode)
+        {
+            return true;
         }
 
         int childPrec = GetPrecedence(child);
@@ -325,6 +424,7 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
         },
         ComparisonChainNode => 5,
         AssignmentNode => 0,
+        NumberNode when _options.Style == ExpressionFormatStyle.NormalizedAscii => 12,
         NumberNode n when RendersScientific(n) => 8,
         _ => 12, // Number, Identifier, FunctionCall are primary
     };

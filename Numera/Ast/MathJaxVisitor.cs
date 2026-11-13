@@ -320,7 +320,7 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
     }
 
     private bool LeftNeedsGroupingForJuxtaposition(ExpressionNode left) =>
-        left is BinaryNode { Op: BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo, IsImplicit: false } &&
+        left is BinaryNode { Op: BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo or BinaryOperator.Of, IsImplicit: false } &&
         !(left is BinaryNode { Op: BinaryOperator.Divide } && _options.Division == DivisionSymbol.Fraction);
 
     /// <summary>
@@ -367,6 +367,11 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
         if (parent is FunctionCallNode)
         {
             return child is AssignmentNode;
+        }
+
+        if (parent is UnaryNode { Op: UnaryOperator.LogicalNot } && child is ComparisonChainNode)
+        {
+            return true;
         }
 
         // When division is rendered as a 2D fraction (\frac{a}{b}), it has natural visual grouping

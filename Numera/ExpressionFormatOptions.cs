@@ -9,7 +9,8 @@ namespace Numera;
 public enum ExpressionFormatStyle
 {
     /// <summary>
-    /// Linear typographic Unicode text suitable for plain text labels, subtitles, search results, and clipboards.
+    /// Linear typographic Unicode text suitable for plain text labels, subtitles, search
+    /// results, and clipboards.
     /// E.g. "2 × π × √(16) ÷ 2"
     /// </summary>
     TypographicUnicode,
@@ -21,7 +22,9 @@ public enum ExpressionFormatStyle
     MathJax,
 
     /// <summary>
-    /// Standard normalized ASCII invariant expression with clean, standardized operator spacing.
+    /// Standard normalized ASCII invariant expression with clean, standardized operator
+    /// spacing. Finite number literals retain their numeric values without display
+    /// rounding. This does not serialize representation or exactness metadata.
     /// E.g. "2 * pi * sqrt(16) / 2"
     /// </summary>
     NormalizedAscii,
@@ -85,24 +88,29 @@ public sealed record ExpressionFormatOptions
     /// Fixed notation applies when the base-10 exponent is at least -MaxFixedDigits
     /// and less than MaxFixedDigits. Defaults to 24; must be between 1 and
     /// <see cref="CalculationLimits.MaxSignificantDigits"/> (1,000).
-    /// This threshold does not change scientific display precision, which uses the default
-    /// result precision of 24 significant digits. Double nodes use native general-format notation.
+    /// Normalized ASCII retains every significant digit of Integer and Decimal literals;
+    /// Rational literals use reduced fractions and Double literals use their stored
+    /// dyadic values. In presentation styles, scientific display uses 24 significant
+    /// digits, and Double nodes use native general-format notation. The threshold does
+    /// not control precision.
     /// </summary>
     public int MaxFixedDigits { get; init; } = 24;
 
     /// <summary>
-    /// Gets the multiplication symbol to render. Defaults to <see cref="MultiplicationSymbol.Cross"/>.
+    /// Gets the multiplication symbol to render. Defaults to
+    /// <see cref="MultiplicationSymbol.Cross"/>.
     /// </summary>
     public MultiplicationSymbol Multiplication { get; init; } = MultiplicationSymbol.Cross;
 
     /// <summary>
-    /// Gets the division symbol to render. Defaults to <see cref="DivisionSymbol.Obelus"/>.
+    /// Gets the division symbol to render. Defaults to
+    /// <see cref="DivisionSymbol.Obelus"/>.
     /// </summary>
     public DivisionSymbol Division { get; init; } = DivisionSymbol.Obelus;
 
     /// <summary>
-    /// Whether to render mathematical minus '−' (\u2212) instead of hyphen-minus '-' in typographic modes.
-    /// Defaults to <c>true</c>.
+    /// Whether to render mathematical minus '−' (\u2212) instead of hyphen-minus '-' in
+    /// typographic modes. Defaults to <c>true</c>.
     /// </summary>
     public bool UseUnicodeMinus { get; init; } = true;
 
@@ -113,7 +121,8 @@ public sealed record ExpressionFormatOptions
     public bool UseGreekSymbols { get; init; } = true;
 
     /// <summary>
-    /// Whether to render integer powers as Unicode superscripts (e.g. 'x²', '2¹⁰') in typographic mode.
+    /// Whether to render integer powers as Unicode superscripts (e.g. 'x²', '2¹⁰') in
+    /// typographic mode.
     /// Defaults to <c>true</c>.
     /// </summary>
     public bool UseSuperscriptPowers { get; init; } = true;
@@ -135,6 +144,7 @@ public sealed record ExpressionFormatOptions
 
     /// <summary>
     /// Pre-configured defaults for normalized ASCII invariant rendering.
+    /// Finite literals are value-preserving, not a serialization of storage or exactness.
     /// </summary>
     public static ExpressionFormatOptions Ascii { get; } = new()
     {

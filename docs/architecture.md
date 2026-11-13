@@ -514,7 +514,21 @@ flowchart TD
   \frac{2 \cdot \pi \cdot \sqrt{16}}{2}
   $$
 
-Expression formatting validates `ExpressionFormatOptions` before rendering, regardless of the input's magnitude or representation. `MaxFixedDigits` must be between 1 and 1,000 and controls only the notation threshold for Integer, Decimal, and Rational nodes; scientific formatting retains the default 24-significant-digit precision. Double nodes retain their native general-format notation. Undefined rendering styles and multiplication or division symbols throw `ArgumentOutOfRangeException`.
+Expression formatting validates `ExpressionFormatOptions` before rendering, regardless of the input's magnitude or representation. `MaxFixedDigits` must be between 1 and 1,000 and controls notation, not precision. Undefined rendering styles and multiplication or division symbols throw `ArgumentOutOfRangeException`.
+
+`ExpressionFormatOptions.Ascii` preserves finite literal numeric values without
+display rounding. Integer and Decimal scientific notation retains every significant
+digit, compressing only insignificant trailing zeros: `10^25 + 1`, when supplied as
+a NumberNode value, becomes `1.0000000000000000000000001E25`. Rational NumberNodes
+always use parenthesized reduced slash fractions, independent of `MaxFixedDigits`.
+Double NumberNodes use their exact stored dyadic fractions or integers, rather than
+decimal strings that an exact-decimal parser would interpret differently.
+
+Typographic and MathJax styles remain presentation formats. Their scientific
+Integer, Decimal, and Rational displays retain the default 24-significant-digit
+precision; Double nodes retain native general-format precision and notation.
+`ResultFormatOptions` still defaults to 24 significant digits and a fixed-notation
+threshold of 24. Applications may customize their own display budgets independently.
 
 Both `Calculator.FormatExpression(string, options, context)` and the corresponding engine
 method accept an optional context for identifier recognition during parsing. Variables
@@ -530,7 +544,20 @@ string formula = Calculator.FormatExpression("x+ans", ExpressionFormatOptions.As
 // "x + ans", not "7 + 11" or "18".
 ```
 
-Assignments have lower precedence than arithmetic, comparisons, and logical operators. Renderers preserve grouping around nested assignments, including function arguments, while leaving right-associative chains such as `a = b = 2` unwrapped. MathJax fraction and root structures provide their own visual grouping. Normalized ASCII output preserves assignment evaluation order and assigned values when re-evaluated; typographic and MathJax output are presentation formats, not guaranteed parser input.
+Assignments have lower precedence than arithmetic, comparisons, and logical operators. Renderers preserve grouping around nested assignments, including function arguments, while leaving right-associative chains such as `a = b = 2` unwrapped. Grouping also keeps `(10% of 200)x` distinct from `10% of 200x`, and negated comparisons retain explicit parentheses for strict logical-negation parsing. MathJax fraction and root structures provide their own visual grouping.
+
+Re-evaluate the ASCII preset's invariant text in raw mode (`Normalization = null`),
+with appropriate parser options, limits, and variable/function bindings. Presentation
+styles and customized non-ASCII symbols are not guaranteed parser input. Formatting
+does not relax input-length or computation limits in the receiving engine.
+
+Literal-value preservation is not serialization of an arbitrary AST's execution
+semantics. Reparsed Double fractions do not retain Double arithmetic or Unverified
+exactness; storage kinds and display-scale metadata may also change. For example,
+exporting Double NumberNodes for `0.1 + 0.2` makes their addition exact rational
+arithmetic rather than rounded Double arithmetic. Use captured results rather than
+replaying expressions for history, and `MathValue.Serialize()` to preserve a stored
+value's representation and exactness.
 
 ---
 

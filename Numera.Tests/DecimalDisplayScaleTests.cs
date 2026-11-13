@@ -261,8 +261,10 @@ public sealed class DecimalDisplayScaleTests
         Assert.AreEqual("1E-400", result.FormatResult(
             new ResultFormatOptions { ExponentMarker = ExponentMarker.Uppercase }).PrimaryDisplay);
         AssertDefaultDisplay(result, "1e-400");
-        Assert.AreEqual("exp(1E-400) + ResultE",
+        Assert.AreEqual("exp((" + result.Value.ToInvariantExpression() + ")) + ResultE",
             Calculator.FormatExpression("exp(1e-400)+ResultE", ExpressionFormatOptions.Ascii));
+        Assert.AreEqual(
+            "1E400", Calculator.FormatExpression("1e400", ExpressionFormatOptions.Ascii));
         Assert.AreEqual("1 × 10^-400", Calculator.FormatExpression("1e-400"));
     }
 

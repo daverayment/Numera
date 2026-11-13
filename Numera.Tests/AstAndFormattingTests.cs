@@ -556,7 +556,7 @@ public sealed class AstAndFormattingTests
         string negPow = Calculator.FormatExpression("2^-3");
         Assert.AreEqual("2⁻³", negPow);
 
-        // Extreme exponents format in scientific notation for Typographic and Ascii styles
+        // Presentation uses scientific notation; ASCII retains Rational fractions.
         string extremeSmallTypo = Calculator.FormatExpression("1e-4932", ExpressionFormatOptions.Typographic);
         Assert.AreEqual("1 × 10^-4932", extremeSmallTypo);
 
@@ -564,7 +564,9 @@ public sealed class AstAndFormattingTests
         Assert.AreEqual("1 × 10^4932", extremeLargeTypo);
 
         string extremeSmallAscii = Calculator.FormatExpression("1e-4932", ExpressionFormatOptions.Ascii);
-        Assert.AreEqual("1E-4932", extremeSmallAscii);
+        Assert.AreEqual("(1/1" + new string('0', 4932) + ")", extremeSmallAscii);
+        Assert.AreEqual("1E4932",
+            Calculator.FormatExpression("1e4932", ExpressionFormatOptions.Ascii));
     }
 
     [TestMethod]
@@ -667,19 +669,11 @@ public sealed class AstAndFormattingTests
     [TestMethod]
     public void FormatExpression_LogicalNotWithComparison_RendersParenthesesAroundComparison()
     {
-        // Typographic format: "not 1 == 0" has AST UnaryNode(LogicalNot, ComparisonChainNode)
-        // Since LogicalNot has lower precedence (4) than Comparison (5), operand of LogicalNot does not strictly need parens
-        // if child (5) > parent (4), so "!(1 == 0)" or "!1 == 0" depending on precedence.
-        // But in TypographicVisitor: UnaryNode formats operand using FormatChild(node.Operand, node, isRight: false).
-        // childPrec = GetPrecedence(ComparisonChain) = 5.
-        // parentPrec = GetPrecedence(UnaryNode with LogicalNot) = 4.
-        // childPrec (5) > parentPrec (4), so child does not need parens in standard expression notation: "!1 == 0".
-        // When parent is LogicalAnd (prec 3): "not 1 == 0 and 1" -> "!1 == 0 && 1".
         string typ = Calculator.FormatExpression("not 1 == 0");
-        Assert.AreEqual("!1 == 0", typ);
+        Assert.AreEqual("!(1 == 0)", typ);
 
         string latex = Calculator.FormatExpression("not 1 == 0", ExpressionFormatOptions.LaTeX);
-        Assert.AreEqual(@"\neg 1 = 0", latex);
+        Assert.AreEqual(@"\neg (1 = 0)", latex);
     }
 
     [TestMethod]
