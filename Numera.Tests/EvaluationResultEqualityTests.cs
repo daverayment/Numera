@@ -9,6 +9,80 @@ public sealed class EvaluationResultEqualityTests
     private static IEqualityComparer<EvaluationResult> Content => EvaluationResultComparers.Content;
 
     [TestMethod]
+    public void DefaultResultsExposeNoRecordedMetadataWithoutCreatingContext()
+    {
+        AssertMissingMetadata(default);
+    }
+
+    [TestMethod]
+    [DataRow("1 +")]
+    [DataRow("1/0")]
+    [DataRow("y = x/0")]
+    public void FailedStringEvaluationsExposeNoRecordedMetadata(string expression)
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+        var context = new EvaluationContext([new Variable("x", new MathValue(7))], new MathValue(11));
+
+        Assert.IsFalse(engine.TryEvaluate(expression, out var result, out var diagnostic, context));
+        Assert.IsNotNull(diagnostic);
+        AssertMissingMetadata(result);
+        Assert.IsFalse(Calculator.TryEvaluate(expression, out var facadeResult, out var facadeDiagnostic, context));
+        Assert.IsNotNull(facadeDiagnostic);
+        AssertMissingMetadata(facadeResult);
+        Assert.AreEqual(new MathValue(7), context.Variables["x"].Value);
+        Assert.AreEqual(new MathValue(11), context.PreviousResult!.Value);
+        Assert.IsFalse(context.Variables.ContainsKey("y"));
+    }
+
+    [TestMethod]
+    public void FailedAstEvaluationsExposeNoRecordedMetadata()
+    {
+        var tree = new BinaryNode(BinaryOperator.Divide, new NumberNode(new MathValue(1)), new NumberNode(new MathValue(0)));
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+
+        Assert.IsFalse(engine.TryEvaluate(tree, out var result, out var diagnostic));
+        Assert.AreEqual(EvaluationError.DivisionByZero, diagnostic!.Code);
+        AssertMissingMetadata(result);
+        Assert.IsFalse(Calculator.TryEvaluate(tree, out var facadeResult, out var facadeDiagnostic));
+        Assert.AreEqual(EvaluationError.DivisionByZero, facadeDiagnostic!.Code);
+        AssertMissingMetadata(facadeResult);
+    }
+
+    [TestMethod]
+    public void SuccessfulResultsKeepAssignmentAndReferenceMetadata()
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+        var context = new EvaluationContext([new Variable("x", new MathValue(7))]);
+        var result = engine.Evaluate("y = x + x", context);
+
+        Assert.IsTrue(result.HasAssignments);
+        Assert.AreEqual("y", result.SingleAssignedVariable);
+        Assert.HasCount(1, result.ReferencedVariables);
+        Assert.Contains("x", result.ReferencedVariables);
+        Assert.HasCount(2, result.VariableReferences);
+        Assert.AreEqual(new TextSpan(4, 1), result.VariableReferences[0].Span);
+        Assert.AreEqual(new TextSpan(8, 1), result.VariableReferences[1].Span);
+        Assert.IsNotNull(result.Context);
+        Assert.IsNotNull(result.AssignedVariables);
+
+        var chained = engine.Evaluate("a = b = x", context);
+        Assert.IsTrue(chained.HasAssignments);
+        Assert.IsNull(chained.SingleAssignedVariable);
+        Assert.HasCount(2, chained.AssignedVariables);
+    }
+
+    private static void AssertMissingMetadata(EvaluationResult result)
+    {
+        Assert.IsFalse(result.HasAssignments);
+        Assert.IsNull(result.SingleAssignedVariable);
+        Assert.IsEmpty(result.ReferencedVariables);
+        Assert.IsEmpty(result.VariableReferences);
+        Assert.IsNull(result.AssignmentSummary);
+        Assert.IsNull(result.Context);
+        Assert.IsNull(result.AssignedVariables);
+    }
+
+    [TestMethod]
     public void ConstructorRejectsNullContext()
     {
         var exception = Assert.ThrowsExactly<ArgumentNullException>(() => new EvaluationResult(new MathValue(7), null!));
@@ -26,8 +100,8 @@ public sealed class EvaluationResultEqualityTests
         Assert.IsNull(result.Options);
         Assert.IsFalse(result.HasAssignments);
         Assert.IsNull(result.SingleAssignedVariable);
-        Assert.HasCount(0, result.ReferencedVariables);
-        Assert.HasCount(0, result.VariableReferences);
+        Assert.IsEmpty(result.ReferencedVariables);
+        Assert.IsEmpty(result.VariableReferences);
         Assert.AreEqual(new MathValue(3), context.PreviousResult);
 
         var combined = result + new MathValue(1);

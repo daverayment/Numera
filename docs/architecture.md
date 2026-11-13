@@ -586,4 +586,9 @@ Numera separates point-in-time calculation state from caller-driven workflow pol
   - `ExpressionNode.GetReferencedVariables()` yields a case-insensitive set of referenced variable names.
   - `Variable.ReferencedVariables` returns the set of variables read by the variable's defining expression.
   - `EvaluationResult.ReferencedVariables` and `VariableReferences` expose the syntactic dependencies of the evaluated expression.
+- **Failed Evaluation Metadata**: A failed `TryEvaluate` returns a default result.
+  Its `HasAssignments` is false, `SingleAssignedVariable` is null, and
+  `ReferencedVariables` and `VariableReferences` are empty. These mean no recorded
+  metadata, not successful calculation. Always check the boolean return and use the
+  diagnostic on failure; no replacement context or assignment collection is created.
 - **Caller-Controlled Replay & Reactive Recalculation**: By preserving canonical ASTs on variables and context transitions, callers (REPLs, spreadsheet engines, UI dependency graphs) can implement topological re-evaluation and history replay without Numera forcing a heavyweight runtime state machine.

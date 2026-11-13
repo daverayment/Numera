@@ -300,7 +300,8 @@ public sealed class CalculatorEngine
     /// </summary>
     /// <param name="expression">The expression to evaluate.</param>
     /// <param name="result">On success, the result; otherwise <c>default</c> and not
-    /// meaningful.</param>
+    /// meaningful for calculation. See <see cref="EvaluationResult"/> for default-safe
+    /// metadata access.</param>
     /// <param name="diagnostic">On failure, the structured error (code, message and,
     /// where known, source position in the original input); otherwise <c>null</c>.
     /// </param>
@@ -338,7 +339,8 @@ public sealed class CalculatorEngine
     /// </summary>
     /// <param name="node">The tree to evaluate.</param>
     /// <param name="result">On success, the result; otherwise <c>default</c> and not
-    /// meaningful.</param>
+    /// meaningful for calculation. See <see cref="EvaluationResult"/> for default-safe
+    /// metadata access.</param>
     /// <param name="diagnostic">On failure, the structured error; otherwise <c>null</c>.
     /// </param>
     /// <param name="context">Optional variables and previous result.</param>

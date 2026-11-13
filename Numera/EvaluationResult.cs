@@ -35,7 +35,11 @@ namespace Numera;
 /// </para>
 /// <para>
 /// Use the constructor when creating a result yourself. A default-initialized result has
-/// no usable context or assignment collection.
+/// no usable context or assignment collection. Its <see cref="HasAssignments"/> is false,
+/// <see cref="SingleAssignedVariable"/> is null, and <see cref="ReferencedVariables"/>
+/// and <see cref="VariableReferences"/> are empty. These indicate no recorded metadata,
+/// not successful evaluation. Check the return value of <c>TryEvaluate</c> before using
+/// its result's calculated value or context.
 /// </para>
 /// </remarks>
 public readonly record struct EvaluationResult :
@@ -71,15 +75,16 @@ public readonly record struct EvaluationResult :
 
     /// <summary>
     /// Gets whether this evaluation assigned or updated any variables.
+    /// Returns false for a default-initialized result with no recorded metadata.
     /// </summary>
-    public bool HasAssignments => AssignedVariables.Count > 0;
+    public bool HasAssignments => AssignedVariables?.Count > 0;
 
     /// <summary>
     /// Gets the name of the only variable assigned, or <see langword="null"/> if none or
-    /// several were assigned.
+    /// several were assigned, or if the result is default-initialized.
     /// </summary>
     public string? SingleAssignedVariable =>
-        AssignedVariables.Count == 1 ? AssignedVariables.Keys.First() : null;
+        AssignedVariables?.Count == 1 ? AssignedVariables.Keys.First() : null;
 
     /// <summary>
     /// Gets the distinct variable names read by the expression, or an empty set if none
@@ -88,9 +93,10 @@ public readonly record struct EvaluationResult :
     /// <remarks>
     /// Includes variables in branches that were not evaluated, but not constants or names
     /// used only as assignment targets. Names are compared case-insensitively.
+    /// A default-initialized result has no recorded references and returns an empty set.
     /// </remarks>
     public IReadOnlySet<string> ReferencedVariables =>
-        Context.PreviousExpression?.GetReferencedVariables() ?? FrozenSet<string>.Empty;
+        Context?.PreviousExpression?.GetReferencedVariables() ?? FrozenSet<string>.Empty;
 
     /// <summary>
     /// Gets each variable reference and its source position, including repeated uses of a
@@ -100,9 +106,10 @@ public readonly record struct EvaluationResult :
     /// Follows the same rules as <see cref="ReferencedVariables"/> and is empty if no
     /// references are recorded. After arithmetic on results, positions still refer to the
     /// original expressions, not the combined display text.
+    /// A default-initialized result has no recorded references and returns an empty list.
     /// </remarks>
     public IReadOnlyList<VariableReference> VariableReferences =>
-        Context.PreviousExpression?.GetVariableReferences() ?? [];
+        Context?.PreviousExpression?.GetVariableReferences() ?? [];
 
     /// <summary>
     /// Gets the calculator options used for this result, or <see langword="null"/> if
