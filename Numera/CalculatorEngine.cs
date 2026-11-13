@@ -98,6 +98,46 @@ public sealed class CalculatorEngine
     public CalculatorOptions Options { get; }
 
     /// <summary>
+    /// Gets metadata for the built-in and custom functions available to this engine,
+    /// ordered alphabetically by name using ordinal, case-insensitive comparison.
+    /// </summary>
+    /// <param name="includeAliases">Whether to include built-in alias entries alongside
+    /// canonical functions. Defaults to false.</param>
+    /// <returns>Function metadata, including configured custom functions.</returns>
+    /// <remarks>
+    /// Discovery does not invoke functions. For example,
+    /// <c>engine.GetFunctions().Where(f => f.Category == FunctionCategory.Custom)</c>
+    /// lists only custom functions; use <c>!=</c> to exclude them. Custom functions use
+    /// their registered name as their canonical name, have no aliases or keywords, and
+    /// retain their optional description and declared signature.
+    /// </remarks>
+    public IEnumerable<FunctionInfo> GetFunctions(bool includeAliases = false) =>
+        FunctionCatalog.GetEntries(includeAliases, Options.CustomFunctions)
+            .OrderBy(f => f.Name, Identifier.Comparer);
+
+    /// <summary>
+    /// Searches this engine's built-in and custom functions using the same relevance
+    /// rules as <see cref="Functions.Search(string, bool)"/>.
+    /// </summary>
+    /// <param name="query">The search term. Empty or whitespace-only queries return all
+    /// functions selected by <paramref name="includeAliases"/>.</param>
+    /// <param name="includeAliases">Whether to include built-in alias entries alongside
+    /// canonical functions. Defaults to false.</param>
+    /// <returns>Matches ordered by relevance, then alphabetically using ordinal,
+    /// case-insensitive comparison.</returns>
+    /// <remarks>
+    /// Discovery does not invoke functions. Use <see cref="FunctionInfo.Category"/> to
+    /// filter custom functions in or out of results. For example,
+    /// <c>engine.SearchFunctions("custom")</c> matches the custom category.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">The query is null.</exception>
+    public IEnumerable<FunctionInfo> SearchFunctions(string query, bool includeAliases = false)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        return FunctionCatalog.Search(query, FunctionCatalog.GetEntries(includeAliases, Options.CustomFunctions));
+    }
+
+    /// <summary>
     /// Creates a default engine capturing the current culture, with radians and standard
     /// human-input normalization enabled.
     /// </summary>

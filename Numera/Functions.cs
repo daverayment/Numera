@@ -75,6 +75,11 @@ public enum FunctionCategory
     /// Pseudo-random number generation (rand, randi).
     /// </summary>
     Random,
+
+    /// <summary>
+    /// Caller-defined functions registered in calculator options.
+    /// </summary>
+    Custom,
 }
 
 /// <summary>
@@ -102,7 +107,7 @@ public sealed record FunctionSignature(
 }
 
 /// <summary>
-/// Complete metadata for a function recognized by Numera, including its canonical name,
+/// Discovery metadata for a built-in or configured custom function, including its canonical name,
 /// signature, description, aliases, and discovery keywords.
 /// </summary>
 /// <param name="Name">The specific invocation name represented by this metadata instance.
@@ -111,8 +116,8 @@ public sealed record FunctionSignature(
 /// ISO 80000-2:2019 / NIST DLMF).</param>
 /// <param name="Category">The functional classification domain.</param>
 /// <param name="Signature">Technical argument bounds and parameter descriptions.</param>
-/// <param name="Description">Human-readable summary of the function's mathematical
-/// behavior.</param>
+/// <param name="Description">Optional human-readable summary of the function's
+/// mathematical behavior; null when none is supplied.</param>
 /// <param name="Aliases">Alternative invocation names supported for this function.
 /// </param>
 /// <param name="Keywords">Curated keywords, synonyms, and domain terms for search
@@ -124,13 +129,16 @@ public sealed record FunctionInfo(
     string CanonicalName,
     FunctionCategory Category,
     FunctionSignature Signature,
-    string Description,
+    string? Description,
     IReadOnlyList<string> Aliases,
     IReadOnlyList<string> Keywords,
     bool IsAlias = false);
 
 /// <summary>
-/// Read-only function discovery and metadata API.
+/// Read-only discovery and metadata for built-in functions. Use
+/// <see cref="CalculatorEngine.GetFunctions(bool)"/> or
+/// <see cref="CalculatorEngine.SearchFunctions(string, bool)"/> to include an engine's
+/// configured custom functions.
 /// </summary>
 public static class Functions
 {

@@ -61,6 +61,24 @@ internal static class FunctionCatalog
 
     public static IReadOnlyList<FunctionInfo> Canonical => CanonicalArray;
 
+    internal static IEnumerable<FunctionInfo> GetEntries(bool includeAliases, CustomFunctionCollection customFunctions)
+    {
+        var builtIns = includeAliases ? AllArray : CanonicalArray;
+        if (customFunctions.Count == 0)
+        {
+            return builtIns;
+        }
+
+        return builtIns.Concat(customFunctions.Select(function => new FunctionInfo(
+            Name: function.Name,
+            CanonicalName: function.Name,
+            Category: FunctionCategory.Custom,
+            Signature: function.Signature,
+            Description: function.Description,
+            Aliases: [],
+            Keywords: [])));
+    }
+
     public static bool TryGetInfo(string name, [NotNullWhen(true)] out FunctionInfo? info) =>
         InfoByName.TryGetValue(name, out info);
 
@@ -72,17 +90,19 @@ internal static class FunctionCatalog
         return lookup.TryGetValue(name, out info);
     }
 
-    public static IEnumerable<FunctionInfo> Search(string query, bool includeAliases)
+    public static IEnumerable<FunctionInfo> Search(string query, bool includeAliases) =>
+        Search(query, includeAliases ? AllArray : CanonicalArray);
+
+    internal static IEnumerable<FunctionInfo> Search(string query, IEnumerable<FunctionInfo> source)
     {
         var trimmed = query.Trim();
         if (trimmed.Length == 0)
         {
-            return includeAliases ? AllArray : CanonicalArray;
+            return source.OrderBy(f => f.Name, NameComparer);
         }
 
         var results = new List<(FunctionInfo Info, int Tier)>();
         var seenNames = new HashSet<string>(NameComparer);
-        var source = includeAliases ? AllArray : CanonicalArray;
 
         foreach (var item in source)
         {

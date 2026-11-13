@@ -258,6 +258,173 @@ public sealed class FunctionMetadataTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void EngineDiscoveryCombinesMetadataWithoutInvokingCallbacks(bool includeAliases)
+    {
+        var signature = new FunctionSignature(1, 2,
+            [new ParameterInfo("value"), new ParameterInfo("offset", IsOptional: true)]);
+        var described = new CustomFunction("zCustom", signature,
+            _ => throw new InvalidOperationException("Discovery must not evaluate functions."), "Original description")
+        {
+            Description = "Initialized description"
+        };
+        var undescribed = CustomFunction.Create("AlphaCustom",
+            () => throw new InvalidOperationException("Discovery must not evaluate functions."));
+        var engine = new CalculatorEngine(options => options with
+        {
+            CustomFunctions = [described, undescribed]
+        });
+
+        var entries = engine.GetFunctions(includeAliases).ToList();
+        var builtIns = includeAliases ? Functions.All : Functions.Canonical;
+        Assert.HasCount(builtIns.Count + 2, entries);
+        Assert.AreSequenceEqual(
+            entries.Select(f => f.Name).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList(),
+            entries.Select(f => f.Name).ToList());
+        Assert.AreEqual(entries.Count, entries.Select(f => f.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.AreSequenceEqual(builtIns.ToList(), entries.Where(f => f.Category != FunctionCategory.Custom).ToList());
+        Assert.AreSequenceEqual(new[] { "AlphaCustom", "zCustom" },
+            entries.Where(f => f.Category == FunctionCategory.Custom).Select(f => f.Name).ToArray());
+
+        var describedInfo = entries.Single(f => f.Name == "zCustom");
+        Assert.AreSame(signature, describedInfo.Signature);
+        Assert.AreEqual("Initialized description", describedInfo.Description);
+        var undescribedInfo = entries.Single(f => f.Name == "AlphaCustom");
+        Assert.IsNull(undescribedInfo.Description);
+        Assert.AreSame(undescribed.Signature, undescribedInfo.Signature);
+        foreach (var custom in entries.Where(f => f.Category == FunctionCategory.Custom))
+        {
+            Assert.AreEqual(custom.Name, custom.CanonicalName);
+            Assert.IsFalse(custom.IsAlias);
+            Assert.IsEmpty(custom.Aliases);
+            Assert.IsEmpty(custom.Keywords);
+        }
+
+        foreach (var query in new[] { "", "   ", "CUSTOM", "alph", "zCustom", "not_a_function" })
+        {
+            _ = engine.SearchFunctions(query, includeAliases).ToList();
+        }
+        Assert.AreSequenceEqual(entries.Select(f => f.Name).ToList(),
+            engine.SearchFunctions("   ", includeAliases).Select(f => f.Name).ToList());
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void EngineWithoutCustomFunctionsListsTheBuiltInCatalog(bool includeAliases)
+    {
+        var expected = includeAliases ? Functions.All : Functions.Canonical;
+        Assert.AreSequenceEqual(expected.ToList(), new CalculatorEngine().GetFunctions(includeAliases).ToList());
+        Assert.IsTrue(expected.All(f => f.Category != FunctionCategory.Custom));
+        Assert.IsTrue(expected.All(f => !string.IsNullOrWhiteSpace(f.Description)));
+    }
+
+    [TestMethod]
+    [DataRow("", false)]
+    [DataRow("   ", true)]
+    [DataRow(" asin ", false)]
+    [DataRow("asin", true)]
+    [DataRow("gaussian", false)]
+    [DataRow("TRIG", true)]
+    [DataRow("arc", false)]
+    [DataRow("mean", true)]
+    [DataRow("not_a_function", false)]
+    public void EngineWithoutCustomFunctionsPreservesBuiltInSearch(string query, bool includeAliases)
+    {
+        Assert.AreSequenceEqual(Functions.Search(query, includeAliases).ToList(),
+            new CalculatorEngine().SearchFunctions(query, includeAliases).ToList());
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void EngineSearchRanksBuiltInAndCustomMatchesTogether(bool includeAliases)
+    {
+        var engine = new CalculatorEngine(options => options with
+        {
+            CustomFunctions =
+            [
+                CustomFunction.Create("zSin", x => x),
+                CustomFunction.Create("sinExtra", x => x),
+                CustomFunction.Create("mySin", x => x)
+            ]
+        });
+
+        var names = engine.SearchFunctions(" SIN ", includeAliases).Select(f => f.Name).ToList();
+        Assert.AreEqual("sin", names[0]);
+        Assert.IsGreaterThan(0, names.IndexOf("sinExtra"));
+        Assert.IsLessThan(names.IndexOf("mySin"), names.IndexOf("sinExtra"));
+        Assert.IsLessThan(names.IndexOf("zSin"), names.IndexOf("mySin"));
+        Assert.AreEqual("mySin", engine.SearchFunctions("MYSIN", includeAliases).First().Name);
+
+        var categoryMatches = engine.SearchFunctions("CuStOm", includeAliases).ToList();
+        Assert.AreSequenceEqual(new[] { "mySin", "sinExtra", "zSin" }, categoryMatches.Select(f => f.Name).ToArray());
+        Assert.IsTrue(categoryMatches.All(f => f.Category == FunctionCategory.Custom));
+        Assert.AreSequenceEqual(Functions.Search("sin", includeAliases).ToList(),
+            engine.SearchFunctions("sin", includeAliases).Where(f => f.Category != FunctionCategory.Custom).ToList());
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void EngineSearchPreservesAliasRankingAlongsideCustomFunctions(bool includeAliases)
+    {
+        var engine = new CalculatorEngine(options => options with
+        {
+            CustomFunctions = [CustomFunction.Create("asinExtra", x => x)]
+        });
+
+        var results = engine.SearchFunctions("asin", includeAliases).ToList();
+        Assert.AreEqual(includeAliases, results.Any(f => f.Name == "asin"));
+        Assert.HasCount(1, results.Where(f => f.Name == "asinExtra").ToList());
+        Assert.IsLessThan(results.FindIndex(f => f.Name == "asinExtra"), results.FindIndex(f => f.Name == "arcsin"));
+        if (includeAliases)
+        {
+            Assert.AreEqual("asin", results[0].Name);
+        }
+        else
+        {
+            Assert.AreEqual("arcsin", results[0].Name);
+        }
+    }
+
+    [TestMethod]
+    public void DiscoveryRemainsScopedToTheEnginesImmutableConfiguration()
+    {
+        var originalFunction = CustomFunction.Create("localFunc", x => x, "Original");
+        var original = new CalculatorEngine(options => options with { CustomFunctions = [originalFunction] });
+        var replacement = CustomFunction.Create("localFunc", (x, y) => x + y, "Replacement");
+        var derived = original.WithOptions(options => options with
+        {
+            CustomFunctions = options.CustomFunctions.SetItem(replacement)
+                .SetItem("derivedOnly", () => new MathValue(1))
+        });
+
+        var originalInfo = original.SearchFunctions("localFunc").Single();
+        var derivedInfo = derived.SearchFunctions("localFunc").Single();
+        Assert.AreEqual("Original", originalInfo.Description);
+        Assert.AreEqual(1, originalInfo.Signature.MinimumArguments);
+        Assert.AreEqual("Replacement", derivedInfo.Description);
+        Assert.AreEqual(2, derivedInfo.Signature.MinimumArguments);
+        Assert.IsEmpty(original.SearchFunctions("derivedOnly").ToList());
+        Assert.HasCount(1, derived.SearchFunctions("derivedOnly").ToList());
+        Assert.IsFalse(Functions.TryGetInfo("localFunc", out _));
+        Assert.IsFalse(Functions.TryGetSignature("localFunc", out _));
+        Assert.IsEmpty(Functions.Search("localFunc").ToList());
+        Assert.DoesNotContain("localFunc", Functions.AllNames);
+        Assert.DoesNotContain(f => f.Category == FunctionCategory.Custom, new CalculatorEngine().GetFunctions());
+    }
+
+    [TestMethod]
+    public void EngineSearchRejectsANullQueryBeforeEnumeration()
+    {
+        var engine = new CalculatorEngine();
+        var exception = Assert.ThrowsExactly<ArgumentNullException>(() => engine.SearchFunctions(null!));
+        Assert.AreEqual("query", exception.ParamName);
+    }
+
+    [TestMethod]
     public void FunctionsApiThrowsOnNullArguments()
     {
         Assert.Throws<ArgumentNullException>(() => Functions.TryGetInfo(null!, out _));

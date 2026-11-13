@@ -15,6 +15,21 @@ keeping explicit numeric format strings representation-native. Account for chara
 and UTF-8 span formatting and interpolation. `EvaluationResult.ToString()` and
 `FormatResult()` provide calculator presentation independently of this decision.
 
+## Reproducible Random Evaluation
+
+Consider whether consumers need a configurable random source or seed for `rand()`
+and `randi()`, beyond deterministic testing within the library.
+
+Before adding public configuration, define sequence ownership and lifetime: whether
+successive evaluations share a sequence, how independent sessions remain isolated,
+and what reproducibility means when evaluations run concurrently. Account for the
+mutable state and thread-safety requirements of caller-supplied random sources
+without weakening the shared-engine and immutable-configuration contracts.
+
+Retain `Random.Shared` as the default. Parsing, formatting, and discovery must not
+consume random values. If testing is the only requirement, consider an internal
+execution-scoped injection point rather than expanding the public API.
+
 ## Exact Rational Multiples of Pi
 
 Investigate a bounded value representation for `q * pi`, where `q` is a reduced

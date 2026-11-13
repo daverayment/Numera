@@ -55,6 +55,32 @@ a new collection; replacing a case-insensitively matching name preserves its reg
 position without changing the original collection. Zero-argument callbacks run when
 evaluated, not when registered, and must be called with empty parentheses.
 
+## Discovery & Autocomplete
+
+`engine.GetFunctions()` lists the built-in and custom functions available to that
+engine, alphabetically by name. `engine.SearchFunctions(query)` searches that same
+set using the built-in discovery ranking: exact names and aliases, prefixes,
+substrings, categories, then keywords. Both methods omit built-in alias entries
+unless `includeAliases: true` is supplied. Empty or whitespace-only searches return
+the selected functions alphabetically. Name matching and ordering are ordinal and
+case-insensitive. Discovery never invokes callbacks.
+
+```csharp
+var suggestions = engine.SearchFunctions("dou");
+var customOnly = engine.GetFunctions()
+	.Where(f => f.Category == FunctionCategory.Custom);
+var builtInOnly = engine.GetFunctions()
+	.Where(f => f.Category != FunctionCategory.Custom);
+```
+
+Both methods return `FunctionInfo` metadata. Custom entries use
+`FunctionCategory.Custom`, their registered name as their canonical name, and their
+declared signature. Descriptions can be null; aliases and keywords are empty
+collections. Searching for `"custom"` also matches the custom category.
+
+The static `Functions` API describes built-in functions only, independently of
+engine configuration.
+
 ---
 
 ## Design Characteristics & Limitations
