@@ -58,6 +58,12 @@ public sealed class RationalEvaluationTests
     [DataRow("avg(1/3,2/3)", 1, 2)]
     [DataRow("median(1/3,2/3)", 1, 2)]
     [DataRow("variance(1/3,2/3)", 1, 18)]
+    [DataRow("stdev(1,2,3)", 1, 1)]
+    [DataRow("stddev(1,2,3)", 1, 1)]
+    [DataRow("stdev(-1/3,0,1/3)", 1, 3)]
+    [DataRow("stddev(-1/3,0,1/3)", 1, 3)]
+    [DataRow("stdev(5,5)", 0, 1)]
+    [DataRow("stddev(5,5)", 0, 1)]
     public void BuiltinsUseRationalArithmetic(string expression, int numerator, int denominator)
     {
         AssertFraction(Calculator.Evaluate(expression).Value, numerator, denominator);
@@ -275,7 +281,6 @@ public sealed class RationalEvaluationTests
 
     [TestMethod]
     [DataRow("stdev(0,2e-200)", 2)]
-    [DataRow("stdev(-1e-200,0,1e-200)", 1)]
     public void StandardDeviationRetainsTinyVarianceMagnitudeWithoutCertifyingItsResult(
         string expression, int varianceCoefficient)
     {
@@ -286,6 +291,70 @@ public sealed class RationalEvaluationTests
         Assert.AreEqual(MathValue.DataType.Double, result.Kind);
         Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.IsFalse(result.HasExactFraction);
+    }
+
+    [TestMethod]
+    [DataRow("stdev", -200)]
+    [DataRow("stddev", -200)]
+    [DataRow("stdev", -400)]
+    [DataRow("stddev", -400)]
+    [DataRow("stdev", 400)]
+    [DataRow("stddev", 400)]
+    public void StandardDeviationPreservesPerfectRootsBeyondTheDoubleRange(string function, int exponent)
+    {
+        var result = Calculator.Evaluate($"{function}(-1e{exponent},0,1e{exponent})");
+
+        Assert.IsTrue(result.IsFinite);
+        if (exponent < 0)
+        {
+            AssertFraction(result.Value, BigInteger.One, BigInteger.Pow(10, -exponent));
+        }
+        else
+        {
+            AssertFraction(result.Value, BigInteger.Pow(10, exponent), BigInteger.One);
+        }
+
+        AssertFraction(Calculator.Evaluate("ans*3", result.Context).Value,
+            result.GetExactFraction().Numerator * 3, result.GetExactFraction().Denominator);
+    }
+
+    [TestMethod]
+    [DataRow("stdev")]
+    [DataRow("stddev")]
+    public void StandardDeviationDoesNotCertifyUnverifiedRationalInputs(string function)
+    {
+        var context = new EvaluationContext
+        {
+            Variables = [new Variable("x", MathValue.FromFraction(1, 3).WithExactness(CalculationExactness.Unverified))]
+        };
+        var result = Calculator.Evaluate($"{function}(-x,0,x)", context);
+
+        Assert.AreEqual(MathValue.FromFraction(1, 3), result.Value);
+        Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
+        Assert.IsFalse(result.HasExactFraction);
+    }
+
+    [TestMethod]
+    [DataRow("stdev")]
+    [DataRow("stddev")]
+    public void StandardDeviationPreservesDoubleAndNonfiniteSemantics(string function)
+    {
+        var context = new EvaluationContext
+        {
+            Variables =
+            [
+                new Variable("x", new MathValue(1.0)),
+                new Variable("infinity", MathValue.PositiveInfinity),
+                new Variable("nan", MathValue.NaN)
+            ]
+        };
+        var result = Calculator.Evaluate($"{function}(-x,0,x)", context);
+
+        Assert.AreEqual(1.0, result.DoubleValue);
+        Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
+        Assert.IsFalse(result.HasExactFraction);
+        Assert.IsTrue(Calculator.Evaluate($"{function}(0,infinity)", context).IsNaN);
+        Assert.IsTrue(Calculator.Evaluate($"{function}(0,nan)", context).IsNaN);
     }
 
     [TestMethod]

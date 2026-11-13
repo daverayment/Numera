@@ -197,7 +197,7 @@ evaluation. The examples above use moderate arguments.
 | `mul(2,3,4)` | `24` | Exact |
 | `median(1,9,3,5)` | `4` | Exact |
 | `variance(1,2,3)` | `1` | Exact |
-| `stdev(1,2,3)` | `1` | Unverified |
+| `stdev(1,2,3)` | `1` | Exact |
 | `gcd(24,36,60)` | `12` | Exact |
 | `lcm(4,6)` | `12` | Exact |
 | `factorial(6)` | `720` | Exact |
@@ -212,7 +212,11 @@ evaluation. The examples above use moderate arguments.
 Recommendation: use `totient(n)` for Euler's totient; its `phi(n)` alias shares a name with the
 golden-ratio constant. Write `phi * (n)` when you mean multiplication by that constant.
 
-Variance is **sample variance**, divided by `n-1`. `comb(52,5)` counts unordered
+Variance is **sample variance**, divided by `n-1`. Standard deviation (`stdev`,
+also `stddev`) preserves an exact result when exact inputs produce a variance with
+an exact rational square root, even outside Double's range. Non-perfect roots use
+Unverified floating-point approximations; Unverified inputs remain Unverified.
+`comb(52,5)` counts unordered
 five-card hands; `perm(10,3)` counts ordered selections without replacement.
 `sigma(12,2)` sums squared divisors. For sufficiently large inputs, primality
 and factorization-dependent functions may use probable-prime reasoning and return

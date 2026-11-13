@@ -1038,7 +1038,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
     private MathValue EvaluateStDev(List<MathValue> args)
     {
         var variance = EvaluateVariance(args);
-        return new MathValue(EvaluateRoot(variance, new MathValue(2)).AsDouble());
+        return EvaluateRoot(variance, new MathValue(2));
     }
 
     private MathValue EvaluateSum(List<MathValue> args)
