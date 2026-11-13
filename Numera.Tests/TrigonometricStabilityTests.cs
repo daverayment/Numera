@@ -9,6 +9,54 @@ public sealed class TrigonometricStabilityTests
     [DataRow(AngleUnit.Radians)]
     [DataRow(AngleUnit.Degrees)]
     [DataRow(AngleUnit.Gradians)]
+    public void NaNAnglesPropagateWithoutPoleDiagnostics(AngleUnit unit)
+    {
+        var engine = CreateEngine(unit);
+        var context = new EvaluationContext([new Variable("x", MathValue.NaN)]);
+
+        foreach (string function in new[] { "tan", "cot", "sec", "csc" })
+        {
+            foreach (string argument in new[] { "x", "exp(1000)-exp(1000)" })
+            {
+                string expression = $"{function}({argument})";
+                var result = engine.Evaluate(expression, context);
+                Assert.IsTrue(result.IsNaN, expression);
+                Assert.AreEqual(MathValue.DataType.Double, result.Kind);
+                Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
+                Assert.IsFalse(result.HasExactFraction);
+                Assert.IsTrue(engine.TryEvaluate(expression, out var triedResult, out var diagnostic, context), expression);
+                Assert.IsNull(diagnostic);
+                Assert.IsTrue(triedResult.IsNaN);
+                Assert.IsTrue(engine.Evaluate($"{function}(ans)", result.Context).IsNaN);
+            }
+        }
+    }
+
+    [TestMethod]
+    [DataRow(AngleUnit.Radians)]
+    [DataRow(AngleUnit.Degrees)]
+    [DataRow(AngleUnit.Gradians)]
+    public void InfiniteAnglesRetainExistingDomainDiagnostics(AngleUnit unit)
+    {
+        var engine = CreateEngine(unit);
+        foreach (var angle in new[] { MathValue.PositiveInfinity, MathValue.NegativeInfinity })
+        {
+            var context = new EvaluationContext([new Variable("x", angle)]);
+            foreach (string function in new[] { "tan", "cot", "sec", "csc" })
+            {
+                string expression = $"{function}(x)";
+                Assert.IsFalse(engine.TryEvaluate(expression, out _, out var diagnostic, context), expression);
+                Assert.AreEqual(EvaluationError.UndefinedMathResult, diagnostic!.Code);
+                Assert.AreEqual(0, diagnostic.Position);
+                Assert.AreEqual(expression.Length, diagnostic.Length);
+            }
+        }
+    }
+
+    [TestMethod]
+    [DataRow(AngleUnit.Radians)]
+    [DataRow(AngleUnit.Degrees)]
+    [DataRow(AngleUnit.Gradians)]
     public void TinyNonzeroAnglesRemainNonzeroWithFiniteReciprocals(AngleUnit unit)
     {
         var engine = CreateEngine(unit);

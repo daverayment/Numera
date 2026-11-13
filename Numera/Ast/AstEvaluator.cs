@@ -1451,6 +1451,11 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
     private double EvaluateTan(double v)
     {
+        if (double.IsNaN(v))
+        {
+            return double.NaN;
+        }
+
         if (TryGetExactEighthTurn(v, out long step45))
         {
             return (((step45 % 4) + 4) % 4) switch
@@ -1482,6 +1487,11 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
     private double EvaluateCot(double v)
     {
+        if (double.IsNaN(v))
+        {
+            return double.NaN;
+        }
+
         if (TryGetExactEighthTurn(v, out long step45))
         {
             return (((step45 % 4) + 4) % 4) switch
@@ -1514,6 +1524,11 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
     private double EvaluateSec(double v)
     {
+        if (double.IsNaN(v))
+        {
+            return double.NaN;
+        }
+
         double cos = EvaluateCos(v);
         if (cos == 0.0)
         {
@@ -1533,6 +1548,11 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
     private double EvaluateCsc(double v)
     {
+        if (double.IsNaN(v))
+        {
+            return double.NaN;
+        }
+
         double sin = EvaluateSin(v);
         if (sin == 0.0)
         {
