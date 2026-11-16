@@ -15,8 +15,9 @@ namespace Numera;
 /// modify them.
 /// </para>
 /// <para>
-/// Variable names are case-insensitive (ordinal). The name <c>ans</c> is reserved for
-/// <see cref="PreviousResult"/> and cannot be supplied in <see cref="Variables"/>.
+/// Variable names are case-insensitive (ordinal) and cannot shadow constants,
+/// language keywords, or built-in functions, including aliases. The name <c>ans</c>
+/// is reserved for <see cref="PreviousResult"/>.
 /// </para>
 /// <para>
 /// Equality is by value: two contexts are equal if they define the same variables (names
@@ -56,13 +57,14 @@ public sealed record EvaluationContext
 
     /// <summary>
     /// The variables currently assigned to values. Lookups are case-insensitive. The
-    /// returned collection is read-only. The name <c>ans</c> is reserved; seed it through
+    /// returned collection is read-only. Names cannot shadow constants, language
+    /// keywords, or built-in functions, including aliases. Seed <c>ans</c> through
     /// <see cref="PreviousResult"/> instead.
     /// </summary>
     /// <exception cref="ArgumentNullException">The assigned collection is null.
     /// </exception>
-    /// <exception cref="ArgumentException">The collection contains a variable named
-    /// <c>ans</c>, compared case-insensitively.</exception>
+    /// <exception cref="ArgumentException">The collection contains a reserved variable
+    /// name, compared case-insensitively.</exception>
     public VariableCollection Variables
     {
         get => _variables;
@@ -74,6 +76,30 @@ public sealed record EvaluationContext
                 throw new ArgumentException(
                     "The name 'ans' is reserved for the previous result. Use PreviousResult instead.",
                     nameof(Variables));
+            }
+
+            foreach (var variable in value)
+            {
+                if (KeywordCatalog.IsReserved(variable.Name))
+                {
+                    throw new ArgumentException(
+                        $"Variable name '{variable.Name}' is reserved for a language keyword.",
+                        nameof(Variables));
+                }
+
+                if (ConstantCatalog.TryResolve(variable.Name, out _, out _))
+                {
+                    throw new ArgumentException(
+                        $"Variable name '{variable.Name}' is reserved for a built-in constant.",
+                        nameof(Variables));
+                }
+
+                if (FunctionCatalog.TryGetInfo(variable.Name, out _))
+                {
+                    throw new ArgumentException(
+                        $"Variable name '{variable.Name}' is reserved for a built-in function.",
+                        nameof(Variables));
+                }
             }
 
             _variables = value;
@@ -107,8 +133,8 @@ public sealed record EvaluationContext
     /// <param name="previousResult">The previous result to include in the context.
     /// </param>
     /// <param name="previousExpression">The previous canonical expression AST.</param>
-    /// <exception cref="ArgumentException">The variables contain a name equal to
-    /// <c>ans</c>, compared case-insensitively.</exception>
+    /// <exception cref="ArgumentException">The variables contain a reserved name,
+    /// compared case-insensitively.</exception>
     public EvaluationContext(
         VariableCollection? variables,
         MathValue? previousResult = null,
@@ -130,8 +156,8 @@ public sealed record EvaluationContext
     /// <param name="previousResult">Result from a previous evaluation that can be reused
     /// by subsequent expressions.</param>
     /// <param name="previousExpression">The previous canonical expression AST.</param>
-    /// <exception cref="ArgumentException">The variables contain a name equal to
-    /// <c>ans</c>, compared case-insensitively.</exception>
+    /// <exception cref="ArgumentException">The variables contain a reserved name,
+    /// compared case-insensitively.</exception>
     public EvaluationContext(IEnumerable<Variable>? variables,
         MathValue? previousResult = null,
         ExpressionNode? previousExpression = null)

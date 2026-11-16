@@ -60,6 +60,26 @@ public sealed class EvaluationContextTests
     [DataRow("AnS")]
     public void ContextCreationAndWithExpressionsRejectAnsBindings(string name)
     {
+        AssertContextRejectsBinding(name, "PreviousResult");
+    }
+
+    [TestMethod]
+    public void ContextCreationAndWithExpressionsRejectReservedBindings()
+    {
+        var names = Constants.AllNames
+            .Concat(Functions.AllNames)
+            .Concat(["and", "or", "xor", "not", "of"])
+            .SelectMany(name => new[] { name, name.ToUpperInvariant() })
+            .Distinct(StringComparer.Ordinal);
+
+        foreach (string name in names)
+        {
+            AssertContextRejectsBinding(name, "reserved");
+        }
+    }
+
+    private static void AssertContextRejectsBinding(string name, string expectedMessage)
+    {
         var source = Vars((name, 42m));
         var variables = source.ToVariableCollection();
         var original = new EvaluationContext(Vars(("x", 7m)), new MathValue(100m));
@@ -77,7 +97,7 @@ public sealed class EvaluationContextTests
             foreach (var exception in exceptions)
             {
                 Assert.AreEqual(nameof(EvaluationContext.Variables), exception.ParamName);
-                Assert.Contains("PreviousResult", exception.Message);
+                Assert.Contains(expectedMessage, exception.Message);
             }
         }
 
@@ -598,27 +618,9 @@ public sealed class EvaluationContextTests
     }
 
     [TestMethod]
-    public void Context_WithMaliciousOrPoisonedKeys_MaintainsInvariants()
+    public void LargeContextAdvancesWithoutChangingExistingSnapshot()
     {
         var engine = new CalculatorEngine();
-
-        // 1. Context containing an empty key or null character.
-        var weirdVars = new Variable[]
-        {
-            new("", new(10m)),
-            new("a\0b", new(20m)),
-            new("valid", new(30m))
-        };
-        var context = new EvaluationContext(weirdVars, null);
-
-        // Valid variable is still readable.
-        Assert.AreEqual(new MathValue(30m), engine.Evaluate("valid", context).Value);
-
-        // Parser will not produce an empty or null-containing identifier token for
-        // variables.
-        Assert.IsFalse(engine.TryEvaluate("", out _, out _, context));
-
-        // 2. Huge collection of 1,000 variables advances safely and maintains lookup.
         var manyVars = Enumerable.Range(0, 1000)
             .Select(i => new Variable($"var_{i}", new MathValue((decimal)i)))
             .ToList();
@@ -632,5 +634,6 @@ public sealed class EvaluationContextTests
             [new Variable("var_0", new MathValue(42m))],new MathValue(999m));
         Assert.AreEqual(42m, advanced.Variables["var_0"].DecimalValue);
         Assert.AreEqual(1000, advanced.Variables.Count);
+        Assert.AreEqual(0m, largeContext.Variables["var_0"].DecimalValue);
     }
 }

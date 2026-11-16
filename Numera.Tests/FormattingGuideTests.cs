@@ -539,7 +539,7 @@ public sealed class FormattingGuideTests
     }
 
     [TestMethod]
-    public void DoubleResults_UseRoundTripPrecision()
+    public void NativeDoubleFormattingUsesRoundTripPrecision()
     {
         var value = new MathValue(0.1 + 0.2);
 

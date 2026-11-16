@@ -28,10 +28,33 @@ public sealed record ResultFormatOptions
     public static ResultFormatOptions Default { get; } = new();
 
     /// <summary>
-    /// Gets the number of significant digits, defaulting to 24.
+    /// Gets the overall significant-digit ceiling, defaulting to 24. Double displays
+    /// also respect <see cref="DoubleSignificantDigits"/>; the smaller ceiling applies.
     /// Must be between 1 and <see cref="CalculationLimits.MaxSignificantDigits"/> (1,000).
     /// </summary>
     public int SignificantDigits { get; init; } = 24;
+
+    /// <summary>
+    /// Gets the additional significant-digit ceiling for Double displays, defaulting to
+    /// 15. Must be between 1 and 17. Does not affect other representations, stored values,
+    /// machine-readable expressions, serialization, or explicit numeric format strings.
+    /// </summary>
+    /// <remarks>
+    /// For example, with <see cref="SignificantDigits"/> set to 20, Doubles still use at
+    /// most 15 digits by default. Set this property to 17 to inspect more of the stored
+    /// approximation. Seventeen decimal digits suffice to distinguish finite Double
+    /// values when parsed as Double; neither ceiling guarantees mathematical accuracy.
+    /// </remarks>
+    public int DoubleSignificantDigits { get; init; } = 15;
+
+    internal int ResolveSignificantDigits(MathValue.DataType kind)
+    {
+        if (kind == MathValue.DataType.Double)
+        {
+            return Math.Min(SignificantDigits, DoubleSignificantDigits);
+        }
+        return SignificantDigits;
+    }
 
     /// <summary>
     /// Gets the magnitude threshold for automatic notation selection, defaulting to 24.
@@ -76,6 +99,13 @@ public sealed record ResultFormatOptions
             throw new ArgumentOutOfRangeException(
                 nameof(SignificantDigits),
                 $"Significant digits must be between 1 and {CalculationLimits.MaxSignificantDigits}.");
+        }
+
+        if (DoubleSignificantDigits < 1 || DoubleSignificantDigits > 17)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(DoubleSignificantDigits),
+                "Double significant digits must be between 1 and 17.");
         }
 
         if (MaxFixedDigits < 1 || MaxFixedDigits > CalculationLimits.MaxSignificantDigits)

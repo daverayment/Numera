@@ -35,6 +35,72 @@ public sealed class VariableCollectionTests
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
+    [TestMethod]
+    [DataRow(null)]
+    [DataRow("")]
+    [DataRow(" ")]
+    [DataRow(" rate")]
+    [DataRow("rate ")]
+    [DataRow("foo bar")]
+    [DataRow("2x")]
+    [DataRow("a-b")]
+    [DataRow("a.b")]
+    [DataRow("a\0b")]
+    [DataRow("a\nb")]
+    [DataRow("a\tb")]
+    [DataRow("x\u03C0")]
+    [DataRow("\u03C0x")]
+    [DataRow("x\u0662")]
+    public void VariableConstructionRejectsInvalidIdentifiers(string? name)
+    {
+        VariableCollection original = [("valid", new MathValue(7))];
+        Func<Variable>[] factories =
+        [
+            () => new Variable(name!, new MathValue(1)),
+            () => new Variable(name!, new MathValue(1), "1"),
+            () => new Variable(name!, new MathValue(1), new NumberNode(1), "1"),
+            () => (name!, new MathValue(1)),
+            () => original.SetItem(name!, new MathValue(1))[name!]
+        ];
+
+        foreach (var factory in factories)
+        {
+            ArgumentException exception;
+            if (name is null)
+            {
+                exception = Assert.ThrowsExactly<ArgumentNullException>(() => factory());
+            }
+            else
+            {
+                exception = Assert.ThrowsExactly<ArgumentException>(() => factory());
+            }
+
+            Assert.AreEqual("name", exception.ParamName);
+        }
+
+        Assert.AreEqual(1, original.Count);
+        Assert.AreEqual(new MathValue(7), original["valid"].Value);
+    }
+
+    [TestMethod]
+    [DataRow("_")]
+    [DataRow("_rate2")]
+    [DataRow("rate_2")]
+    [DataRow("Rate")]
+    [DataRow("\u03B12")]
+    [DataRow("i")]
+    [DataRow("\u0131")]
+    [DataRow("\u0130")]
+    public void ValidVariableNamesRemainAddressable(string name)
+    {
+        var variable = new Variable(name, new MathValue(42));
+        var context = new EvaluationContext([variable]);
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+
+        Assert.AreEqual(name, variable.Name);
+        Assert.AreEqual(new MathValue(42), engine.Evaluate(name, context).Value);
+    }
+
     // Creation.
 
     [TestMethod]

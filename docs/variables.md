@@ -43,11 +43,12 @@ x = y = 42       // y becomes 42 first, then x
 
 ### Naming rules
 
-- A name starts with a letter or underscore, followed by letters, digits or underscores.
+- A name starts with a letter or underscore, followed by letters, ASCII digits or underscores.
+  Mathematical constant symbols cannot appear inside a variable name.
 - Names are **case-insensitive** and compared ordinally, so `Rate`, `rate` and `RATE` are the same variable regardless of the machine's culture.
 - A name cannot shadow anything built in:
-  - constants (`pi`, `tau`, `e`, `phi`)
-  - functions (`sin`, `sqrt`, `gcd`, `factorial`)
+  - constants (`pi`, `tau`, `e`, `phi`, `true`, `false`, and their aliases)
+  - functions (`sin`, `sqrt`, `gcd`, `factorial`, and their aliases)
   - keywords (`and`, `or`, `xor`, `not`, `of`)
   - the previous-result name (`ans`)
 
@@ -55,6 +56,11 @@ x = y = 42       // y becomes 42 first, then x
 > `e` is Euler's number, so `e = 5` is rejected. It is an easy one to trip over when you reach for short names like `a`, `b`, `c`, `d`, `e`.
 
 Assigning to a reserved name fails with `EvaluationError.InvalidSyntax`.
+
+When your app supplies variables directly, `new Variable(...)` checks the name's
+syntax, and `EvaluationContext` checks for reserved names. For example, `"foo bar"`
+and `"2x"` are invalid identifiers, while `"pi"` and `"sin"` are reserved. These
+checks throw `ArgumentException`; a null name throws `ArgumentNullException`.
 
 ### Incomplete assignments and launcher decoration
 

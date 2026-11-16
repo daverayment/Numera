@@ -267,7 +267,21 @@ not alter per-session variables or `ans`; those remain in `EvaluationContext`.
 - **Multi-Radix Helpers**: For finite integral values, `value.ToHexString()`, `value.ToBinaryString()`, and `value.ToOctalString()` format with (or without) standard prefixes (`0x`, `0b`, `0o`), returning `null` otherwise. Availability does not establish calculation exactness: an Unverified Double containing 2 can still be shown as binary `0b10`.
 - **Launcher Presentation**: `CalculatorEngine.FormatResult(value)` produces a structured `FormattedCalculation` containing primary display text in the engine's culture, machine-readable invariant text, and integer radix strings.
 
-The default primary display uses at most 24 significant digits with culture-aware digit grouping enabled, stripping insignificant trailing zeros. Automatic notation selection uses the rounded base-10 exponent: fixed notation applies from -24 through 23 inclusive (`MaxFixedDigits = 24`); other magnitudes transition to scientific notation. This threshold governs magnitude, not the total number of fractional digits. `ResultFormatOptions` configures this independently of arithmetic.
+The primary display uses culture-aware digit grouping and midpoint-to-even rounding.
+Two `ResultFormatOptions` settings control how many significant digits it shows:
+
+- `SignificantDigits` limits all numeric displays. It defaults to 24 and accepts 1 to 1,000.
+- `DoubleSignificantDigits` further limits Double displays. It defaults to 15 and accepts 1 to 17.
+
+Doubles use whichever limit is lower. For example, setting `SignificantDigits = 20`
+still leaves Doubles at the default 15 digits. Set `DoubleSignificantDigits = 17`
+to inspect more digits of a stored Double approximation. More display digits do
+not improve calculation accuracy: these settings control presentation, not the
+stored value or the comparisons and lossless output that use it.
+
+Automatic notation uses the rounded base-10 exponent: fixed notation applies from
+-24 through 23 inclusive (`MaxFixedDigits = 24`); other magnitudes use scientific
+notation. This threshold controls magnitude, independently of display precision.
 
 Scientific result displays default to compact lowercase e-notation (`Style = ExpressionFormatStyle.NormalizedAscii`), for example `1e-400`. Set `ExponentMarker = ExponentMarker.Uppercase` for `1E-400`. This setting affects only the numeric exponent marker, not identifiers, expression formatting, or machine-readable text. Explicit `TypographicUnicode` and `MathJax` result styles use mathematical exponent notation and ignore marker casing. Expression formatting defaults to typographic Unicode; its normalized ASCII style uses uppercase E.
 
@@ -277,7 +291,9 @@ Use the structured primary display for calculator UIs. Representation-native `To
 
 `FractionRepresentation` is a reduced slash fraction for known or asserted Exact finite results (`"1/3"`, `"1/2"`, or `"5"` for integers), otherwise null. `EvaluationResult.HasExactFraction` reports that availability. Use `IsDisplayRounded` for a rounded-display indicator and `Value.Exactness` for a separate exactness explanation: `1/3` is Exact with a rounded display, while `ln(1)` is Unverified without display rounding. See [UI guidance](exactness.md#i-want-a-useful-indicator-beside-the-answer).
 
-Decimal literals and explicit Decimal values carry a bounded display-scale hint independently of canonical representation. Exact arithmetic and captured values retain it, including across Rational intermediates, without replaying expressions. Fixed, unrounded displays preserve scales up to four places for non-whole values and two for whole values; larger scales normalize trailing zeros. Scientific notation and the significant-digit budget take precedence. Fraction factories do not invent decimal padding merely because a fraction happens to fit Decimal. Numeric equality, hashing, and exactness ignore the hint.
+Decimal literals and explicit Decimal values carry a bounded display-scale hint independently of canonical representation. Exact arithmetic and captured values retain it, including across Rational intermediates, without replaying expressions.
+
+Fixed, unrounded displays preserve scales up to four places for non-whole values and two for whole values; larger scales normalize trailing zeros. Double displays omit fractional trailing zeros. Scientific notation and the significant-digit budget take precedence. Fraction factories do not invent decimal padding merely because a fraction happens to fit Decimal. Numeric equality, hashing, and exactness ignore the hint.
 
 Default `EvaluationResult.ToString()`, interpolation, and character/UTF-8 span formatting use the originating engine's numeric display policy, with an explicitly supplied format provider overriding its culture. Thus `Calculator.Evaluate("194.40-100").ToString()` returns `"94.40"`. Only the numeric representation is formatted on these paths, not unused fraction/radix alternates. Explicit format strings and `MathValue` formatting retain their representation-native behavior.
 
@@ -392,13 +408,22 @@ Formatting does not re-evaluate the calculation. Invalid options throw argument 
 
 ### Representation Lengths
 
-**24 significant digits is the default, not a 24-character budget.** Most answers are short, but leading zeros and punctuation need space too. Automatic notation is enough for many calculator UIs; a strict-width field needs an application decision when the actual text is longer.
+**Significant digits are not a character budget.** Most answers are short, but
+leading zeros and punctuation need space too. Automatic notation is enough for
+many calculator UIs; a strict-width field needs an application decision when the
+actual text is longer.
 
 All counts below are UTF-16 code units (`string.Length`), not pixels, graphemes, or UTF-8 bytes. Numeric bounds assume values within the current hard limit of 16,384 absolute-magnitude bits per integer or reduced fraction component. Stricter engine limits can reduce them. Explicit .NET format strings are a separate surface from primary-display options.
 
 #### Numeric primary display
 
-Let `P = SignificantDigits` (default 24), `T = MaxFixedDigits` (default 24), and `e` be the **rounded** base-10 exponent. Let `S` be the length of the culture's negative sign when present, `D` the decimal separator's length when present, and `G` the group separator's length. Count a symbol as zero when it is absent.
+Let `P` be the effective significant-digit ceiling: `SignificantDigits` for Integer,
+Decimal, and Rational values, or `min(SignificantDigits, DoubleSignificantDigits)`
+for Doubles. The defaults are 24 and 15 respectively; the table below uses 24 as a
+conservative allowance across all representations. Let `T = MaxFixedDigits`
+(default 24) and `e` be the **rounded** base-10 exponent. Let `S` be the length of
+the culture's negative sign when present, `D` the decimal separator's length when
+present, and `G` the group separator's length. Count an absent symbol as zero.
 
 | Primary-display form | Conservative character bound | With default precision and ordinary one-character signs/separators |
 | --- | --- | --- |

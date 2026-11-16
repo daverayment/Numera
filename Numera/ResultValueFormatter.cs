@@ -43,7 +43,7 @@ internal static class ResultValueFormatter
             rational.Numerator,
             rational.Denominator,
             rational.IsNegative,
-            options.SignificantDigits);
+            options.ResolveSignificantDigits(value.Kind));
 
         // Rounding can carry into a new decade, so select notation from the rounded
         // exponent rather than the input magnitude (e.g. 999.9 rounding to 1000).
@@ -188,7 +188,7 @@ internal static class ResultValueFormatter
     {
         int zeroScale = options.Notation == NumericNotation.Scientific
             ? 0
-            : Math.Min(PreservedDecimalScale(value, isWholeNumber: true), options.SignificantDigits - 1);
+            : Math.Min(PreservedDecimalScale(value, isWholeNumber: true), options.ResolveSignificantDigits(value.Kind) - 1);
 
         string sign = isNegativeZero ? culture.NegativeSign : "";
         string decimalPart = zeroScale > 0
@@ -336,7 +336,7 @@ internal static class ResultValueFormatter
         int integerDigitCount = Math.Max(1, rounded.Exponent + 1);
         int decimalPlaces = Math.Max(0, rounded.Digits.Length - rounded.Exponent - 1);
         int trailingZeroCount = GetPreservedTrailingZeroCount(
-            rounded, originalValue, isWholeNumber, decimalPlaces, options.SignificantDigits);
+            rounded, originalValue, isWholeNumber, decimalPlaces, options.ResolveSignificantDigits(originalValue.Kind));
 
         return new FixedLayout(integerDigitCount, decimalPlaces, trailingZeroCount);
     }
@@ -402,6 +402,12 @@ internal static class ResultValueFormatter
 
     private static int PreservedDecimalScale(MathValue value, bool isWholeNumber)
     {
+        // Decimal scale can describe typed precision, but not a Double approximation.
+        if (value.Kind == MathValue.DataType.Double)
+        {
+            return 0;
+        }
+
         int maximumScale = isWholeNumber ? MaxPreservedWholeNumberScale : MaxPreservedFractionalScale;
         return value.DecimalDisplayScale <= maximumScale ? value.DecimalDisplayScale : 0;
     }

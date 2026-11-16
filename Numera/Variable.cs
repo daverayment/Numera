@@ -15,6 +15,8 @@ namespace Numera;
 /// <see cref="Value"/>, never a replay of the defining expression.
 /// Use <see cref="Definition"/> to preserve the original expression text when the
 /// variable is created or updated from parsed input.
+/// Names must be syntactically valid identifiers. <see cref="EvaluationContext"/>
+/// also checks that supplied variables do not use reserved names.
 /// </remarks>
 public readonly record struct Variable
 {
@@ -49,16 +51,27 @@ public readonly record struct Variable
         Expression?.GetReferencedVariables() ?? FrozenSet<string>.Empty;
 
     /// <summary>
-    /// Initializes a new instance of the Variable class with a name, value, optional AST expression,
-    /// and optional definition text.
+    /// Initializes a new instance of the Variable class with a name, value, optional AST
+    /// expression, and optional definition text.
     /// </summary>
     /// <param name="name">Variable name.</param>
     /// <param name="value">Variable value.</param>
     /// <param name="expression">Optional canonical AST defining the variable.</param>
-    /// <param name="definition">Optional expression text that defines the variable.</param>
+    /// <param name="definition">Optional expression text that defines the variable.
+    /// </param>
+    /// <exception cref="ArgumentNullException">The name is null.</exception>
+    /// <exception cref="ArgumentException">The name is not a valid identifier.
+    /// </exception>
     public Variable(string name, MathValue value, ExpressionNode? expression, string? definition = null)
     {
         ArgumentNullException.ThrowIfNull(name, nameof(name));
+        if (!Identifier.IsValidIdentifier(name, out string? errorMessage))
+        {
+            throw new ArgumentException(
+                $"Variable name '{name}' is not a valid identifier. {errorMessage}",
+                nameof(name));
+        }
+
         Name = name;
         Value = value;
         Expression = expression;
@@ -71,7 +84,11 @@ public readonly record struct Variable
     /// </summary>
     /// <param name="name">Variable name.</param>
     /// <param name="value">Variable value.</param>
-    /// <param name="definition">Optional expression text that defines the variable.</param>
+    /// <param name="definition">Optional expression text that defines the variable.
+    /// </param>
+    /// <exception cref="ArgumentNullException">The name is null.</exception>
+    /// <exception cref="ArgumentException">The name is not a valid identifier.
+    /// </exception>
     public Variable(string name, MathValue value, string? definition)
         : this(name, value, null, definition)
     {
@@ -82,6 +99,9 @@ public readonly record struct Variable
     /// </summary>
     /// <param name="name">Variable name.</param>
     /// <param name="value">Variable value.</param>
+    /// <exception cref="ArgumentNullException">The name is null.</exception>
+    /// <exception cref="ArgumentException">The name is not a valid identifier.
+    /// </exception>
     public Variable(string name, MathValue value)
         : this(name, value, null, null)
     {

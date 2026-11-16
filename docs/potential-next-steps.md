@@ -30,16 +30,6 @@ Retain `Random.Shared` as the default. Parsing, formatting, and discovery must n
 consume random values. If testing is the only requirement, consider an internal
 execution-scoped injection point rather than expanding the public API.
 
-## Double Result Presentation
-
-Review whether default calculator presentation of Double values should use a
-15-significant-digit ceiling or shortest-round-trip text instead of expanding the
-stored binary value to the general result precision. Define whether explicitly
-requesting more digits exposes the stored expansion or selects another policy.
-Preserve round-trip machine-readable output, independent precision for exact
-Integer/Decimal/Rational values, and Unverified indicators regardless of appearance.
-Display rounding is not a guarantee of calculation accuracy.
-
 ## Inverse Trigonometric Special Values
 
 Consider recognizing rational inverse-trigonometric inputs with proven rational

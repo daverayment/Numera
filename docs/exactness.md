@@ -64,6 +64,11 @@ For a fraction button, use `result.HasExactFraction` or the presence of
 `formatted.FractionRepresentation`. For `1/3` the button can show `1/3`; for `ln(1)`
 it is unavailable, even though its decimal display needs no rounding.
 
+Double results display at most 15 significant digits by default. In radian mode,
+`sin(rad(30))` displays `0.5`, but its stored value is not exactly `0.5`, so
+`sin(rad(30)) == 0.5` is false. It remains Unverified. Comparisons, machine-readable
+text, and serialization use the stored value rather than the rounded display.
+
 **Do not treat `IsDisplayRounded == false`, an Integer storage type, or a short answer
 as a guarantee of calculation exactness.** Increasing display precision does not improve
 an approximate calculation, and Unverified does not tell you how many digits are reliable.

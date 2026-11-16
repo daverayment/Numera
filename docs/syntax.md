@@ -129,9 +129,12 @@ in degrees, report an error.
 
 Radians use the numeric argument, not a symbolic identity. For example, `sin(pi)`
 can have a small nonzero residual, while `tan(pi/2)` can return a large finite
-approximation instead of a pole diagnostic. The same applies to radians obtained
-with `rad` or `grad2rad`. Angle conversion and evaluation have finite precision.
-Exact symbolic pi support is a
+approximation instead of a pole diagnostic.
+
+Converting angles to radians with `rad` or `grad2rad` also produces a
+finite-precision number, not a symbolic multiple of pi. For example,
+`sin(rad(30))` in radian mode remains approximate even when it displays `0.5`,
+unlike the exact `sin(30)` in degree mode. Exact symbolic pi support is a
 [potential next step](potential-next-steps.md#exact-rational-multiples-of-pi).
 
 `sin`, `cos`, `tan`, `cot`, `sec`, and `csc` return Unverified NaN for NaN or
