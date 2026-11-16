@@ -97,6 +97,9 @@ For example, `200 + 15%` is a markup, while adding a variable whose value happen
 to be `0.15` is ordinary addition. Use explicit parentheses and multiplication
 when you want to make a rate calculation independent of that shorthand.
 
+For the `%` versus remainder rule, signed operands, and more rate examples, see
+[Percentages and modulo](percentages.md).
+
 An application configured for German input and output can accept
 `1.000,50 + 0,25` and display `1.000,75`. In comma-decimal cultures, semicolons
 separate function arguments. See [normalization](normalization.md) for options.

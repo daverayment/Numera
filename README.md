@@ -396,7 +396,8 @@ For comprehensive guides and references, see the documentation in [`docs/`](docs
 
 - **[Calculation Examples](docs/examples.md)**: End-user examples across the engine's feature families, exactness and display rounding, and qualified comparisons with Double-based arithmetic.
 - **[Syntax & Functions Reference](docs/syntax.md)**: Full catalog of operators, precedence rules, constants, literals, and all 60+ built-in functions (trigonometric, hyperbolic, combinatorics, number theory, probability, bitwise).
-- **[Expression Normalization Guide](docs/normalization.md)**: Detailed breakdown of the normalization pipeline, culture options, and percentage/factorial/implicit-multiplication rules.
+- **[Percentages and Modulo](docs/percentages.md)**: Rates, markups, discounts, signed remainder operands, and showing how an expression was read.
+- **[Expression Normalization Guide](docs/normalization.md)**: Detailed breakdown of the normalization pipeline, localized numbers, culture options, and pasted operators.
 - **[Exactness for Application UIs](docs/exactness.md)**: Indicators, fraction toggles, interpreting calculation paths, and caller-supplied values.
 - **[Numerical Architecture & Type Model](docs/architecture.md)**: Canonical Integer/Decimal/Rational values, Double boundaries, exactness metadata, captured-value evaluation, and result formatting.
 - **[Safety Limits & Error Diagnostics](docs/safety-and-limits.md)**: Resource ceilings (`CalculationLimits`), recursion depth, memory protections, exception hierarchy, and diagnostic codes.

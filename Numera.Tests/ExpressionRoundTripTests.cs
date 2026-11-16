@@ -326,6 +326,32 @@ public sealed class ExpressionRoundTripTests
     }
 
     [TestMethod]
+    [DataRow("7 % -3", "7% - 3", "7% \u2212 3", @"7\% - 3", "-2.93")]
+    [DataRow("5 % +3", "5% + 3", "5% + 3", @"5\% + 3", "3.05")]
+    [DataRow("5 %(-3)", "5 % (-3)", "5 % (\u22123)", @"5 \bmod (-3)", "2")]
+    [DataRow("10%3", "10 % 3", "10 % 3", @"10 \bmod 3", "1")]
+    [DataRow("10 % (+3)", "10 % (+3)", "10 % (+3)", @"10 \bmod (+3)", "1")]
+    [DataRow("100 + 10% - 5", "100 + (10%) - 5", "100 + (10%) \u2212 5", @"100 + (10\%) - 5", "105")]
+    public void PercentAndModuloFormattingShowsTheParsedInterpretation(
+        string expression, string ascii, string typographic, string latex, string expected)
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+        var tree = engine.Parse(expression);
+        var original = engine.Evaluate(tree);
+        Assert.AreEqual(new MathValue(decimal.Parse(expected, CultureInfo.InvariantCulture)), original.Value);
+        Assert.AreEqual(ascii, engine.FormatExpression(tree, ExpressionFormatOptions.Ascii));
+        Assert.AreEqual(typographic, engine.FormatExpression(tree, ExpressionFormatOptions.Typographic));
+        Assert.AreEqual(latex, engine.FormatExpression(tree, ExpressionFormatOptions.LaTeX));
+
+        foreach (string formatted in new[] { ascii, typographic })
+        {
+            var restoredTree = engine.Parse(formatted);
+            Assert.AreEqual(tree, restoredTree, formatted);
+            Assert.AreEqual(original.Value, engine.Evaluate(restoredTree).Value, formatted);
+        }
+    }
+
+    [TestMethod]
     [DataRow("200 + (10 + 5%)", "210.5")]
     [DataRow("100 + (10% + 20%)", "100.3")]
     [DataRow("10% + (20% + 30%)", "0.6")]

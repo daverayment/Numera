@@ -96,12 +96,15 @@ while (true)
         break;
     }
 
-    if (engine.TryEvaluate(input ?? "", out result, out diagnostic, context))
+    if (engine.TryParse(input, out var expression, out diagnostic, context) &&
+        engine.TryEvaluate(expression, out result, out diagnostic, context))
     {
         var card = engine.FormatResult(result);
+        string interpretation = engine.FormatExpression(expression, ExpressionFormatOptions.Typographic);
+        Console.WriteLine($"Expression: {interpretation}");
         Console.WriteLine($"Result: {card.PrimaryDisplay} ({result.Kind})");
         string jax = engine.FormatExpression(
-            input!,
+            expression,
             new ExpressionFormatOptions { Style = ExpressionFormatStyle.MathJax });
         Console.WriteLine($"MathJax: {jax}");
 

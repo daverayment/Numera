@@ -97,6 +97,12 @@ Evaluation follows standard mathematical and scientific computing precedence (hi
 | **8** | `xor` | Left | Logical exclusive OR | `a xor b` |
 | **9** | `\|\|`, `or` | Left | Logical disjunction (short-circuiting) | `x == 0 \|\| y == 0` |
 
+`%` also works as a postfix percentage: `15%` is `0.15`, and `200 + 15%`
+is a markup giving `230`. A following `+` or `-` stays additive, regardless of
+spacing: `7 % -3` means `7% - 3`, not remainder. For a signed remainder operand,
+write `7 % (-3)` or `mod(7; -3)`. See [Percentages and modulo](percentages.md)
+for the full rule and examples.
+
 ### Important Precedence & Grammar Notes
 
 - **Unary Signs vs Exponentiation:** Following scientific convention (Python, Julia, MATLAB, ExprTK, Wolfram), exponentiation binds tighter than unary minus:
@@ -251,7 +257,7 @@ Beta arguments produce NaN. NaN arguments propagate.
 | `avg(...values)` | Arithmetic mean across one or more arguments (variadic) |
 | `sum(...values)` | Sum across one or more arguments (variadic) |
 | `mul(...values)` | Product across one or more arguments (variadic) |
-| `mod(a, b)` | Remainder of $a / b$ |
+| `mod(a, b)` | Remainder of $a / b$; an explicit alternative to [`%`](percentages.md#percentage-or-modulo), especially with signed operands |
 | `clamp(val, min, max)` | Clamps value between lower and upper bounds |
 | `hypot(x, y)` | Euclidean distance $\sqrt{x^2 + y^2}$, avoiding intermediate overflow |
 | `lerp(a, b, t)` | Linear interpolation $a + t(b - a)$ |

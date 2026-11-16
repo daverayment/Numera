@@ -30,6 +30,15 @@ Retain `Random.Shared` as the default. Parsing, formatting, and discovery must n
 consume random values. If testing is the only requirement, consider an internal
 execution-scoped injection point rather than expanding the public API.
 
+## Optional Evaluation Advisories
+
+Explore non-fatal hints that help hosts explain potentially surprising
+interpretations, such as [percentage versus modulo](percentages.md).
+Advisories would remain separate from errors and would not change evaluation
+behavior. Before introducing an API, define source-span handling, propagation
+through subsequent calculations, and how to avoid noisy hints for ordinary
+expressions. Formatted-expression previews remain the simpler first option.
+
 ## Inverse Trigonometric Special Values
 
 Consider recognizing rational inverse-trigonometric inputs with proven rational

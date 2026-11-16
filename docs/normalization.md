@@ -125,22 +125,9 @@ Rewrites a European ratio colon to `/` only when the left side is a number (deci
 
 ## Percentages
 
-Percentages are part of the Numera grammar, so they are parsed from the original text and keep accurate source spans. The rules favour what a person expects from a calculator over strict programming-language semantics.
-
-- **Postfix or modulo:** `%` is a percentage unless an operand (digit, identifier or `(`) follows it. `10 % 3` and `10%3` are modulo; `100 + 15 %`, `10% + 3` and `10% of 5` are percentages.
-- **Unary operands:** `+` and `-` after `%` remain additive operators, regardless of whitespace: `10 % -3` is `0.1 - 3`, not modulo. Use `10 % (-3)` or `mod(10; -3)` for a signed modulo operand. `10% ~3` is a syntax error; write `10 % (~3)` or `mod(10; ~3)` for modulo with a bitwise-complement operand.
-- **Standalone:** `B%` is `B / 100`, so `50%` is `0.5` and `200 * 15%` is `30`.
-- **Markup and discount:** when the right operand of `+` or `-` is a percentage and the left is not, the result is `L × (1 ± r)`:
-  - `200 + 15%` is `230`, `200 - 15%` is `170`.
-  - The percentage applies to the whole left expression, so `50 * 2 + 10%` is `110` and `10 + 50 * 2 + 10%` is `121`.
-  - Chains compound: `100 + 10% + 20%` is `132`.
-  - Scaling, not magnitude, keeps negative bases and rates consistent: `-100 + 10%` is `-110`, `-100 - 10%` is `-90`, `100 + -10%` is `90`, `100 - -10%` is `110`.
-- **Percent arithmetic:** when the left operand is itself a percentage, the arithmetic is plain: `10% + 20%` is `0.3` and `-10% + 20%` is `0.1`.
-- **`of`:** `15% of 200` is `30`. `of` is a reserved operator, it is right-associative (`10% of 20% of 1000` is `20`), and only a percentage may appear on its left; `200 of 10%` is a syntax error.
-
-### Known limitation
-
-Whether an operand is a percentage is decided from the parsed shape, not by tracing units through arithmetic. In `10% * 2 + 5%` the left operand is a product, so it is marked up: `0.2 × 1.05 = 0.21`. This is deliberate: it keeps `200 * 15% + 10%` (a 10% tax on a fee) meaning `33`.
+For help with `%`, see [Percentages and modulo](percentages.md): when it means
+a percentage or a remainder, how to write signed operands, and examples of
+markups and discounts.
 
 ---
 
