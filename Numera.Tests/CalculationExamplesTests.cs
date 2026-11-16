@@ -162,9 +162,9 @@ public sealed class CalculationExamplesTests
     }
 
     [TestMethod]
-    [DataRow("sin(90)", "1", null, false)]
-    [DataRow("cos(180)", "-1", null, false)]
-    [DataRow("tan(45)", "1", null, false)]
+    [DataRow("sin(90)", "1", "1", false)]
+    [DataRow("cos(180)", "-1", "-1", false)]
+    [DataRow("tan(45)", "1", "1", false)]
     [DataRow("1/3", "0.333333", "1/3", true)]
     [DataRow("1/8", "0.125", "1/8", false)]
     [DataRow("sqrt(2)", "1.41421", null, true)]

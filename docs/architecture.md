@@ -460,16 +460,17 @@ Application decorations, such as assignment labels, an approximation indicator, 
 
 ---
 
-## Exact Cardinal Trigonometry in Degree Mode
+## Trigonometric Evaluation
 
-Standard implementations of `sin(Math.PI)` in floating point produce small residual errors (e.g. `1.2246467991473532e-16`) rather than `0.0`.
+In degree and gradian modes, direct trigonometric functions check for known exact
+results and undefined angles before converting to floating point. For other
+angles, they first reduce the problem to a small offset from the nearest
+quarter-turn. Keeping that offset as a fraction until conversion preserves tiny
+differences that would otherwise be lost near angles such as 90 degrees.
 
-When configured with `CalculatorOptions.AngleUnit = AngleUnit.Degrees` (via a `CalculatorEngine`), Numera uses .NET IEEE 754 pi-scaled trigonometric intrinsics (`SinPi`, `CosPi`). As a result:
-- `sin(180)`
-- `cos(90)` $\to$ `0.0` (exact)
-- `sin(90)` $\to$ `1.0` (exact)
-- `tan(45)` $\to$ `1.0` (exact)
-- `arcsin(1)` $\to$ `90.0` (exact)
+Radian mode works with the supplied numeric value; it does not treat an approximation
+of pi as symbolic pi. See [Trigonometric Functions](syntax.md#trigonometric-functions)
+for examples and details of exactness and undefined inputs.
 
 ---
 

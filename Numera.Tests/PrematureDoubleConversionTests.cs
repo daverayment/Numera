@@ -92,14 +92,22 @@ public sealed class PrematureDoubleConversionTests
         {
             var engine = new CalculatorEngine(new CalculatorOptions { AngleUnit = unit });
             int revolution = unit == AngleUnit.Degrees ? 360 : 400;
+
             foreach (var offset in new[] { "37/3", "-37/3", "45", "-45" })
             {
-                double expected = engine.Evaluate($"{function}({offset})").DoubleValue;
+                var expected = engine.Evaluate($"{function}({offset})");
+
                 foreach (var sign in new[] { "+", "-" })
                 {
                     string expression = $"{function}({offset}{sign}{revolution}*10^400)";
-                    AssertApproximation(engine.Evaluate(expression), expected, 0);
-                    AssertApproximation(engine.Evaluate(engine.Parse(expression)), expected, 0);
+
+                    foreach (var result in new[] { engine.Evaluate(expression), engine.Evaluate(engine.Parse(expression)) })
+                    {
+                        Assert.AreEqual(expected.Kind, result.Kind, expression);
+                        Assert.AreEqual(expected.Value, result.Value, expression);
+                        Assert.AreEqual(expected.Exactness, result.Exactness, expression);
+                        Assert.AreEqual(expected.ExactFraction, result.ExactFraction, expression);
+                    }
                 }
             }
         }

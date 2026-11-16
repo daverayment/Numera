@@ -216,7 +216,7 @@ public sealed class IntegrationAndArchitectureTests
         Assert.AreEqual(AngleUnit.Radians, originalEngine.Options.AngleUnit);
 
         // Exact degree calculation on derived engine.
-        Assert.AreEqual(1.0, degreeEngine.Evaluate("sin(90)").DoubleValue, 0.0);
+        Assert.AreEqual(MathValue.One, degreeEngine.Evaluate("sin(90)").Value);
         Assert.AreNotEqual(1.0, originalEngine.Evaluate("sin(90)").DoubleValue);
 
         // Derive via lambda.

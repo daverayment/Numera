@@ -30,6 +30,25 @@ Retain `Random.Shared` as the default. Parsing, formatting, and discovery must n
 consume random values. If testing is the only requirement, consider an internal
 execution-scoped injection point rather than expanding the public API.
 
+## Double Result Presentation
+
+Review whether default calculator presentation of Double values should use a
+15-significant-digit ceiling or shortest-round-trip text instead of expanding the
+stored binary value to the general result precision. Define whether explicitly
+requesting more digits exposes the stored expansion or selects another policy.
+Preserve round-trip machine-readable output, independent precision for exact
+Integer/Decimal/Rational values, and Unverified indicators regardless of appearance.
+Display rounding is not a guarantee of calculation accuracy.
+
+## Inverse Trigonometric Special Values
+
+Consider recognizing rational inverse-trigonometric inputs with proven rational
+degree/gradian outputs, such as `asin(1/2) = 30` degrees. Define principal branches,
+domain boundaries, and exactness propagation consistently across aliases and inverse
+reciprocal functions. Do not infer special values from proximity or rounded Double
+inputs. General correctly rounded transcendental evaluation and symbolic radicals
+remain separate numerical-model investigations.
+
 ## Exact Rational Multiples of Pi
 
 Investigate a bounded value representation for `q * pi`, where `q` is a reduced
@@ -54,7 +73,6 @@ Keep the initial domain narrow:
   approximation boundaries producing Unverified results.
 - Recognize special-angle identities only from proven values, never numeric proximity
 	or tolerance-based cardinal-angle checks.
-- Consider the corresponding exact rational-angle path for degrees and gradians.
 - Leave irrational outputs such as `sin(pi/4)` approximate; exact radicals, general
   identity rewriting, and expression provenance/replay are out of scope.
 
@@ -85,12 +103,11 @@ provenance: `sin(pi)` can have a small nonzero residual, and `tan(pi/2)` or
 Likewise, `floor(tan(pi/4))` operates on the approximation, not the exact identity.
 These results remain Unverified.
 
-Degrees and gradians recognize cardinal values after numeric angle projection.
-Projection and evaluation have finite precision; the special-angle cases use no
-proximity tolerance.
+Direct degree/gradian functions recognize rational special values before numeric
+projection and reduce rational quadrant residuals before approximation. Irrational
+results still cross a Double approximation boundary.
 
 A future rational-multiple-of-pi representation could support exact radian
 identities and exact pole detection, including through variables and `ans`.
 It must distinguish symbolic `pi/2` from a nearby numeric approximation, not
-use proximity-based snapping. An exact rational-angle evaluation path for degrees
-and gradians could also preserve offsets too small to survive Double projection.
+use proximity-based snapping.

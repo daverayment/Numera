@@ -119,7 +119,13 @@ Evaluation follows standard mathematical and scientific computing precedence (hi
 Function names are case-insensitive.
 
 ### Trigonometric Functions
-Trigonometric routines operate in radians by default, or in degrees/gradians when configured via `CalculatorOptions.AngleUnit` on a `CalculatorEngine`. Cardinal angles in degree/gradian mode can produce zero or whole-number results, but trigonometric results are Unverified regardless of their appearance.
+Trigonometric routines operate in radians by default, or in degrees/gradians when configured via `CalculatorOptions.AngleUnit` on a `CalculatorEngine`.
+
+In degree and gradian modes, some special-angle results are exact: for example,
+`sin(30)` in degrees and `sin(100/3)` in gradians return `1/2`, while `tan(45)` in
+degrees returns `1`. Other results may be approximate; use the result's exactness
+metadata rather than its displayed appearance. Undefined inputs, such as `tan(90)`
+in degrees, report an error.
 
 Radians use the numeric argument, not a symbolic identity. For example, `sin(pi)`
 can have a small nonzero residual, while `tan(pi/2)` can return a large finite

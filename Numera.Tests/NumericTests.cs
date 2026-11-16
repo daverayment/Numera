@@ -816,17 +816,18 @@ public class NumericTests
     {
         var result = TestEngines.DegreesEngine.Evaluate(expression);
 
-        Assert.AreEqual(MathValue.DataType.Double, result.Kind);
-        Assert.AreEqual(expected, result.DoubleValue, 0.0);
+        Assert.AreEqual(MathValue.DataType.Integer, result.Kind);
+        Assert.AreEqual(CalculationExactness.Exact, result.Exactness);
+        Assert.AreEqual(expected, result.AsDouble(), 0.0);
     }
 
     [TestMethod]
     public void TrigonometricFunctionsSupportGradiansMode()
     {
         var gradians = TestEngines.GradiansEngine;
-        Assert.AreEqual(1.0, gradians.Evaluate("sin(100)").DoubleValue, 1e-15);
-        Assert.AreEqual(0.0, gradians.Evaluate("cos(100)").DoubleValue, 1e-15);
-        Assert.AreEqual(1.0, gradians.Evaluate("tan(50)").DoubleValue, 1e-15);
+        Assert.AreEqual(1.0, gradians.Evaluate("sin(100)").AsDouble(), 1e-15);
+        Assert.AreEqual(0.0, gradians.Evaluate("cos(100)").AsDouble(), 1e-15);
+        Assert.AreEqual(1.0, gradians.Evaluate("tan(50)").AsDouble(), 1e-15);
     }
 
     [TestMethod]
@@ -1227,8 +1228,9 @@ public class NumericTests
     {
         var result = TestEngines.DegreesEngine.Evaluate(expression);
 
-        Assert.AreEqual(0.0, result.DoubleValue, 0.0);
-        Assert.AreEqual(0L, BitConverter.DoubleToInt64Bits(result.DoubleValue), $"{expression} must evaluate to +0.0, not -0.0.");
+        Assert.AreEqual(MathValue.DataType.Integer, result.Kind);
+        Assert.AreEqual(0.0, result.AsDouble(), 0.0);
+        Assert.AreEqual(0L, BitConverter.DoubleToInt64Bits(result.AsDouble()), $"{expression} must evaluate to +0.0, not -0.0.");
     }
 
     [TestMethod]
@@ -1247,8 +1249,9 @@ public class NumericTests
     public void GradiansModeEvaluatesExactCardinalValues(string expression, double expected)
     {
         var result = TestEngines.GradiansEngine.Evaluate(expression);
-        Assert.AreEqual(MathValue.DataType.Double, result.Kind);
-        Assert.AreEqual(expected, result.DoubleValue, 0.0);
+        Assert.AreEqual(MathValue.DataType.Integer, result.Kind);
+        Assert.AreEqual(CalculationExactness.Exact, result.Exactness);
+        Assert.AreEqual(expected, result.AsDouble(), 0.0);
     }
 
     [TestMethod]
@@ -1296,22 +1299,18 @@ public class NumericTests
     [TestMethod]
     public void NonCardinalLargeAnglesMaintainPrecisionWithCenteredRemainderReduction()
     {
-        // 360,000,030 degrees is 1,000,000 full revolutions + 30 degrees.
-        // Direct (360000030.0 / 180.0) consumes significand bits on the integer quotient,
-        // whereas Math.IEEERemainder(v, 360.0) reduces to 30.0 degrees before division,
-        // yielding exact sin(30 deg) = 0.5.
         var degrees = TestEngines.DegreesEngine;
         var sinResult = degrees.Evaluate("sin(360000030)");
-        Assert.AreEqual(0.5, sinResult.DoubleValue, 1e-15);
+        AssertExactFraction(sinResult.Value, 1, 2);
 
         // 360,000,060 degrees -> 60 degrees; cos(60 deg) = 0.5.
         var cosResult = degrees.Evaluate("cos(360000060)");
-        Assert.AreEqual(0.5, cosResult.DoubleValue, 1e-15);
+        AssertExactFraction(cosResult.Value, 1, 2);
 
         // 400,000,050 gradians is 1,000,000 revolutions + 50 gradians (45 degrees).
         var gradians = TestEngines.GradiansEngine;
         var tanGradResult = gradians.Evaluate("tan(400000050)");
-        Assert.AreEqual(1.0, tanGradResult.DoubleValue, 1e-15);
+        AssertExactFraction(tanGradResult.Value, 1, 1);
 
         // Non-cardinal angle with many revolutions in degrees:
         // 360000000 + 37 degrees, which evaluates identically to sin(37 deg) without
@@ -1329,10 +1328,10 @@ public class NumericTests
         Assert.AreEqual(baseTan.DoubleValue, largeTan.DoubleValue, 1e-15);
 
         var largeNegSin = degrees.Evaluate("sin(-360000030)");
-        Assert.AreEqual(-0.5, largeNegSin.DoubleValue, 1e-15);
+        AssertExactFraction(largeNegSin.Value, -1, 2);
 
         var largeNegCos = degrees.Evaluate("cos(-360000060)");
-        Assert.AreEqual(0.5, largeNegCos.DoubleValue, 1e-15);
+        AssertExactFraction(largeNegCos.Value, 1, 2);
     }
 
     [TestMethod]

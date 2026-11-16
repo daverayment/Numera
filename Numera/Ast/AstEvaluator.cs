@@ -437,10 +437,14 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                 }
             }
 
+            if (lower is "sin" or "cos" or "tan" or "cot" or "sec" or "csc")
+            {
+                return EvaluateTrigonometric(lower, args[0]);
+            }
+
             // Math-based functions use double approximations. Branches that can operate
             // on integer or decimal values use the original argument instead.
-            double v = lower is "sin" or "cos" or "tan" or "cot" or "sec" or "csc"
-                ? ProjectAngle(args[0]) : args[0].AsDouble();
+            double v = args[0].AsDouble();
             switch (lower)
             {
                 case "ceil":
@@ -582,15 +586,6 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
                     return new MathValue((BigInteger)Random.Shared.NextInt64((long)randomUpperBound));
 
-                case "sin":
-                    return new MathValue(EvaluateSin(v));
-
-                case "cos":
-                    return new MathValue(EvaluateCos(v));
-
-                case "tan":
-                    return new MathValue(EvaluateTan(v));
-
                 case "arcsin":
                 case "asin":
                     if (v < -1.0 || v > 1.0)
@@ -612,15 +607,6 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                 case "arctan":
                 case "atan":
                     return new MathValue(EvaluateArcTan(v));
-
-                case "cot":
-                    return new MathValue(EvaluateCot(v));
-
-                case "sec":
-                    return new MathValue(EvaluateSec(v));
-
-                case "csc":
-                    return new MathValue(EvaluateCsc(v));
 
                 case "arccot":
                     return new MathValue(EvaluateArcCot(v));
@@ -1266,34 +1252,6 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
             ScaleFractionAsDouble(rightNumerator, rightDenominator, exponent)), exponent);
     }
 
-    /// <summary>
-    /// Projects an angle into the range of a single revolution based on the current angle
-    /// unit.
-    /// </summary>
-    /// <param name="value">The angle value to project.</param>
-    /// <returns>The projected angle value within a single revolution.</returns>
-    private double ProjectAngle(MathValue value)
-    {
-        if (_options.AngleUnit == AngleUnit.Radians ||
-            !MathValue.TryToRational(value, out var numerator, out var denominator))
-        {
-            return value.AsDouble();
-        }
-
-        // Work in numerator units: one turn of n/d is 360*d (or 400*d).
-        // Removing whole turns here preserves offsets hidden by converting a huge angle.
-        var revolution = denominator * (_options.AngleUnit == AngleUnit.Degrees ? 360 : 400);
-        var remainder = numerator % revolution;
-        // Beyond half a turn, shift by a WHOLE turn to choose the equivalent angle
-        // closer to zero (270 degrees becomes -90). Doubling avoids integer division.
-        if (BigInteger.Abs(remainder) * 2 > revolution)
-        {
-            remainder -= remainder.Sign * revolution;
-        }
-
-        return MathValue.DivideIntegersAsDouble(remainder, denominator);
-    }
-
     private MathValue EvaluateRoot(MathValue value, MathValue degree)
     {
         if (degree.IsZero)
@@ -1386,195 +1344,241 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         return ExactFunctionFraction(integral, scale, input);
     }
 
-    /// <summary>
-    /// Recognizes exact multiples of 45 degrees or 50 gradians after angle projection.
-    /// Rounded radian values do not establish an exact multiple of pi.
-    /// </summary>
-    private bool TryGetExactEighthTurn(double angle, out long step45)
+    private MathValue EvaluateTrigonometric(ReadOnlySpan<char> function, MathValue input)
     {
-        step45 = 0;
-        if (_options.AngleUnit == AngleUnit.Radians || !double.IsFinite(angle))
+        bool hasRational = MathValue.TryToRational(input, out var numerator, out var denominator);
+        if (_options.AngleUnit == AngleUnit.Radians)
         {
-            return false;
+            // Zero needs no symbolic pi representation. A rounded pi/2 or rad(90),
+            // however, is only a numeric argument and cannot establish an identity.
+            if (hasRational &&
+                numerator.IsZero &&
+                input.Exactness == CalculationExactness.Exact)
+            {
+                return function switch
+                {
+                    "sin" or "tan" => MathValue.Zero,
+                    "cos" or "sec" => MathValue.One,
+                    _ => throw TrigonometricPole(function)
+                };
+            }
+
+            return new MathValue(EvaluateRadianTrigonometric(function, input.AsDouble()));
         }
 
-        var (revolutionSize, stepSize) = _options.AngleUnit switch
+        if (!hasRational)
         {
-            AngleUnit.Degrees => (360.0, 45.0),
-            _ => (400.0, 50.0),
+            if (!double.IsFinite(input.DoubleValue))
+            {
+                return MathValue.NaN;
+            }
+
+            // Reduce the stored binary value without claiming its calculation was exact.
+            MathValue.NumericFraction(input, out numerator, out denominator);
+        }
+
+        var quarterTurn = denominator * (_options.AngleUnit == AngleUnit.Degrees ? 90 : 100);
+        var fullTurn = quarterTurn * 4;
+        var reduced = numerator % fullTurn;
+
+        // A canonical revolution also makes eighth-turn ties choose the same
+        // approximation for equivalent angles such as 45 and 45 - 360*10^400.
+        if (reduced.Sign < 0)
+        {
+            reduced += fullTurn;
+        }
+
+        var quarter = BigInteger.DivRem(reduced, quarterTurn, out var residual);
+
+        // Choose the nearest quadrant before projection, so cos(90 + epsilon)
+        // becomes -sin(epsilon), rather than losing epsilon in a Double near 90.
+        if (BigInteger.Abs(residual) * 2 > quarterTurn)
+        {
+            quarter += residual.Sign;
+            residual -= residual.Sign * quarterTurn;
+        }
+
+        int quadrant = (int)((quarter % 4 + 4) % 4);
+        bool oddQuadrant = (quadrant & 1) != 0;
+
+        // Only the original fraction can establish a pole. In particular,
+        // 90 + 1e-30 degrees must not become tan(90) after Double projection.
+        if (residual.IsZero && (
+            (oddQuadrant && function is "tan" or "sec") ||
+            (!oddQuadrant && function is "cot" or "csc")))
+        {
+            throw TrigonometricPole(function);
+        }
+
+        // Rational representation alone is not proof of accuracy. Even a caller-marked
+        // Exact Double stays on the approximate path; converting its storage to a
+        // fraction for reduction must not silently promote it into the exact domain.
+        if (hasRational && input.Exactness == CalculationExactness.Exact &&
+            TryExactTrigonometric(function, reduced, fullTurn, out var exact))
+        {
+            return exact;
+        }
+
+        // Project only the residual, at most an eighth-turn, in half-turn units.
+        // Keeping the quadrant separate preserves tiny distances from zeros and poles.
+        double halfTurns = MathValue.DivideIntegersAsDouble(residual, quarterTurn * 2);
+        double sine;
+        double cosine;
+        double tangent;
+        if (Math.Abs(halfTurns) < 1e-300)
+        {
+            // At this scale the cubic corrections to sin(x) and tan(x) are negligible
+            // relative to Double precision. Scale by 2^1022 (the inverse minimum normal)
+            // before multiplying by pi, so projection cannot prematurely erase a
+            // representable subnormal result such as sin(3e-322 degrees).
+            double scaled = MathValue.DivideIntegersAsDouble(residual << 1022, quarterTurn * 2);
+            sine = Math.ScaleB(scaled * Math.PI, -1022);
+            cosine = 1.0;
+            tangent = sine;
+        }
+        else
+        {
+            sine = double.SinPi(halfTurns);
+            cosine = double.CosPi(halfTurns);
+            tangent = double.TanPi(halfTurns);
+        }
+
+        var (sin, cos) = quadrant switch
+        {
+            0 => (sine, cosine),
+            1 => (cosine, -sine),
+            2 => (-sine, -cosine),
+            _ => (-cosine, sine)
         };
 
-        double reducedAngle = Math.IEEERemainder(angle, revolutionSize);
-        if (reducedAngle % stepSize != 0.0)
+        // tan(pi/2 + epsilon) = -1/tan(epsilon); cot is its complementary form.
+        // Using the residual tangent avoids an extra sin/cos division and lets
+        // cot(90) return zero without first evaluating an undefined tangent.
+        double result = function switch
         {
-            return false;
-        }
-
-        step45 = (long)(reducedAngle / stepSize);
-        return true;
-    }
-
-    private double EvaluateSin(double v)
-    {
-        // A 90-degree step occurs whenever step45 is even.
-        if (TryGetExactEighthTurn(v, out long step45) && (step45 % 2 == 0))
-        {
-            return (((step45 / 2 % 4) + 4) % 4) switch
-            {
-                0 => 0.0,
-                1 => 1.0,
-                2 => 0.0,
-                3 => -1.0,
-                _ => 0.0,
-            };
-        }
-
-        return _options.AngleUnit switch
-        {
-            AngleUnit.Degrees => double.SinPi(Math.IEEERemainder(v, 360.0) / 180.0),
-            AngleUnit.Gradians => double.SinPi(Math.IEEERemainder(v, 400.0) / 200.0),
-            _ => Math.Sin(v),
-        };
-    }
-
-    private double EvaluateCos(double v)
-    {
-        if (TryGetExactEighthTurn(v, out long step45) && (step45 % 2 == 0))
-        {
-            return (((step45 / 2 % 4) + 4) % 4) switch
-            {
-                0 => 1.0,
-                1 => 0.0,
-                2 => -1.0,
-                3 => 0.0,
-                _ => 0.0,
-            };
-        }
-
-        return _options.AngleUnit switch
-        {
-            AngleUnit.Degrees => double.CosPi(Math.IEEERemainder(v, 360.0) / 180.0),
-            AngleUnit.Gradians => double.CosPi(Math.IEEERemainder(v, 400.0) / 200.0),
-            _ => Math.Cos(v),
-        };
-    }
-
-    private double EvaluateTan(double v)
-    {
-        if (!double.IsFinite(v))
-        {
-            return double.NaN;
-        }
-
-        if (TryGetExactEighthTurn(v, out long step45))
-        {
-            return (((step45 % 4) + 4) % 4) switch
-            {
-                0 => 0.0,
-                1 => 1.0,
-                2 => throw new ExpressionException(new EvaluationDiagnostic(
-                    EvaluationError.UndefinedMathResult, "Tangent is undefined at odd multiples of 90 degrees (pi/2).")),
-                3 => -1.0,
-                _ => 0.0,
-            };
-        }
-
-        double result = _options.AngleUnit switch
-        {
-            AngleUnit.Degrees => double.TanPi(Math.IEEERemainder(v, 360.0) / 180.0),
-            AngleUnit.Gradians => double.TanPi(Math.IEEERemainder(v, 400.0) / 200.0),
-            _ => Math.Tan(v),
+            "sin" => sin,
+            "cos" => cos,
+            "tan" when oddQuadrant => -1.0 / tangent,
+            "tan" => tangent,
+            "cot" when oddQuadrant => -tangent,
+            "cot" => 1.0 / tangent,
+            "sec" => 1.0 / cos,
+            "csc" => 1.0 / sin,
+            _ => throw new InvalidOperationException("Unsupported trigonometric function.")
         };
 
         if (!double.IsFinite(result))
         {
+            // Genuine poles were identified from the fraction above. A nonzero residual
+            // rounded to zero here means an overflowing reciprocal, not an undefined input.
             throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.UndefinedMathResult, "Tangent is undefined at odd multiples of 90 degrees (pi/2)."));
+                EvaluationError.NumericOverflow,
+                "Trigonometric result exceeds the Double range."));
         }
 
-        return result;
+        return new MathValue(result);
     }
 
-    private double EvaluateCot(double v)
+    private static bool TryExactTrigonometric(
+        ReadOnlySpan<char> function, BigInteger angle, BigInteger turn, out MathValue result)
     {
-        if (!double.IsFinite(v))
+        // Twelfth-turns cover the rational sine/cosine values, including 1/2.
+        // Divisibility is checked on the fraction, never on a projected angle.
+        var step = BigInteger.DivRem(angle * 12, turn, out var remainder);
+        if (remainder.IsZero && function is "sin" or "cos" or "sec" or "csc")
         {
-            return double.NaN;
-        }
+            int index = (int)((step % 12 + 12) % 12);
 
-        if (TryGetExactEighthTurn(v, out long step45))
-        {
-            return (((step45 % 4) + 4) % 4) switch
+            if (function is "cos" or "sec")
             {
-                0 => throw new ExpressionException(new EvaluationDiagnostic(
-                    EvaluationError.UndefinedMathResult, "Cotangent is undefined at multiples of 180 degrees (pi).")),
-                1 => 1.0,
-                2 => 0.0,
-                3 => -1.0,
-                _ => 0.0,
+                // cos(x) = sin(x + a quarter-turn), three twelfth-turn steps.
+                index = (index + 3) % 12;
+            }
+
+            // Numerators are in halves; omitted steps involve irrational square roots
+            // and must fall through to approximation rather than inherit Exact status.
+            int? halfNumerator = index switch
+            {
+                0 or 6 => 0,
+                1 or 5 => 1,
+                3 => 2,
+                7 or 11 => -1,
+                9 => -2,
+                _ => null
             };
-        }
 
-        double sin = EvaluateSin(v);
-        if (sin == 0.0)
+            if (halfNumerator is int n)
+            {
+                if (function is "sec" or "csc")
+                {
+                    // Pole checks precede this helper, so the divisor cannot be zero.
+                    result = MathValue.FromExactFraction(2, n, decimalDomain: false);
+                }
+                else
+                {
+                    result = MathValue.FromExactFraction(n, 2, decimalDomain: false);
+                }
+
+                return true;
+            }
+        }
+        else if (function is "tan" or "cot")
         {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.UndefinedMathResult, "Cotangent is undefined where sine is zero."));
+            // Odd eighth-turns give +/-1 for both functions. The intervening steps
+            // are zeros or poles; poles were handled independently for each function.
+            step = BigInteger.DivRem(angle * 8, turn, out remainder);
+
+            if (remainder.IsZero)
+            {
+                int index = (int)((step % 8 + 8) % 8);
+                int n = (index % 4) switch
+                {
+                    1 => 1,
+                    3 => -1,
+                    _ => 0
+                };
+
+                result = new MathValue(n);
+                return true;
+            }
         }
 
-        double result = EvaluateCos(v) / sin;
-        if (!double.IsFinite(result))
-        {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.UndefinedMathResult, "Cotangent is undefined where sine is zero."));
-        }
-
-        return result;
+        result = default;
+        return false;
     }
 
-    private double EvaluateSec(double v)
+    private static ExpressionException TrigonometricPole(ReadOnlySpan<char> function) => new(
+        new EvaluationDiagnostic(EvaluationError.UndefinedMathResult,
+            $"{function} is undefined at this angle."));
+
+    private static double EvaluateRadianTrigonometric(ReadOnlySpan<char> function, double angle)
     {
-        if (!double.IsFinite(v))
+        if (!double.IsFinite(angle))
         {
             return double.NaN;
         }
-
-        double cos = EvaluateCos(v);
-        if (cos == 0.0)
+        double sin = Math.Sin(angle);
+        double cos = Math.Cos(angle);
+        if ((angle == 0.0 && function is "cot" or "csc") ||
+            (cos == 0.0 && function is "sec"))
         {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.UndefinedMathResult, "Secant is undefined where cosine is zero."));
+            throw TrigonometricPole(function);
         }
 
-        double result = 1.0 / cos;
+        double result = function switch
+        {
+            "sin" => sin,
+            "cos" => cos,
+            "tan" => Math.Tan(angle),
+            "cot" => cos / sin,
+            "sec" => 1.0 / cos,
+            "csc" => 1.0 / sin,
+            _ => throw new InvalidOperationException("Unsupported trigonometric function.")
+        };
+
         if (!double.IsFinite(result))
         {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.UndefinedMathResult, "Secant is undefined where cosine is zero."));
-        }
-
-        return result;
-    }
-
-    private double EvaluateCsc(double v)
-    {
-        if (!double.IsFinite(v))
-        {
-            return double.NaN;
-        }
-
-        double sin = EvaluateSin(v);
-        if (sin == 0.0)
-        {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.UndefinedMathResult, "Cosecant is undefined where sine is zero."));
-        }
-
-        double result = 1.0 / sin;
-        if (!double.IsFinite(result))
-        {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.UndefinedMathResult, "Cosecant is undefined where sine is zero."));
+            throw TrigonometricPole(function);
         }
 
         return result;

@@ -140,7 +140,7 @@ public class CalculatorEngineTests
         Assert.AreEqual("de-DE", derived.Options.Culture.Name);
         Assert.AreEqual(AngleUnit.Degrees, derived.Options.AngleUnit);
         Assert.AreEqual("0,333333333333", derived.Evaluate("1/3").PrimaryDisplay);
-        Assert.AreEqual(1.0, derived.Evaluate("sin(90)").DoubleValue);
+        Assert.AreEqual(MathValue.One, derived.Evaluate("sin(90)").Value);
     }
 
     [TestMethod]
@@ -484,7 +484,7 @@ public class CalculatorEngineTests
                 },
                 previousResult: null);
             if (engine.Evaluate("x + 0", context).IntegerValue != i ||
-                engine.Evaluate("sin(90)").DoubleValue != 1.0)
+                engine.Evaluate("sin(90)").Value != MathValue.One)
             {
                 Interlocked.Increment(ref failures);
             }
