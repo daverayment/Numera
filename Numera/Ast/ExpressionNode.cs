@@ -183,7 +183,7 @@ public abstract record ExpressionNode(TextSpan Span = default)
         // fail with a limit exception instead of crashing the process with a stack overflow.
         if (!RuntimeHelpers.TryEnsureSufficientExecutionStack())
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(CalculationLimitKind.ExecutionStack);
         }
 
         return AcceptCore(visitor);

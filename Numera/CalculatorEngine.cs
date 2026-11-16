@@ -445,7 +445,8 @@ public sealed class CalculatorEngine
         // rewriting work.
         if (expression.Length > Options.MaxInputLength)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.InputLength, Options.MaxInputLength);
         }
 
         string text = expression;

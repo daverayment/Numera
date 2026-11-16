@@ -852,6 +852,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                         throw new ExpressionException(new EvaluationDiagnostic(
                             EvaluationError.IntegerRequired, $"{lower} requires integer arguments."));
                     }
+
                     return new MathValue(NumberTheory.Comb(combN, combK));
 
                 case "perm" or "npr":
@@ -860,6 +861,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                         throw new ExpressionException(new EvaluationDiagnostic(
                             EvaluationError.IntegerRequired, $"{lower} requires integer arguments."));
                     }
+
                     return new MathValue(NumberTheory.Perm(permN, permK));
 
                 case "sigma" or "divsum":
@@ -868,6 +870,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                         throw new ExpressionException(new EvaluationDiagnostic(
                             EvaluationError.IntegerRequired, $"{lower} requires integer arguments."));
                     }
+
                     if (sigmaK < 0 || sigmaK > _options.MaxExponentMagnitude)
                     {
                         if (sigmaK < 0)
@@ -875,8 +878,10 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                             throw new ExpressionException(new EvaluationDiagnostic(
                                 EvaluationError.ArgumentOutOfRange, $"{lower} exponent k must be a non-negative integer."));
                         }
-                        throw new CalculationLimitException();
+
+                        throw new CalculationLimitException(CalculationLimitKind.ExponentMagnitude, _options.MaxExponentMagnitude);
                     }
+
                     return FactorizationResult(NumberTheory.Sigma(sigmaN, (int)sigmaK), sigmaN);
 
                 default:
@@ -1324,23 +1329,31 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         {
             return ExactFunctionFraction(numerator, BigInteger.One, input);
         }
+
         var scale = BigInteger.Pow(10, places);
         if (scale.GetBitLength() > CalculationLimits.MaxIntermediateBits ||
             (!numerator.IsZero &&
              BigInteger.Abs(numerator).GetBitLength() + scale.GetBitLength() - 1 > CalculationLimits.MaxIntermediateBits))
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.IntermediateBits,
+                CalculationLimits.MaxIntermediateBits);
         }
+
         var scaled = numerator * scale;
         if (BigInteger.Abs(scaled).GetBitLength() > CalculationLimits.MaxIntermediateBits)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.IntermediateBits,
+                CalculationLimits.MaxIntermediateBits);
         }
+
         var integral = BigInteger.DivRem(scaled, denominator, out var remainder);
         if (BigInteger.Abs(remainder) >= (denominator + 1) / 2)
         {
             integral += numerator.Sign;
         }
+
         return ExactFunctionFraction(integral, scale, input);
     }
 
@@ -1669,7 +1682,9 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
         if (factorialArgument > CalculationLimits.MaxFactorialArgument)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.FactorialArgument,
+                CalculationLimits.MaxFactorialArgument);
         }
 
         int n = (int)factorialArgument;

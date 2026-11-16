@@ -54,7 +54,8 @@ internal static class AstValidator
                 nodeCount++;
                 if (nodeCount > maxNodes)
                 {
-                    throw new CalculationLimitException();
+                    throw new CalculationLimitException(
+                        CalculationLimitKind.AstNodeCount, maxNodes);
                 }
 
                 // Node-level invariant checks on first visit.
@@ -78,7 +79,8 @@ internal static class AstValidator
                 int currentHeight = 1 + frame.MaxChildHeight;
                 if (currentHeight > maxDepth)
                 {
-                    throw new CalculationLimitException();
+                    throw new CalculationLimitException(
+                        CalculationLimitKind.NestingDepth, maxDepth);
                 }
 
                 if (stack.Count > 0)

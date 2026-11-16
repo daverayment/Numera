@@ -335,8 +335,8 @@ public readonly partial struct MathValue :
 
     internal static MathValue FromExactFraction(BigInteger num, BigInteger den, bool decimalDomain)
     {
-        CheckBits(num, CalculationLimits.MaxIntermediateBits);
-        CheckBits(den, CalculationLimits.MaxIntermediateBits);
+        CheckBits(num, CalculationLimits.MaxIntermediateBits, CalculationLimitKind.IntermediateBits);
+        CheckBits(den, CalculationLimits.MaxIntermediateBits, CalculationLimitKind.IntermediateBits);
         if (den.IsZero)
         {
             throw new DivideByZeroException();
@@ -812,9 +812,10 @@ public readonly partial struct MathValue :
             throw new FormatException("Invalid decimal precision.");
         }
 
-        if (digits < 0 || digits > 1000)
+        if (digits < 0 || digits > CalculationLimits.MaxSignificantDigits)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.FormattingDigits, CalculationLimits.MaxSignificantDigits);
         }
 
         var scale = BigInteger.Pow(10, digits);
@@ -918,7 +919,8 @@ public readonly partial struct MathValue :
         probe.Skip();
         if (probe.BytesConsumed - reader.TokenStartIndex > MaxSerializedJsonLength)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.SerializedValueBytes, MaxSerializedJsonLength);
         }
 
         var dto = JsonSerializer.Deserialize(ref reader, SerializationContext.Default.SerializedValue);
@@ -938,7 +940,8 @@ public readonly partial struct MathValue :
         ArgumentNullException.ThrowIfNull(json);
         if (json.Length > MaxSerializedJsonLength)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.SerializedValueCharacters, MaxSerializedJsonLength);
         }
 
         var dto = JsonSerializer.Deserialize(json, SerializationContext.Default.SerializedValue);
@@ -959,8 +962,10 @@ public readonly partial struct MathValue :
             DataType.Decimal => new MathValue(decimal.Parse(dto.Value, NumberStyles.Float, culture)),
             DataType.Double => new MathValue(double.Parse(dto.Value, NumberStyles.Float, culture)),
             DataType.Rational => FromFraction(
-                ParseBoundedInteger(dto.Numerator ?? throw new FormatException("Missing numerator."), CalculationLimits.MaxIntermediateBits),
-                ParseBoundedInteger(dto.Denominator ?? throw new FormatException("Missing denominator."), CalculationLimits.MaxIntermediateBits)),
+                ParseBoundedInteger(dto.Numerator ?? throw new FormatException("Missing numerator."),
+                    CalculationLimits.MaxIntermediateBits, CalculationLimitKind.IntermediateBits),
+                ParseBoundedInteger(dto.Denominator ?? throw new FormatException("Missing denominator."),
+                    CalculationLimits.MaxIntermediateBits, CalculationLimitKind.IntermediateBits)),
             _ => throw new FormatException("Unknown numeric representation."),
         };
 
@@ -1001,15 +1006,16 @@ public readonly partial struct MathValue :
     [JsonSerializable(typeof(SerializedValue))]
     private sealed partial class SerializationContext : JsonSerializerContext;
 
-    private static BigInteger ParseBoundedInteger(string text, int bits)
+    private static BigInteger ParseBoundedInteger(
+        string text, int bits, CalculationLimitKind kind = CalculationLimitKind.IntegerBits)
     {
         if (text.Length > (int)(bits * 0.30103) + 3)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(kind, bits);
         }
 
         var result = BigInteger.Parse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture);
-        CheckBits(result, bits);
+        CheckBits(result, bits, kind);
 
         return result;
     }
@@ -1029,7 +1035,7 @@ public readonly partial struct MathValue :
         value.ValidateLimits();
         if (TryToRational(value, out var n, out _))
         {
-            CheckBits(n, CalculationLimits.MaxIntermediateBits);
+            CheckBits(n, CalculationLimits.MaxIntermediateBits, CalculationLimitKind.IntermediateBits);
         }
 
         var result = (value.Kind switch
@@ -1141,7 +1147,10 @@ public readonly partial struct MathValue :
                 '%' => scaledLeft % scaledRight,
                 _ => throw new InvalidOperationException(),
             };
-            CheckBits(resultNumerator, CalculationLimits.MaxIntermediateBits);
+            CheckBits(
+                resultNumerator,
+                CalculationLimits.MaxIntermediateBits,
+                CalculationLimitKind.IntermediateBits);
         }
         else
         {
@@ -1185,11 +1194,12 @@ public readonly partial struct MathValue :
         // The lower bound is checked before allocation; the product can exceed it by at most one bit.
         if (BigInteger.Abs(a).GetBitLength() + BigInteger.Abs(b).GetBitLength() - 1 > maxIntermediateBits)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.IntermediateBits, maxIntermediateBits);
         }
 
         var result = a * b;
-        CheckBits(result, maxIntermediateBits);
+        CheckBits(result, maxIntermediateBits, CalculationLimitKind.IntermediateBits);
 
         return result;
     }
@@ -1213,7 +1223,8 @@ public readonly partial struct MathValue :
         bool integral = expVal.TryGetInteger(out var exponent);
         if (integral && BigInteger.Abs(exponent) > maxExponentMagnitude)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.ExponentMagnitude, maxExponentMagnitude);
         }
 
         if (baseVal.IsZero && expVal.IsFinite && expVal.IsNegative)
@@ -1264,7 +1275,7 @@ public readonly partial struct MathValue :
         var abs = BigInteger.Abs(value);
         if (abs > BigInteger.One && (abs.GetBitLength() - 1) * exponent + 1 > bits)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(CalculationLimitKind.IntegerBits, bits);
         }
     }
 
@@ -1604,9 +1615,16 @@ public readonly partial struct MathValue :
             long bits = BigInteger.Abs(n).GetBitLength();
             if (operation == '<')
             {
-                if (m > Math.Min(CalculationLimits.MaxIntegerBits, CalculationLimits.MaxIntermediateBits))
+                if (m > CalculationLimits.MaxIntegerBits)
                 {
-                    throw new CalculationLimitException();
+                    throw new CalculationLimitException(
+                        CalculationLimitKind.IntegerBits, CalculationLimits.MaxIntegerBits);
+                }
+
+                if (m > CalculationLimits.MaxIntermediateBits)
+                {
+                    throw new CalculationLimitException(
+                        CalculationLimitKind.IntermediateBits, CalculationLimits.MaxIntermediateBits);
                 }
 
                 CheckIntegerResultBits(bits + (int)m);
@@ -1646,16 +1664,23 @@ public readonly partial struct MathValue :
         };
 
         CheckBits(value, CalculationLimits.MaxIntegerBits);
-        CheckBits(value, CalculationLimits.MaxIntermediateBits);
+        CheckBits(value, CalculationLimits.MaxIntermediateBits, CalculationLimitKind.IntermediateBits);
 
         return new MathValue(value).WithExactness(InheritedExactness(a, b));
     }
 
     private static void CheckIntegerResultBits(long bits)
     {
-        if (bits > CalculationLimits.MaxIntegerBits || bits > CalculationLimits.MaxIntermediateBits)
+        if (bits > CalculationLimits.MaxIntegerBits)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.IntegerBits, CalculationLimits.MaxIntegerBits);
+        }
+
+        if (bits > CalculationLimits.MaxIntermediateBits)
+        {
+            throw new CalculationLimitException(
+                CalculationLimitKind.IntermediateBits, CalculationLimits.MaxIntermediateBits);
         }
     }
 
@@ -1809,11 +1834,12 @@ public readonly partial struct MathValue :
     /// Throws <see cref="CalculationLimitException"/> if the value needs more than
     /// <paramref name="bits"/> bits.
     /// </summary>
-    private static void CheckBits(BigInteger value, int bits)
+    private static void CheckBits(
+        BigInteger value, int bits, CalculationLimitKind kind = CalculationLimitKind.IntegerBits)
     {
         if (BigInteger.Abs(value).GetBitLength() > bits)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(kind, bits);
         }
     }
 

@@ -48,9 +48,18 @@ internal sealed class AstParser
 
     // The depth count alone is not a stack bound: frames per level vary and the host may
     // already be deep in its own stack, so also check the real remaining stack.
-    private bool NestingLimitReached() =>
-        _depth >= _options.MaxNestingDepth ||
-        !RuntimeHelpers.TryEnsureSufficientExecutionStack();
+    private void CheckNestingLimit()
+    {
+        if (_depth >= _options.MaxNestingDepth)
+        {
+            throw new CalculationLimitException(
+                CalculationLimitKind.NestingDepth, _options.MaxNestingDepth);
+        }
+        if (!RuntimeHelpers.TryEnsureSufficientExecutionStack())
+        {
+            throw new CalculationLimitException(CalculationLimitKind.ExecutionStack);
+        }
+    }
 
     public AstParser(
         string input,
@@ -68,7 +77,7 @@ internal sealed class AstParser
         _allowUnknownFunctions = allowUnknownFunctions;
         if (input.Length > options.MaxInputLength)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(CalculationLimitKind.InputLength, options.MaxInputLength);
         }
 
         _input = input;
@@ -141,10 +150,7 @@ internal sealed class AstParser
                 // Right-associative recursion: "a = b = 10" parses as "a = (b = 10)".
                 // Guarded like the other recursive paths so long assignment chains cannot
                 // recurse deeper during parsing than the validator would later allow.
-                if (NestingLimitReached())
-                {
-                    throw new CalculationLimitException();
-                }
+                CheckNestingLimit();
 
                 _depth++;
                 var value = ParseStatement();
@@ -329,10 +335,7 @@ internal sealed class AstParser
 
         if (opLen > 0)
         {
-            if (NestingLimitReached())
-            {
-                throw new CalculationLimitException();
-            }
+            CheckNestingLimit();
 
             _depth++;
             var operand = ParseLogicalNot();
@@ -529,10 +532,7 @@ internal sealed class AstParser
 
             Consume();
             Consume();
-            if (NestingLimitReached())
-            {
-                throw new CalculationLimitException();
-            }
+            CheckNestingLimit();
 
             // Right-associative so "10% of 20% of 1000" reads as 10% of (20% of 1000).
             _depth++;
@@ -637,10 +637,7 @@ internal sealed class AstParser
 
     private ExpressionNode ParseUnary()
     {
-        if (NestingLimitReached())
-        {
-            throw new CalculationLimitException();
-        }
+        CheckNestingLimit();
 
         _depth++;
         SkipWhitespace();
@@ -933,10 +930,7 @@ internal sealed class AstParser
         {
             while (true)
             {
-                if (NestingLimitReached())
-                {
-                    throw new CalculationLimitException();
-                }
+                CheckNestingLimit();
 
                 _depth++;
                 args.Add(ParseLogical());
@@ -1026,14 +1020,24 @@ internal sealed class AstParser
             int bitLimit = Math.Min(_options.MaxIntegerBits, CalculationLimits.MaxIntermediateBits);
             if ((long)Math.Max(0, digits.Length - 1) * radix.BitsPerDigit > bitLimit)
             {
-                throw LiteralLimit(start);
+                throw LiteralLimit(start, CalculationLimitKind.IntegerBits, bitLimit);
             }
 
-            var result = new MathValue(radix.Parse(digits));
+            MathValue result;
+            try
+            {
+                result = new MathValue(radix.Parse(digits));
+            }
+            catch (CalculationLimitException exception)
+            {
+                throw LiteralLimit(start, exception);
+            }
+
             if (result.IntegerValue.GetBitLength() > bitLimit)
             {
-                throw LiteralLimit(start);
+                throw LiteralLimit(start, CalculationLimitKind.IntegerBits, bitLimit);
             }
+            
             return result;
         }
 
@@ -1129,7 +1133,9 @@ internal sealed class AstParser
              exponent < -_options.MaxExponentMagnitude ||
              exponent > _options.MaxExponentMagnitude))
         {
-            throw LiteralLimit(start);
+            throw LiteralLimit(
+                start,
+                CalculationLimitKind.ExponentMagnitude, _options.MaxExponentMagnitude);
         }
 
         string coefficientText = dot < 0 ? mantissa.ToString() :
@@ -1147,7 +1153,9 @@ internal sealed class AstParser
         if ((coefficientDigits.Length - 1L) * 3.3219280948873623 > CalculationLimits.MaxIntermediateBits ||
             Math.Abs(power) * 3.3219280948873623 > CalculationLimits.MaxIntermediateBits)
         {
-            throw LiteralLimit(start);
+            throw LiteralLimit(
+                start,
+                CalculationLimitKind.IntermediateBits, CalculationLimits.MaxIntermediateBits);
         }
 
         var coefficient = BigInteger.Parse(coefficientDigits, NumberStyles.None, CultureInfo.InvariantCulture);
@@ -1156,7 +1164,9 @@ internal sealed class AstParser
             scale.GetBitLength() > CalculationLimits.MaxIntermediateBits ||
             (power > 0 && coefficient.GetBitLength() + scale.GetBitLength() - 1 > CalculationLimits.MaxIntermediateBits))
         {
-            throw LiteralLimit(start);
+            throw LiteralLimit(
+                start,
+                CalculationLimitKind.IntermediateBits, CalculationLimits.MaxIntermediateBits);
         }
 
         try
@@ -1168,9 +1178,9 @@ internal sealed class AstParser
             result.ValidateLimits(_options.MaxIntegerBits);
             return result.WithDecimalDisplayScale(Math.Max(0, fractionalDigits - exponent));
         }
-        catch (CalculationLimitException)
+        catch (CalculationLimitException exception)
         {
-            throw LiteralLimit(start);
+            throw LiteralLimit(start, exception);
         }
     }
 
@@ -1200,9 +1210,19 @@ internal sealed class AstParser
         return fractionalDigits - exponent;
     }
 
-    private CalculationLimitException LiteralLimit(int start) => new(Diagnostic(
-        EvaluationError.LimitExceeded, "Number literal exceeds the configured computation limits.",
-        start, Math.Max(1, _pos - start)));
+    private CalculationLimitException LiteralLimit(int start, CalculationLimitKind kind, long limitValue) =>
+        LiteralLimit(start, new CalculationLimitException(kind, limitValue));
+
+    private CalculationLimitException LiteralLimit(int start, CalculationLimitException exception)
+    {
+        if (exception.Diagnostic.Position is not null)
+        {
+            return exception;
+        }
+
+        var span = Span(start, Math.Max(1, _pos - start));
+        return new CalculationLimitException(exception.Diagnostic with { Position = span.Start, Length = span.Length });
+    }
 
     private static BigInteger ParseHexBigInteger(ReadOnlySpan<char> span)
     {

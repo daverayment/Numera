@@ -430,26 +430,34 @@ internal static class ResultValueFormatter
 
     private static void CheckComponents(BigInteger numerator, BigInteger denominator)
     {
-        if (BigInteger.Abs(numerator).GetBitLength() > MaxComponentBits
-            || denominator.GetBitLength() > MaxComponentBits)
+        if (BigInteger.Abs(numerator).GetBitLength() > MaxComponentBits ||
+            denominator.GetBitLength() > MaxComponentBits)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.IntegerBits, MaxComponentBits);
         }
     }
 
     private static int ComparePowerOfTen(BigInteger numerator, BigInteger denominator, int exponent)
-        => exponent >= 0
-            ? numerator.CompareTo(ScaleByPowerOfTen(denominator, exponent))
-            : ScaleByPowerOfTen(numerator, -exponent).CompareTo(denominator);
+        => exponent >= 0 ?
+            numerator.CompareTo(ScaleByPowerOfTen(denominator, exponent)) :
+            ScaleByPowerOfTen(numerator, -exponent).CompareTo(denominator);
 
     private static BigInteger ScaleByPowerOfTen(BigInteger value, int exponent)
     {
         // Keep formatting independently bounded if numeric storage ceilings grow.
         // This conservatively bounds both the power and the product before allocation.
         long estimatedBits = value.GetBitLength() + (long)Math.Ceiling(exponent * Math.Log2(10));
-        if (exponent < 0 || exponent > CalculationLimits.MaxExponentMagnitude || estimatedBits > MaxFormattingIntermediateBits)
+        if (exponent < 0 || exponent > CalculationLimits.MaxExponentMagnitude)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.ExponentMagnitude, CalculationLimits.MaxExponentMagnitude);
+        }
+
+        if (estimatedBits > MaxFormattingIntermediateBits)
+        {
+            throw new CalculationLimitException(
+                CalculationLimitKind.IntermediateBits, MaxFormattingIntermediateBits);
         }
 
         return value * BigInteger.Pow(10, exponent);

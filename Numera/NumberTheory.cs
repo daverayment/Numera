@@ -80,7 +80,9 @@ internal static class NumberTheory
         // Bound the loop iteration count.
         if (k > CalculationLimits.MaxFactorialArgument)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.CombinatoricsTerms,
+                CalculationLimits.MaxFactorialArgument);
         }
 
         int kInt = (int)k;
@@ -122,7 +124,9 @@ internal static class NumberTheory
         // Bound the loop iteration count.
         if (k > CalculationLimits.MaxFactorialArgument)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.CombinatoricsTerms,
+                CalculationLimits.MaxFactorialArgument);
         }
 
         int kInt = (int)k;
@@ -197,7 +201,8 @@ internal static class NumberTheory
 
         if (n.GetBitLength() > CalculationLimits.MaxPrimalityBits)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.PrimalityBits, CalculationLimits.MaxPrimalityBits);
         }
 
         // Deterministic Miller-Rabin primality test.
@@ -218,8 +223,10 @@ internal static class NumberTheory
         // Reserve the conservative upper bound before entering the implementation.
         if (2 * n.GetBitLength() > CalculationLimits.MaxIntermediateBits)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.IntermediateBits, CalculationLimits.MaxIntermediateBits);
         }
+
         BigInteger nMinusOne = BoundedAdd(n, -BigInteger.One);
 
         // Write n-1 = d*2^s with d odd. Each witness starts at a^d and repeatedly
@@ -294,7 +301,9 @@ internal static class NumberTheory
 
         if (n.GetBitLength() > CalculationLimits.MaxFactorizationBits)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.FactorizationBits,
+                CalculationLimits.MaxFactorizationBits);
         }
 
         ValidateIntermediate(n);
@@ -369,8 +378,11 @@ internal static class NumberTheory
         // Both fit within one bit beyond the input magnitude.
         if (n.GetBitLength() + 1 > CalculationLimits.MaxIntermediateBits)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.IntermediateBits,
+                CalculationLimits.MaxIntermediateBits);
         }
+
         if (n.TryGetExactSquareRoot(out var sqrt))
         {
             FactorizeCompositeRecursive(sqrt, factors);
@@ -390,8 +402,11 @@ internal static class NumberTheory
             return 2;
         }
 
+        const int maxAttempts = 10;
+        const int maxSteps = 100_000;
+
         // Try a few small constants for the polynomial f(x) = x^2 + c mod n to avoid cycles.
-        for (int c = 1; c <= 10; c++)
+        for (int c = 1; c <= maxAttempts; c++)
         {
             // Vary the starting point to avoid duplicate cycles.
             BigInteger x = BoundedAdd(c, BigInteger.One);
@@ -399,7 +414,6 @@ internal static class NumberTheory
             BigInteger d = 1;
 
             int steps = 0;
-            const int maxSteps = 100_000; // Limit steps to avoid infinite loops on pathological cases.
 
             // Floyd's cycle detection: y advances twice as fast as x. A collision
             // modulo a factor of n can make gcd(x-y,n) reveal that factor before x==y.
@@ -419,9 +433,8 @@ internal static class NumberTheory
             }
         }
 
-        // If Pollard's rho fails within the step limit, fail safely.
-        throw new CalculationLimitException(new EvaluationDiagnostic(
-            EvaluationError.LimitExceeded, "Factorization exceeded computation step limit."));
+        throw new CalculationLimitException(
+            CalculationLimitKind.FactorizationAttempts, maxAttempts);
     }
 
     /// <summary>
@@ -477,7 +490,9 @@ internal static class NumberTheory
 
         if (k > CalculationLimits.MaxExponentMagnitude)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.ExponentMagnitude,
+                CalculationLimits.MaxExponentMagnitude);
         }
 
         if (k == 0)
@@ -575,7 +590,9 @@ internal static class NumberTheory
     {
         if (BigInteger.Abs(value).GetBitLength() > CalculationLimits.MaxIntegerBits)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.IntegerBits,
+                CalculationLimits.MaxIntegerBits);
         }
     }
 
@@ -583,7 +600,9 @@ internal static class NumberTheory
     {
         if (BigInteger.Abs(value).GetBitLength() > CalculationLimits.MaxIntermediateBits)
         {
-            throw new CalculationLimitException();
+            throw new CalculationLimitException(
+                CalculationLimitKind.IntermediateBits,
+                CalculationLimits.MaxIntermediateBits);
         }
     }
 
@@ -605,6 +624,7 @@ internal static class NumberTheory
             {
                 result = MathValue.Product(result, value);
             }
+
             exponent >>= 1;
             if (exponent > 0)
             {

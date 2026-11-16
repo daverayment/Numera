@@ -99,8 +99,24 @@ public enum EvaluationError
 /// <remarks>
 /// Consumers should use Code for programmatic decisions or localization rather than
 /// matching message text, which is intended for human-readable diagnostics.
+/// For <see cref="EvaluationError.LimitExceeded"/>, <see cref="LimitKind"/> and
+/// <see cref="LimitValue"/> identify the rejecting safety guard when known.
 /// </remarks>
-public sealed record EvaluationDiagnostic(EvaluationError Code, string Message, int? Position = null, int Length = 0);
+public sealed record EvaluationDiagnostic(EvaluationError Code, string Message, int? Position = null, int Length = 0)
+{
+    /// <summary>
+    /// Identifies the safety limit that rejected the operation, when known.
+    /// Null for other errors and caller-supplied limit errors without this metadata.
+    /// </summary>
+    public CalculationLimitKind? LimitKind { get; init; }
+
+    /// <summary>
+    /// Gets the effective ceiling, in the units described by <see cref="LimitKind"/>.
+    /// Null when no numeric ceiling is available, such as a remaining-stack guard.
+    /// This is not the measured or estimated size of the rejected operation.
+    /// </summary>
+    public long? LimitValue { get; init; }
+}
 
 /// <summary>
 /// A malformed expression or evaluation error with a structured diagnostic.
