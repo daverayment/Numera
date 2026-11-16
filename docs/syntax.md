@@ -39,11 +39,10 @@ still has Unverified exactness even though it displays `3`. See the
 | `phi` | `φ`, `ϕ`, `Φ` | Golden ratio ($\approx 1.618033988749895$) | `decimal` |
 | `true`, `false` | | Exact truth values `1` and `0` | `decimal` |
 
-The name `phi` is also a function alias for Euler's totient. Known functions own
-their following parentheses: `phi(12)` (including `phi (12)`) means `totient(12)`,
-which is `4`, not multiplication by the golden ratio. Write `phi * (12)` for
-that product. With implicit multiplication enabled, `φ(12)`, `ϕ(12)`, and `Φ(12)`
-are golden-ratio products: the Greek spellings are constant aliases only.
+`phi`, `φ`, `ϕ`, and `Φ` all denote the golden-ratio constant. With implicit
+multiplication enabled, `phi(12)` means `phi * 12`, just like `φ(12)`.
+When implicit multiplication is disabled, write the `*` explicitly. Use
+`totient(12)` or `eulerphi(12)` for Euler's totient function.
 
 ### Constant Discovery
 
@@ -216,10 +215,7 @@ the recognized root `sqrt(4)` is Exact. Keep exactness and display indicators se
 | `isprime(n)` | | Primality test (deterministic through unsigned 64-bit inputs; larger positive results are probable-prime results with Unverified exactness; bounded by `MaxPrimalityBits = 2048`) |
 | `divcount(n)` | `divisorcount` | Number of positive divisors $d(n)$ |
 | `sigma(n[, k])` | `divsum` | Divisor sum $\sigma(n)$ or sum of $k$-th powers $\sigma_k(n)$ |
-| `totient(n)` | `phi`, `eulerphi` | Euler's totient function $\phi(n)$ |
-
-Prefer `totient(n)` in examples and user guidance to avoid confusion with the
-golden-ratio constant `phi`.
+| `totient(n)` | `eulerphi` | Euler's totient function $\phi(n)$ |
 
 ### Special & Probability Functions
 

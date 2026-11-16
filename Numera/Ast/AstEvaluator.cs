@@ -771,7 +771,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                     }
                     return FactorizationResult(NumberTheory.Sigma(sigmaArg), sigmaArg);
 
-                case "totient" or "phi" or "eulerphi":
+                case "totient" or "eulerphi":
                     if (!args[0].TryGetInteger(out var totientArg))
                     {
                         throw new ExpressionException(new EvaluationDiagnostic(

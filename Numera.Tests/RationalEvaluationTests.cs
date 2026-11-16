@@ -186,7 +186,6 @@ public sealed class RationalEvaluationTests
     [DataRow("sigma(2^127-1)")]
     [DataRow("divsum(2^127-1,0)")]
     [DataRow("totient(2^127-1)")]
-    [DataRow("phi(2^127-1)")]
     [DataRow("eulerphi(2^127-1)")]
     public void ProbablePrimeBasedResultsDoNotAcquireAnExactGuarantee(string expression)
     {

@@ -1719,7 +1719,6 @@ public class NumericTests
     [DataRow("totient(10)", "4")]
     [DataRow("totient(12)", "4")]
     [DataRow("totient(13)", "12")]
-    [DataRow("phi(12)", "4")]
     [DataRow("eulerphi(12)", "4")]
     public void CombinatoricsAndNumberTheoryEvaluateCorrectly(string expression, string expected)
     {
@@ -1742,7 +1741,6 @@ public class NumericTests
     [DataRow("sigma(12, 1.5)", EvaluationError.IntegerRequired)]
     [DataRow("divsum(12, 1.5)", EvaluationError.IntegerRequired)]
     [DataRow("totient(2.5)", EvaluationError.IntegerRequired)]
-    [DataRow("phi(2.5)", EvaluationError.IntegerRequired)]
     [DataRow("eulerphi(2.5)", EvaluationError.IntegerRequired)]
     [DataRow("comb(-5, 2)", EvaluationError.ArgumentOutOfRange)]
     [DataRow("comb(5, -2)", EvaluationError.ArgumentOutOfRange)]
@@ -1758,7 +1756,6 @@ public class NumericTests
     [DataRow("divsum(12, -1)", EvaluationError.ArgumentOutOfRange)]
     [DataRow("totient(0)", EvaluationError.ArgumentOutOfRange)]
     [DataRow("totient(-12)", EvaluationError.ArgumentOutOfRange)]
-    [DataRow("phi(-12)", EvaluationError.ArgumentOutOfRange)]
     [DataRow("eulerphi(-12)", EvaluationError.ArgumentOutOfRange)]
     public void CombinatoricsAndNumberTheoryDiagnosticsAreReported(string expression, EvaluationError expectedError)
     {
@@ -1803,7 +1800,6 @@ public class NumericTests
     [DataRow("sigma(12, 1.5)", EvaluationError.IntegerRequired)]
     [DataRow("divsum(12, 1.5)", EvaluationError.IntegerRequired)]
     [DataRow("totient(2.5)", EvaluationError.IntegerRequired)]
-    [DataRow("phi(2.5)", EvaluationError.IntegerRequired)]
     [DataRow("eulerphi(2.5)", EvaluationError.IntegerRequired)]
     public void CombinatoricsAndSigmaInvalidDomainProducesDiagnostics(string expression, EvaluationError expectedError)
     {

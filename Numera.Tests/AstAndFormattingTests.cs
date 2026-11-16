@@ -282,12 +282,11 @@ public sealed class AstAndFormattingTests
     }
 
     [TestMethod]
-    [DataRow("phi(12)")]
-    [DataRow("phi (12)")]
-    [DataRow("PHI(12)")]
     [DataRow("totient(12)")]
+    [DataRow("TOTIENT (12)")]
     [DataRow("eulerphi(12)")]
-    public void PhiFunctionCallsResolveToTotientRatherThanConstantProducts(string expression)
+    [DataRow("EULERPHI (12)")]
+    public void TotientFunctionCallsReturnExactIntegerResults(string expression)
     {
         var node = Calculator.Parse(expression);
         Assert.IsInstanceOfType<FunctionCallNode>(node);
@@ -300,10 +299,13 @@ public sealed class AstAndFormattingTests
     [TestMethod]
     [DataRow("phi * (12)", false)]
     [DataRow("PHI * (12)", false)]
+    [DataRow("phi(12)", true)]
+    [DataRow("phi (12)", true)]
+    [DataRow("PHI(12)", true)]
     [DataRow("\u03C6(12)", true)]
     [DataRow("\u03D5(12)", true)]
     [DataRow("\u03A6(12)", true)]
-    public void PhiConstantProductsRemainDistinctFromTotientCalls(string expression, bool implicitProduct)
+    public void PhiSpellingsWithParenthesesUseTheGoldenRatio(string expression, bool implicitProduct)
     {
         var node = Calculator.Parse(expression);
         Assert.IsInstanceOfType<BinaryNode>(node);
@@ -317,15 +319,49 @@ public sealed class AstAndFormattingTests
         var result = Calculator.Evaluate(node);
         Assert.AreEqual(Calculator.Evaluate("phi * 12").Value, result.Value);
         Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
+
+        foreach (var style in new[] { ExpressionFormatOptions.Ascii, ExpressionFormatOptions.Typographic })
+        {
+            string formatted = Calculator.FormatExpression(node, style);
+            Assert.AreEqual(result.Value, Calculator.Evaluate(formatted).Value);
+        }
     }
 
     [TestMethod]
-    public void DisablingImplicitMultiplicationPreservesExplicitPhiMeanings()
+    [DataRow("phi(2.5)", "phi * 2.5")]
+    [DataRow("phi(-12)", "phi * -12")]
+    [DataRow("phi(0)", "phi * 0")]
+    public void PhiProductsDoNotApplyTotientDomainRestrictions(string expression, string explicitProduct)
+    {
+        var result = Calculator.Evaluate(expression);
+
+        Assert.AreEqual(Calculator.Evaluate(explicitProduct).Value, result.Value);
+        Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
+    }
+
+    [TestMethod]
+    [DataRow("phi")]
+    [DataRow("PHI")]
+    [DataRow("\u03C6")]
+    [DataRow("\u03D5")]
+    [DataRow("\u03A6")]
+    public void DisablingImplicitMultiplicationRequiresExplicitPhiProducts(string name)
     {
         var engine = new CalculatorEngine(new CalculatorOptions { AllowImplicitMultiplication = false });
-        Assert.AreEqual(new MathValue(4), engine.Evaluate("phi(12)").Value);
-        Assert.AreEqual(Calculator.Evaluate("phi * 12").Value, engine.Evaluate("phi * (12)").Value);
-        Assert.IsFalse(engine.TryEvaluate("\u03C6(12)", out _, out var diagnostic));
+        Assert.AreEqual(Calculator.Evaluate("phi * 12").Value, engine.Evaluate($"{name} * (12)").Value);
+        Assert.IsFalse(engine.TryEvaluate($"{name}(12)", out _, out var diagnostic));
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(EvaluationError.UnknownFunction, diagnostic.Code);
+    }
+
+    [TestMethod]
+    [DataRow("phi")]
+    [DataRow("PHI")]
+    public void ManualPhiFunctionCallsAreNotExecutable(string name)
+    {
+        var node = new FunctionCallNode(name, [new NumberNode(12)]);
+
+        Assert.IsFalse(Calculator.TryEvaluate(node, out _, out var diagnostic));
         Assert.IsNotNull(diagnostic);
         Assert.AreEqual(EvaluationError.UnknownFunction, diagnostic.Code);
     }

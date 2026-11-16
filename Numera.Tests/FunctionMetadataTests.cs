@@ -59,6 +59,47 @@ public sealed class FunctionMetadataTests
     }
 
     [TestMethod]
+    [DataRow("phi")]
+    [DataRow("PHI")]
+    [DataRow("\u03C6")]
+    [DataRow("\u03D5")]
+    [DataRow("\u03A6")]
+    public void PhiIsAConstantRatherThanAFunction(string name)
+    {
+        Assert.IsFalse(Functions.TryGetInfo(name, out var function));
+        Assert.IsNull(function);
+        Assert.IsFalse(Functions.TryGetSignature(name, out _));
+        Assert.DoesNotContain(entry => Identifier.Comparer.Equals(entry, name), Functions.AllNames);
+        Assert.IsTrue(Constants.TryGetInfo(name, out var constant));
+        Assert.IsNotNull(constant);
+        Assert.AreEqual(ConstantKind.Phi, constant.Kind);
+    }
+
+    [TestMethod]
+    public void TotientDiscoveryRetainsPhiAsAKeywordOnly()
+    {
+        Assert.IsTrue(Functions.TryGetInfo("totient", out var totient));
+        Assert.IsNotNull(totient);
+        Assert.AreSequenceEqual(new[] { "eulerphi" }, totient.Aliases.ToArray());
+        Assert.Contains("phi", totient.Keywords.ToList());
+        Assert.IsTrue(Functions.TryGetInfo("eulerphi", out var alias));
+        Assert.IsNotNull(alias);
+        Assert.AreEqual("totient", alias.CanonicalName);
+        Assert.IsTrue(alias.IsAlias);
+
+        var engine = new CalculatorEngine();
+        Assert.DoesNotContain(entry => entry.Name == "phi", engine.GetFunctions(includeAliases: true));
+
+        foreach (bool includeAliases in new[] { false, true })
+        {
+            var matches = Functions.Search("phi", includeAliases).ToList();
+            Assert.Contains(entry => entry.Name == "totient", matches);
+            Assert.DoesNotContain(entry => entry.Name == "phi", matches);
+            Assert.Contains(entry => entry.Name == "totient", engine.SearchFunctions("phi", includeAliases).ToList());
+        }
+    }
+
+    [TestMethod]
     public void TryGetSignatureReturnsBoundsAndParameters()
     {
         // Single argument fixed arity.

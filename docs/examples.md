@@ -207,9 +207,6 @@ implementation; these Double approximations do not provide certified error bound
 | `sigma(12,2)` | `210` | Exact |
 | `totient(12)` | `4` | Exact |
 
-Recommendation: use `totient(n)` for Euler's totient; its `phi(n)` alias shares a name with the
-golden-ratio constant. Write `phi * (n)` when you mean multiplication by that constant.
-
 Variance is **sample variance**, divided by `n-1`. Standard deviation (`stdev`,
 also `stddev`) takes its square root: recognized perfect rational roots use exact
 arithmetic; other roots use Double approximations. Unverified inputs produce
@@ -217,6 +214,7 @@ Unverified results.
 
 `comb(52,5)` counts unordered five-card hands; `perm(10,3)` counts ordered
 selections without replacement.
+`totient(12)` (or `eulerphi(12)`) counts `1`, `5`, `7`, and `11`, which are coprime to `12`.
 `sigma(12,2)` sums squared divisors. For sufficiently large inputs, primality
 and factorization-dependent functions may use probable-prime reasoning and return
 Unverified results rather than claiming a proof.

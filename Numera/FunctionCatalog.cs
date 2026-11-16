@@ -812,8 +812,8 @@ internal static class FunctionCatalog
                 CanonicalName: "totient",
                 Category: FunctionCategory.CombinatoricsAndNumberTheory,
                 Signature: Sig1("n"),
-                Description: "Computes Euler's totient function phi(n) (count of positive integers up to n coprime to n).",
-                Aliases: ["phi", "eulerphi"],
+                Description: "Computes Euler's totient: the number of positive integers up to n that are coprime to n.",
+                Aliases: ["eulerphi"],
                 Keywords: ["totient", "phi", "eulerphi", "euler totient", "coprime", "number theory"]),
 
             // Statistical and Aggregation.
