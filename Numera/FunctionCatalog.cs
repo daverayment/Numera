@@ -349,7 +349,7 @@ internal static class FunctionCatalog
                 Category: FunctionCategory.Trigonometry,
                 Signature: Sig1("x"),
                 Description: "Computes the inverse cotangent returning an angle in the configured angle unit.",
-                Aliases: [],
+                Aliases: ["acot"],
                 Keywords: ["inverse cotangent", "arc cotangent"]),
 
             new FunctionInfo(
@@ -358,7 +358,7 @@ internal static class FunctionCatalog
                 Category: FunctionCategory.Trigonometry,
                 Signature: Sig1("x"),
                 Description: "Computes the inverse secant returning an angle in the configured angle unit.",
-                Aliases: [],
+                Aliases: ["asec"],
                 Keywords: ["inverse secant", "arc secant"]),
 
             new FunctionInfo(
@@ -367,7 +367,7 @@ internal static class FunctionCatalog
                 Category: FunctionCategory.Trigonometry,
                 Signature: Sig1("x"),
                 Description: "Computes the inverse cosecant returning an angle in the configured angle unit.",
-                Aliases: [],
+                Aliases: ["acsc"],
                 Keywords: ["inverse cosecant", "arc cosecant"]),
 
             // Hyperbolic.
@@ -458,7 +458,7 @@ internal static class FunctionCatalog
                 Category: FunctionCategory.Hyperbolic,
                 Signature: Sig1("x"),
                 Description: "Computes the inverse hyperbolic cotangent.",
-                Aliases: [],
+                Aliases: ["acoth"],
                 Keywords: ["inverse hyperbolic cotangent"]),
 
             new FunctionInfo(
@@ -467,7 +467,7 @@ internal static class FunctionCatalog
                 Category: FunctionCategory.Hyperbolic,
                 Signature: Sig1("x"),
                 Description: "Computes the inverse hyperbolic secant.",
-                Aliases: [],
+                Aliases: ["asech"],
                 Keywords: ["inverse hyperbolic secant"]),
 
             new FunctionInfo(
@@ -476,7 +476,7 @@ internal static class FunctionCatalog
                 Category: FunctionCategory.Hyperbolic,
                 Signature: Sig1("x"),
                 Description: "Computes the inverse hyperbolic cosecant.",
-                Aliases: [],
+                Aliases: ["acsch"],
                 Keywords: ["inverse hyperbolic cosecant"]),
 
             // Angle Conversion.
