@@ -95,7 +95,7 @@ public sealed class RationalMathValueTests
         ];
 
         Assert.IsTrue(exponent.IsFinite);
-        Assert.IsTrue(double.IsInfinity(exponent.AsDouble()));
+        Assert.IsTrue(double.IsInfinity(exponent.ToDouble()));
         foreach (var negativeBase in negativeBases)
         {
             var exception = Assert.ThrowsExactly<ExpressionException>(() => MathValue.Pow(negativeBase, exponent));
@@ -110,7 +110,7 @@ public sealed class RationalMathValueTests
         {
             var result = MathValue.Pow(new MathValue(-2), new MathValue(exponent));
 
-            Assert.AreEqual(Math.Pow(-2, exponent), result.AsDouble());
+            Assert.AreEqual(Math.Pow(-2, exponent), result.ToDouble());
             Assert.AreEqual(MathValue.DataType.Double, result.Kind);
             Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         }

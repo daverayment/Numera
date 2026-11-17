@@ -191,7 +191,7 @@ Use the result itself for further calculations, rather than feeding its display 
 
 You don't need to learn the rest of the API to use the examples above. When your app needs more:
 
-- **"I need a number for another .NET API."** Both results and values offer `ToDouble()`, `ToDecimal()`, `ToBigInteger()`, and explicit numeric casts; `AsDouble()` remains an alias. [Conversion contracts](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#inspection--conversion) explain rounding, range limits, and why integer conversions never truncate.
+- **"I need a number for another .NET API."** Both results and values offer `ToDouble()`, `ToDecimal()`, `ToBigInteger()`, and explicit numeric casts. [Conversion contracts](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#inspection--conversion) explain rounding, range limits, and why integer conversions never truncate.
 - **"I need to compare answers or history content."** Result equality is numeric; use `EvaluationResultComparers.Content` for metadata-aware comparison. [Result comparison](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#result-equality-and-content-comparison) explains the contract.
 - **"I want my own functions, such as a tax or unit conversion."** [Register a custom function](https://github.com/daverayment/Numera/blob/main/docs/custom-functions.md) implemented in your application code.
 - **"I need to copy or save an answer without display rounding."** [Machine-readable expressions and serialization](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#display-vs-machine-readable-text-and-culture) serve different purposes from the user-facing display.

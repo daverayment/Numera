@@ -106,7 +106,7 @@ public sealed class RepresentationDomainTests
         foreach (var value in new[] { new MathValue(42), new MathValue(42m), new MathValue(42.0) })
         {
             var result = new EvaluationResult(value, EvaluationContext.Empty);
-            Assert.AreEqual(42.0, value.AsDouble());
+            Assert.AreEqual(42.0, value.ToDouble());
             Assert.AreEqual(42m, value.ToDecimal());
             Assert.IsTrue(value.TryGetInteger(out var integer));
             Assert.AreEqual(new BigInteger(42), integer);
@@ -116,7 +116,7 @@ public sealed class RepresentationDomainTests
         }
 
         var half = Calculator.Evaluate("1/2");
-        Assert.AreEqual(0.5, half.AsDouble());
+        Assert.AreEqual(0.5, half.ToDouble());
         Assert.AreEqual(0.5m, (decimal)half);
         Assert.ThrowsExactly<InvalidCastException>(() => _ = (int)half);
         Assert.AreEqual(MathValue.DataType.Rational, half.Kind);

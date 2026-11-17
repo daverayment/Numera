@@ -228,7 +228,7 @@ public readonly record struct EvaluationResult :
     /// <summary>
     /// Gets the stored double without converting other storage types.
     /// </summary>
-    /// <remarks>Does not convert other storage types. Use <see cref="AsDouble"/> to
+    /// <remarks>Does not convert other storage types. Use <see cref="ToDouble"/> to
     /// convert instead.</remarks>
     /// <exception cref="InvalidOperationException">The number is not stored as Double.
     /// </exception>
@@ -281,11 +281,6 @@ public readonly record struct EvaluationResult :
 
     /// <inheritdoc cref="MathValue.ToDouble"/>
     public double ToDouble() => Value.ToDouble();
-
-    /// <summary>
-    /// Alias for <see cref="ToDouble"/>.
-    /// </summary>
-    public double AsDouble() => ToDouble();
 
     /// <inheritdoc cref="MathValue.ToDecimal"/>
     public decimal ToDecimal() => Value.ToDecimal();
@@ -808,7 +803,7 @@ public readonly record struct EvaluationResult :
     public static explicit operator long(EvaluationResult result) => (long)result.Value;
 
     /// <summary>
-    /// Converts the result to a double, as <see cref="AsDouble"/> does. Precision may be
+    /// Converts the result to a double, as <see cref="ToDouble"/> does. Precision may be
     /// lost.
     /// </summary>
     /// <param name="result">The result to convert.</param>

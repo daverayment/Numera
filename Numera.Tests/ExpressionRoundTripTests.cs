@@ -258,8 +258,8 @@ public sealed class ExpressionRoundTripTests
         string text = Engine.FormatExpression(expression, ExpressionFormatOptions.Ascii, context);
         var restored = Engine.Evaluate(text, context);
         Assert.AreEqual("(50% of 1E308) x", text);
-        Assert.IsTrue(double.IsFinite(original.AsDouble()));
-        Assert.IsTrue(double.IsFinite(restored.AsDouble()));
+        Assert.IsTrue(double.IsFinite(original.ToDouble()));
+        Assert.IsTrue(double.IsFinite(restored.ToDouble()));
         Assert.AreEqual(original.Value, restored.Value);
     }
 

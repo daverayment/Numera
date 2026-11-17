@@ -443,7 +443,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
             // Math-based functions use double approximations. Branches that can operate
             // on integer or decimal values use the original argument instead.
-            double v = args[0].AsDouble();
+            double v = args[0].ToDouble();
             switch (lower)
             {
                 case "ceil":
@@ -803,7 +803,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                     if (args[1].Kind == MathValue.DataType.Double && !args[1].IsFinite)
                     {
                         // Native logn has special rules for NaN and infinite bases, not just ln(x)/ln(b).
-                        return new MathValue(Math.Log(args[0].AsDouble(), args[1].DoubleValue));
+                        return new MathValue(Math.Log(args[0].ToDouble(), args[1].DoubleValue));
                     }
 
                     // ln(x)/ln(b) = (valuePart/basePart) * 2^(valueExponent-baseExponent).
@@ -811,8 +811,8 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                     return new MathValue(Math.ScaleB(valueLog.Value / baseLog.Value, valueLog.Exponent - baseLog.Exponent));
 
                 case "atan2":
-                    var y = args[0].AsDouble();
-                    var x = args[1].AsDouble();
+                    var y = args[0].ToDouble();
+                    var x = args[1].ToDouble();
                     return new MathValue(EvaluateArcTan2(y, x));
 
                 case "hypot":
@@ -843,7 +843,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                     return MathValue.BitwiseXor(args[0], args[1]);
 
                 case "beta":
-                    return new MathValue(SpecialFunctions.Beta(args[0].AsDouble(), args[1].AsDouble()));
+                    return new MathValue(SpecialFunctions.Beta(args[0].ToDouble(), args[1].ToDouble()));
 
                 case "comb" or "ncr" or "choose" or "binomial":
                     if (!args[0].TryGetInteger(out var combN) || !args[1].TryGetInteger(out var combK))
@@ -1117,12 +1117,12 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
         if (places == 0)
         {
-            return ToIntegralMathValue(Math.Round(value.AsDouble(), MidpointRounding.AwayFromZero));
+            return ToIntegralMathValue(Math.Round(value.ToDouble(), MidpointRounding.AwayFromZero));
         }
 
         if (places <= 15)
         {
-            return new MathValue(Math.Round(value.AsDouble(), places, MidpointRounding.AwayFromZero));
+            return new MathValue(Math.Round(value.ToDouble(), places, MidpointRounding.AwayFromZero));
         }
 
         // Double values beyond 15 fractional decimal digits exceed double.Round's
@@ -1139,7 +1139,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         if (MathValue.TryToRational(value, out var numerator, out var denominator))
         {
             var (Value, Exponent) = MathValue.LogFractionParts(numerator, denominator);
-            double projected = value.AsDouble();
+            double projected = value.ToDouble();
 
             // Away from one, a normal Double retains enough input precision for the
             // native base-specific routines, avoiding an extra change-of-base rounding.
@@ -1164,7 +1164,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
             return Math.ScaleB(result, Exponent);
         }
 
-        double input = value.AsDouble();
+        double input = value.ToDouble();
         if (input <= 0)
         {
             throw LogarithmDomainException();
@@ -1191,7 +1191,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         if (!MathValue.TryToRational(left, out var leftNumerator, out var leftDenominator) ||
             !MathValue.TryToRational(right, out var rightNumerator, out var rightDenominator))
         {
-            return double.Hypot(left.AsDouble(), right.AsDouble());
+            return double.Hypot(left.ToDouble(), right.ToDouble());
         }
 
         leftNumerator = BigInteger.Abs(leftNumerator);
@@ -1265,7 +1265,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                 };
             }
 
-            return new MathValue(EvaluateRadianTrigonometric(function, input.AsDouble()));
+            return new MathValue(EvaluateRadianTrigonometric(function, input.ToDouble()));
         }
 
         if (!hasRational)

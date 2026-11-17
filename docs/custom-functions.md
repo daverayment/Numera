@@ -21,7 +21,7 @@ var options = new CalculatorOptions
 	[
 		CustomFunction.Create("double", (MathValue x) => x * new MathValue(2m)),
 		CustomFunction.Create("hypot", (MathValue a, MathValue b) =>
-			new MathValue(Math.Sqrt((a * a + b * b).AsDouble()))),
+			new MathValue(Math.Sqrt((a * a + b * b).ToDouble()))),
 		CustomFunction.CreateVariadic("sumAll", minArgs: 1, args =>
 		{
 			var sum = args[0];

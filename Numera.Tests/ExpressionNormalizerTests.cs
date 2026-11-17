@@ -285,7 +285,7 @@ public sealed class ExpressionNormalizerTests
     public void DivisionColonOutputEvaluates(string input, int expected)
     {
         // Compare numerically: the result's representation (integer or decimal) is not what this test is about.
-        double actual = Calculator.Evaluate(ExpressionNormalizer.Normalize(input)).AsDouble();
+        double actual = Calculator.Evaluate(ExpressionNormalizer.Normalize(input)).ToDouble();
         Assert.AreEqual(expected, actual);
     }
 

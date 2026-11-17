@@ -456,11 +456,6 @@ public readonly partial struct MathValue :
         TryToRational(this, out var n, out var d) ? DivideIntegersAsDouble(n, d) : DoubleValue;
 
     /// <summary>
-    /// Alias for <see cref="ToDouble"/>.
-    /// </summary>
-    public double AsDouble() => ToDouble();
-
-    /// <summary>
     /// Converts to a decimal. Fractions that are not exactly representable round
     /// midpoint-to-even.
     /// </summary>
@@ -1402,11 +1397,11 @@ public readonly partial struct MathValue :
                 .WithExactness(InheritedExactness(value, degree));
         }
 
-        double projectedValue = value.AsDouble();
+        double projectedValue = value.ToDouble();
         double magnitude = isNegative ? -projectedValue : projectedValue;
         double root = hasFraction && !numerator.IsZero && !double.IsNormal(magnitude) ?
             ApproximateFractionRoot(BigInteger.Abs(numerator), denominator, degree) :
-            ApproximateRoot(magnitude, degree.AsDouble());
+            ApproximateRoot(magnitude, degree.ToDouble());
 
         return new MathValue(isNegative ? -root : root);
     }
@@ -1423,7 +1418,7 @@ public readonly partial struct MathValue :
         // Keep the magnitude separate so only the final root can underflow or overflow.
         int exponent = (int)(numerator.GetBitLength() - denominator.GetBitLength());
         double mantissa = ScaleFractionAsDouble(numerator, denominator, exponent);
-        double approximateDegree = degree.AsDouble();
+        double approximateDegree = degree.ToDouble();
 
         if (degree.TryGetInteger(out var integerDegree) && integerDegree >= int.MinValue && integerDegree <= int.MaxValue)
         {

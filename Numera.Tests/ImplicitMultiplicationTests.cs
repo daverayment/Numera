@@ -45,7 +45,7 @@ public sealed class ImplicitMultiplicationTests
         string expression, double expected)
     {
         var engine = CreateEngineWithCustomFunctions();
-        Assert.AreEqual(expected, engine.Evaluate(expression).AsDouble(), 1e-12);
+        Assert.AreEqual(expected, engine.Evaluate(expression).ToDouble(), 1e-12);
     }
 
     [TestMethod]
@@ -78,7 +78,7 @@ public sealed class ImplicitMultiplicationTests
     {
         var engine = CreateEngineWithCustomFunctions();
         var result = engine.Evaluate(expression);
-        Assert.AreEqual(expected, result.AsDouble(), 1e-12);
+        Assert.AreEqual(expected, result.ToDouble(), 1e-12);
     }
 
     [TestMethod]

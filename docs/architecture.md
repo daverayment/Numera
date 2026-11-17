@@ -97,7 +97,7 @@ switch (result.Kind)
 }
 ```
 
-Representation access and conversion are distinct. Storage getters (`IntegerValue`, `DecimalValue`, `DoubleValue`, `Numerator`, and `Denominator`) throw `InvalidOperationException` if the storage type does not match; they never convert or return a placeholder zero. The same applies to the forwarded getters on `EvaluationResult` and `Variable`. Use `ToDouble()` (or `AsDouble()`) for an explicit, potentially lossy scalar conversion and `ToDecimal()` for an explicit Decimal conversion. `TryGetExactFraction` extracts a known or asserted exact fraction across finite representations, including caller-marked Exact Doubles. Supplied exact inputs assert their value, not the exactness of any calculation performed before supplying them.
+Representation access and conversion are distinct. Storage getters (`IntegerValue`, `DecimalValue`, `DoubleValue`, `Numerator`, and `Denominator`) throw `InvalidOperationException` if the storage type does not match; they never convert or return a placeholder zero. The same applies to the forwarded getters on `EvaluationResult` and `Variable`. Use `ToDouble()` for an explicit, potentially lossy scalar conversion and `ToDecimal()` for an explicit Decimal conversion. `TryGetExactFraction` extracts a known or asserted exact fraction across finite representations, including caller-marked Exact Doubles. Supplied exact inputs assert their value, not the exactness of any calculation performed before supplying them.
 
 `MathValue` and `EvaluationResult` expose the same conversion surface. Result members
 delegate to the value's implementation; extracting `.Value` does not change conversion
@@ -105,7 +105,7 @@ rules:
 
 | Target | Named conversion on either type | Explicit cast | Contract |
 | --- | --- | --- | --- |
-| Double | `ToDouble()`; `AsDouble()` is an alias | `(double)` | May lose precision, underflow to signed zero, or overflow to infinity; stored Doubles retain their bits. |
+| Double | `ToDouble()` | `(double)` | May lose precision, underflow to signed zero, or overflow to infinity; stored Doubles retain their bits. |
 | Decimal | `ToDecimal()` | `(decimal)` | Exact when representable; fractions round midpoint-to-even, Doubles use the .NET conversion. Nonfinite or out-of-range values throw `OverflowException`. |
 | BigInteger | `ToBigInteger()` | `(BigInteger)` | Requires a finite whole number; otherwise throws `InvalidCastException`, never truncates. |
 | Int32 / Int64 | Use the explicit cast | `(int)` / `(long)` | Same whole-number requirement, with `OverflowException` outside the target range. |

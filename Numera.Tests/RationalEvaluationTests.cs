@@ -261,7 +261,7 @@ public sealed class RationalEvaluationTests
             Assert.AreEqual(MathValue.DataType.Double, result.Kind, expression);
             Assert.AreEqual(CalculationExactness.Unverified, result.Exactness, expression);
             Assert.IsFalse(result.HasExactFraction, expression);
-            Assert.AreEqual(expected, result.AsDouble(), Math.Abs(expected) * 3e-15, expression);
+            Assert.AreEqual(expected, result.ToDouble(), Math.Abs(expected) * 3e-15, expression);
         }
     }
 
@@ -272,7 +272,7 @@ public sealed class RationalEvaluationTests
     {
         var result = Calculator.Evaluate(expression);
 
-        Assert.AreEqual(Math.ScaleB(1, expectedExponent), result.AsDouble());
+        Assert.AreEqual(Math.ScaleB(1, expectedExponent), result.ToDouble());
         Assert.AreEqual(MathValue.DataType.Double, result.Kind);
         Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.IsFalse(result.HasExactFraction);
@@ -286,7 +286,7 @@ public sealed class RationalEvaluationTests
         double expected = Math.Sqrt(varianceCoefficient) * 1e-200;
         var result = Calculator.Evaluate(expression);
 
-        Assert.AreEqual(expected, result.AsDouble(), expected * 3e-15);
+        Assert.AreEqual(expected, result.ToDouble(), expected * 3e-15);
         Assert.AreEqual(MathValue.DataType.Double, result.Kind);
         Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.IsFalse(result.HasExactFraction);
@@ -363,7 +363,7 @@ public sealed class RationalEvaluationTests
     {
         var result = Calculator.Evaluate(expression);
 
-        Assert.AreEqual(expected, result.AsDouble());
+        Assert.AreEqual(expected, result.ToDouble());
         Assert.AreEqual(MathValue.DataType.Double, result.Kind);
         Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.IsFalse(result.HasExactFraction);
@@ -399,12 +399,12 @@ public sealed class RationalEvaluationTests
 
         var result = Calculator.Evaluate("sqrt(x)", context);
         Assert.AreEqual(MathValue.DataType.Double, result.Kind);
-        Assert.AreEqual(0.5, result.AsDouble());
+        Assert.AreEqual(0.5, result.ToDouble());
         Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
-        Assert.AreEqual(long.MinValue, BitConverter.DoubleToInt64Bits(Calculator.Evaluate("sqrt(negativeZero)", context).AsDouble()));
-        Assert.AreEqual(double.PositiveInfinity, Calculator.Evaluate("sqrt(infinity)", context).AsDouble());
+        Assert.AreEqual(long.MinValue, BitConverter.DoubleToInt64Bits(Calculator.Evaluate("sqrt(negativeZero)", context).ToDouble()));
+        Assert.AreEqual(double.PositiveInfinity, Calculator.Evaluate("sqrt(infinity)", context).ToDouble());
         Assert.IsTrue(Calculator.Evaluate("cbrt(nan)", context).IsNaN);
-        Assert.AreEqual(double.PositiveInfinity, Calculator.Evaluate("root(0,-2)").AsDouble());
+        Assert.AreEqual(double.PositiveInfinity, Calculator.Evaluate("root(0,-2)").ToDouble());
     }
 
     [TestMethod]

@@ -140,7 +140,7 @@ public class NumericTests
         var result = Calculator.Evaluate(expression);
         Assert.AreEqual(MathValue.DataType.Decimal, result.Kind);
         Assert.AreEqual(decimal.Parse(expectedDecimal, CultureInfo.InvariantCulture), result.DecimalValue);
-        Assert.AreEqual(expectedDouble, result.AsDouble(), 2e-16);
+        Assert.AreEqual(expectedDouble, result.ToDouble(), 2e-16);
     }
 
     [TestMethod]
@@ -159,7 +159,7 @@ public class NumericTests
         var result = Calculator.Evaluate("(2^2000+1)/(2^2000-1)");
         Assert.AreEqual(MathValue.DataType.Rational, result.Kind);
         AssertExactFraction(result.Value, (BigInteger.One << 2000) + 1, (BigInteger.One << 2000) - 1);
-        Assert.AreEqual(1.0, result.AsDouble(), 2e-15);
+        Assert.AreEqual(1.0, result.ToDouble(), 2e-15);
     }
 
     [TestMethod]
@@ -818,16 +818,16 @@ public class NumericTests
 
         Assert.AreEqual(MathValue.DataType.Integer, result.Kind);
         Assert.AreEqual(CalculationExactness.Exact, result.Exactness);
-        Assert.AreEqual(expected, result.AsDouble(), 0.0);
+        Assert.AreEqual(expected, result.ToDouble(), 0.0);
     }
 
     [TestMethod]
     public void TrigonometricFunctionsSupportGradiansMode()
     {
         var gradians = TestEngines.GradiansEngine;
-        Assert.AreEqual(1.0, gradians.Evaluate("sin(100)").AsDouble(), 1e-15);
-        Assert.AreEqual(0.0, gradians.Evaluate("cos(100)").AsDouble(), 1e-15);
-        Assert.AreEqual(1.0, gradians.Evaluate("tan(50)").AsDouble(), 1e-15);
+        Assert.AreEqual(1.0, gradians.Evaluate("sin(100)").ToDouble(), 1e-15);
+        Assert.AreEqual(0.0, gradians.Evaluate("cos(100)").ToDouble(), 1e-15);
+        Assert.AreEqual(1.0, gradians.Evaluate("tan(50)").ToDouble(), 1e-15);
     }
 
     [TestMethod]
@@ -1168,7 +1168,7 @@ public class NumericTests
     [DataRow("cot", "rad(180)")]
     public void RadiansModeEvaluatesRoundedPiMultiplesWithoutSnapping(string function, string argument)
     {
-        double angle = Calculator.Evaluate(argument).AsDouble();
+        double angle = Calculator.Evaluate(argument).ToDouble();
         double expected = function switch
         {
             "sin" => Math.Sin(angle),
@@ -1229,8 +1229,8 @@ public class NumericTests
         var result = TestEngines.DegreesEngine.Evaluate(expression);
 
         Assert.AreEqual(MathValue.DataType.Integer, result.Kind);
-        Assert.AreEqual(0.0, result.AsDouble(), 0.0);
-        Assert.AreEqual(0L, BitConverter.DoubleToInt64Bits(result.AsDouble()), $"{expression} must evaluate to +0.0, not -0.0.");
+        Assert.AreEqual(0.0, result.ToDouble(), 0.0);
+        Assert.AreEqual(0L, BitConverter.DoubleToInt64Bits(result.ToDouble()), $"{expression} must evaluate to +0.0, not -0.0.");
     }
 
     [TestMethod]
@@ -1251,7 +1251,7 @@ public class NumericTests
         var result = TestEngines.GradiansEngine.Evaluate(expression);
         Assert.AreEqual(MathValue.DataType.Integer, result.Kind);
         Assert.AreEqual(CalculationExactness.Exact, result.Exactness);
-        Assert.AreEqual(expected, result.AsDouble(), 0.0);
+        Assert.AreEqual(expected, result.ToDouble(), 0.0);
     }
 
     [TestMethod]
@@ -1391,7 +1391,7 @@ public class NumericTests
         {
             var argument = MathValue.FromFraction(sign, BigInteger.Pow(10, 400));
             Assert.IsFalse(argument.IsZero);
-            Assert.AreEqual(0.0, argument.AsDouble());
+            Assert.AreEqual(0.0, argument.ToDouble());
             var context = new EvaluationContext([new Variable("x", argument)]);
             var result = engine.Evaluate($"{function}(x)", context);
 
@@ -1580,7 +1580,7 @@ public class NumericTests
         // Negative exponent preserves the exact reciprocal fraction.
         var negPow = Calculator.Evaluate("1.05^-2");
         AssertExactFraction(negPow.Value, 400, 441);
-        Assert.AreEqual(1.0 / (1.05 * 1.05), negPow.AsDouble(), 1e-15);
+        Assert.AreEqual(1.0 / (1.05 * 1.05), negPow.ToDouble(), 1e-15);
 
         // Beyond Decimal's range the exact fraction still fits calculation limits.
         var overflowPow = Calculator.Evaluate("100.5^200");
@@ -2139,23 +2139,23 @@ public class NumericTests
         // s^2 = 32 / (8 - 1) = 32 / 7.
         var varRes = Calculator.Evaluate("var(2, 4, 4, 4, 5, 5, 7, 9)");
         var expectedVar = 32.0 / 7.0;
-        Assert.AreEqual(expectedVar, varRes.AsDouble(), 1e-12);
+        Assert.AreEqual(expectedVar, varRes.ToDouble(), 1e-12);
 
         // variance alias
         var varianceRes = Calculator.Evaluate("variance(2, 4, 4, 4, 5, 5, 7, 9)");
-        Assert.AreEqual(expectedVar, varianceRes.AsDouble(), 1e-12);
+        Assert.AreEqual(expectedVar, varianceRes.ToDouble(), 1e-12);
 
         // stdev: sqrt(32/7)
         var stdevRes = Calculator.Evaluate("stdev(2, 4, 4, 4, 5, 5, 7, 9)");
-        Assert.AreEqual(Math.Sqrt(expectedVar), stdevRes.AsDouble(), 1e-12);
+        Assert.AreEqual(Math.Sqrt(expectedVar), stdevRes.ToDouble(), 1e-12);
 
         // stddev alias
         var stddevRes = Calculator.Evaluate("stddev(2, 4, 4, 4, 5, 5, 7, 9)");
-        Assert.AreEqual(Math.Sqrt(expectedVar), stddevRes.AsDouble(), 1e-12);
+        Assert.AreEqual(Math.Sqrt(expectedVar), stddevRes.ToDouble(), 1e-12);
 
         // Simple two-element case: [10, 20], mean = 15, (25 + 25) / 1 = 50, stdev = sqrt(50)
         Assert.AreEqual(new MathValue(50m), Calculator.Evaluate("var(10, 20)"));
-        Assert.AreEqual(Math.Sqrt(50.0), Calculator.Evaluate("stdev(10, 20)").AsDouble(), 1e-12);
+        Assert.AreEqual(Math.Sqrt(50.0), Calculator.Evaluate("stdev(10, 20)").ToDouble(), 1e-12);
 
         // Require at least 2 arguments
         Assert.Throws<ExpressionException>(() => Calculator.Evaluate("var(5)"));
@@ -2882,7 +2882,7 @@ public class NumericTests
         // Nonterminating and tiny reciprocals retain their exact denominator.
         var threePowNeg30 = Calculator.Evaluate("3^-30");
         AssertExactFraction(threePowNeg30.Value, 1, BigInteger.Pow(3, 30));
-        Assert.AreEqual(Math.Pow(3, -30), threePowNeg30.AsDouble(), 1e-15);
+        Assert.AreEqual(Math.Pow(3, -30), threePowNeg30.ToDouble(), 1e-15);
 
         var twoPowNeg100 = Calculator.Evaluate("2^-100");
         AssertExactFraction(twoPowNeg100.Value, 1, BigInteger.One << 100);
@@ -2945,7 +2945,7 @@ public class NumericTests
         // Denominators beyond decimal.MaxValue (e.g. 10^-300)
         var powNeg300 = Calculator.Evaluate("10^-300");
         AssertExactFraction(powNeg300.Value, 1, BigInteger.Pow(10, 300));
-        Assert.AreEqual(1e-300, powNeg300.AsDouble(), 1e-315);
+        Assert.AreEqual(1e-300, powNeg300.ToDouble(), 1e-315);
 
         // The Integer reciprocal remains Rational even at Decimal's exact boundary.
         Assert.AreEqual(MathValue.DataType.Rational, MathValue.Pow(2, -28).Kind);
@@ -3077,7 +3077,7 @@ public class NumericTests
         Assert.AreEqual(MathValue.DataType.Rational, r57.Kind);
         BigInteger d57 = BigInteger.Pow(-300, 57);
         AssertExactFraction(r57, BigInteger.One, d57);
-        var (errNum57, errDen57) = RelativeError(new MathValue(r57.AsDouble()), BigInteger.One, d57);
+        var (errNum57, errDen57) = RelativeError(new MathValue(r57.ToDouble()), BigInteger.One, d57);
         Assert.IsLessThanOrEqualTo(errDen57, errNum57 << 53, "Error must be <= 0.5 ULP");
 
         // 2. Exact tie-breaking: 1 / (2^53 + 1).
@@ -3092,13 +3092,13 @@ public class NumericTests
         var negN = new MathValue(new BigInteger(-7)) / new MathValue(new BigInteger(3));
         var negD = new MathValue(new BigInteger(7)) / new MathValue(new BigInteger(-3));
         var negBoth = new MathValue(new BigInteger(-7)) / new MathValue(new BigInteger(-3));
-        Assert.AreEqual(-pos.AsDouble(), negN.AsDouble());
-        Assert.AreEqual(-pos.AsDouble(), negD.AsDouble());
-        Assert.AreEqual(pos.AsDouble(), negBoth.AsDouble());
+        Assert.AreEqual(-pos.ToDouble(), negN.ToDouble());
+        Assert.AreEqual(-pos.ToDouble(), negD.ToDouble());
+        Assert.AreEqual(pos.ToDouble(), negBoth.ToDouble());
 
         // 4. BigInteger to double conversion test.
         var v = (BigInteger.One << 53) + 3;
-        Assert.AreEqual(Math.Pow(2, 53) + 4, new MathValue(v).AsDouble());
+        Assert.AreEqual(Math.Pow(2, 53) + 4, new MathValue(v).ToDouble());
     }
 
     [TestMethod]

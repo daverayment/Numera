@@ -214,10 +214,8 @@ public sealed class NumericConversionTests
             var result = Wrap(value);
             long bits = BitConverter.DoubleToInt64Bits(expected);
             Assert.AreEqual(bits, BitConverter.DoubleToInt64Bits(value.ToDouble()));
-            Assert.AreEqual(bits, BitConverter.DoubleToInt64Bits(value.AsDouble()));
             Assert.AreEqual(bits, BitConverter.DoubleToInt64Bits((double)value));
             Assert.AreEqual(bits, BitConverter.DoubleToInt64Bits(result.ToDouble()));
-            Assert.AreEqual(bits, BitConverter.DoubleToInt64Bits(result.AsDouble()));
             Assert.AreEqual(bits, BitConverter.DoubleToInt64Bits((double)result));
         }
     }

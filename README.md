@@ -168,7 +168,7 @@ var fraction = result.GetExactFraction(); // Throws when known/asserted exact fr
 
 Both `MathValue` and `EvaluationResult` expose `ExactFraction`, `GetExactFraction()`, and `TryGetExactFraction(...)`. Storage getters (`IntegerValue`, `DecimalValue`, `DoubleValue`, and Rational-only `Numerator`/`Denominator`) throw `InvalidOperationException` for a mismatched storage type rather than converting or returning zero. The forwarded getters on `EvaluationResult` and `Variable` follow the same rule. None of these convenience APIs infer exactness from a clean numeric display.
 
-Both types also provide `ToDecimal()`, `ToDouble()` (with `AsDouble()` as an alias),
+Both types also provide `ToDecimal()`, `ToDouble()`,
 `ToBigInteger()`, and explicit casts to `decimal`, `double`, `BigInteger`, `int`, and
 `long`. Integer conversions require a finite whole number and never truncate;
 `TryGetInteger(...)` tests that requirement without throwing. Decimal and Double
@@ -221,7 +221,7 @@ switch (result.Kind)
 }
 ```
 
-*(If you just need a standard `double` and can tolerate potential precision loss on large integers or decimals, `result.AsDouble()` provides a convenient conversion.)*
+*(If you just need a standard `double` and can tolerate potential precision loss on large integers or decimals, use `result.ToDouble()`.)*
 
 ### 3. Handling Non-Finite Numbers
 Operations that overflow 64-bit float representation (such as `exp(1000)`) produce `double.PositiveInfinity` or `double.NegativeInfinity`:

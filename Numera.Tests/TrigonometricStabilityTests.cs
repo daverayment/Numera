@@ -489,8 +489,8 @@ public sealed class TrigonometricStabilityTests
     public void FloorDoesNotCorrectAnApproximateTangentToAnExactIdentity()
     {
         var engine = CreateEngine(AngleUnit.Radians);
-        double expected = Math.Floor(Math.Tan(engine.Evaluate("pi/4").AsDouble()));
-        Assert.AreEqual(expected, engine.Evaluate("floor(tan(pi/4))").AsDouble());
+        double expected = Math.Floor(Math.Tan(engine.Evaluate("pi/4").ToDouble()));
+        Assert.AreEqual(expected, engine.Evaluate("floor(tan(pi/4))").ToDouble());
     }
 
     private static CalculatorEngine CreateEngine(AngleUnit unit) => new(

@@ -195,10 +195,10 @@ public sealed class LocalizedInputTests
         var engine = CalculatorEngine.ForCulture(CultureInfo.GetCultureInfo(culture));
 
         Assert.AreEqual(normalized, ExpressionNormalizer.Normalize(input, engine.Options.Culture));
-        Assert.AreEqual(expected, engine.Evaluate(input).AsDouble());
-        Assert.AreEqual(expected, engine.Evaluate(engine.Parse(input)).AsDouble());
+        Assert.AreEqual(expected, engine.Evaluate(input).ToDouble());
+        Assert.AreEqual(expected, engine.Evaluate(engine.Parse(input)).ToDouble());
         var rawEngine = engine.WithOptions(options => options with { Normalization = null });
-        Assert.AreEqual(expected, rawEngine.Evaluate(engine.FormatExpression(input, ExpressionFormatOptions.Ascii)).AsDouble());
+        Assert.AreEqual(expected, rawEngine.Evaluate(engine.FormatExpression(input, ExpressionFormatOptions.Ascii)).ToDouble());
     }
 
     [TestMethod]

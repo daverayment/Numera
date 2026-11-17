@@ -34,7 +34,7 @@ public sealed class CustomFunctionTests
             CustomFunctions =
             [
                 CustomFunction.Create("myHypot", (a, b) =>
-                    new MathValue(Math.Sqrt((a * a + b * b).AsDouble()))),
+                    new MathValue(Math.Sqrt((a * a + b * b).ToDouble()))),
                 CustomFunction.Create("weightedAvg", (a, b, weightA) =>
                 {
                     var weightB = new MathValue(1m) - weightA;

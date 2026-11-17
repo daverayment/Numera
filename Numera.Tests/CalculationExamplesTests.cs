@@ -123,19 +123,19 @@ public sealed class CalculationExamplesTests
     [DataRow("atanh(0)", 0.0)]
     public void GuideFloatingPointSpecialFunctionsMatchDoubleSemantics(string expression, double expected)
     {
-        Assert.AreEqual(expected, Calculator.Evaluate(expression).AsDouble(), 1e-15);
+        Assert.AreEqual(expected, Calculator.Evaluate(expression).ToDouble(), 1e-15);
     }
 
     [TestMethod]
     public void GuideSessionsAnglesAndCultureUseExplicitEngineConfiguration()
     {
         var degrees = new CalculatorEngine(new CalculatorOptions { AngleUnit = AngleUnit.Degrees });
-        Assert.AreEqual(0.5, degrees.Evaluate("sin(30)").AsDouble(), 1e-15);
-        Assert.AreEqual(0.5, degrees.Evaluate("cos(60)").AsDouble(), 1e-15);
-        Assert.AreEqual(1.0, degrees.Evaluate("tan(45)").AsDouble(), 1e-15);
-        Assert.AreEqual(90.0, degrees.Evaluate("arcsin(1)").AsDouble(), 1e-15);
+        Assert.AreEqual(0.5, degrees.Evaluate("sin(30)").ToDouble(), 1e-15);
+        Assert.AreEqual(0.5, degrees.Evaluate("cos(60)").ToDouble(), 1e-15);
+        Assert.AreEqual(1.0, degrees.Evaluate("tan(45)").ToDouble(), 1e-15);
+        Assert.AreEqual(90.0, degrees.Evaluate("arcsin(1)").ToDouble(), 1e-15);
         var gradians = new CalculatorEngine(new CalculatorOptions { AngleUnit = AngleUnit.Gradians });
-        Assert.AreEqual(1.0, gradians.Evaluate("sin(100)").AsDouble(), 1e-15);
+        Assert.AreEqual(1.0, gradians.Evaluate("sin(100)").ToDouble(), 1e-15);
         var german = CalculatorEngine.ForCulture(CultureInfo.GetCultureInfo("de-DE"));
         Assert.AreEqual("1.000,75", german.Evaluate("1.000,50 + 0,25").PrimaryDisplay);
         Assert.AreEqual("4,0", german.Evaluate("1,5 + 2,5").PrimaryDisplay);

@@ -28,7 +28,7 @@ public class LanguageTests
     [DataRow("1 || sqrt(-4)", 1)]
     public void LogicalOperatorsShortCircuitEvaluation(string input, int expected)
     {
-        Assert.AreEqual(expected, Calculator.Evaluate(input).AsDouble());
+        Assert.AreEqual(expected, Calculator.Evaluate(input).ToDouble());
     }
 
     [TestMethod]
@@ -139,7 +139,7 @@ public class LanguageTests
         var result = Calculator.Evaluate(constantName);
         Assert.AreEqual(MathValue.DataType.Decimal, result.Kind);
         Assert.AreEqual(decimal.Parse(expectedDecimal, CultureInfo.InvariantCulture), result.DecimalValue);
-        Assert.AreEqual(expectedDouble, result.AsDouble(), 1e-15);
+        Assert.AreEqual(expectedDouble, result.ToDouble(), 1e-15);
     }
 
     [TestMethod]
@@ -222,7 +222,7 @@ public class LanguageTests
         Assert.AreEqual(new BigInteger(16), Calculator.Evaluate("(-2)^4").IntegerValue);
 
         // Negative exponent in power: 2^-1 is 0.5
-        Assert.AreEqual(0.5, Calculator.Evaluate("2^-1").AsDouble(), 1e-15);
+        Assert.AreEqual(0.5, Calculator.Evaluate("2^-1").ToDouble(), 1e-15);
     }
 
     [TestMethod]
@@ -572,7 +572,7 @@ public class LanguageTests
         Assert.AreEqual(BinaryOperator.Power, expPow.Op);
         Assert.AreEqual(3, ((NumberNode)expPow.Left).Value.IntegerValue);
         Assert.AreEqual(2, ((NumberNode)expPow.Right).Value.IntegerValue);
-        Assert.AreEqual(Math.Pow(2, -9), Calculator.Evaluate("2^-3^2").AsDouble(), 1e-15);
+        Assert.AreEqual(Math.Pow(2, -9), Calculator.Evaluate("2^-3^2").ToDouble(), 1e-15);
 
         // a < b < c: conjunctive ComparisonChainNode
         var cmpChain = Calculator.Parse("1 < 2 < 3");

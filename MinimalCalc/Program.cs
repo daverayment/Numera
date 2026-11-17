@@ -69,7 +69,7 @@ var physicsEngine = CalculatorEngine.ForCurrentCulture(options =>
         [
             CustomFunction.Create("celsius", f => (f - 32m) * 5m / 9m),
             CustomFunction.Create("hypot3", (x, y, z) =>
-                new MathValue(Math.Sqrt((x * x + y * y + z * z).AsDouble()))),
+                new MathValue(Math.Sqrt((x * x + y * y + z * z).ToDouble()))),
         ]
     });
 
