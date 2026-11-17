@@ -74,6 +74,9 @@ Uses `NumberDecimalSeparator`, `NumberGroupSeparator`, `NumberGroupSizes`, and `
 
 #### Decimal and grouping rules
 
+Write large numbers as `1000` or use the grouping forms below. Underscores are for
+variable and function names, not digit grouping, so `1_000` is not accepted.
+
 - Only the configured decimal separator is accepted. German `1,25` and leading `,5` become `1.25` and `.5`; invariant-looking decimal points are not a fallback.
 - Grouping is validated across the complete integer part before any separators are removed, working right-to-left through the culture's group sizes. This includes Indian grouping (`12,34,567`) and custom group sizes ending in zero (no further separators).
 - A grouped integer cannot have leading zeroes. Thus German `1.234` means `1234`, but `0.123` is rejected rather than silently becoming `123`. Use `0,123` for that decimal value.

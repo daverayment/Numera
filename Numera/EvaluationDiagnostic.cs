@@ -67,9 +67,9 @@ public enum EvaluationError
     AmbiguousLogicalNegation,
 
     /// <summary>
-    /// Human-formatted input contains malformed or ambiguous digit grouping or decimal
-    /// separators for the configured culture. Rejected during normalization, before
-    /// evaluation.
+    /// A numeric literal uses unsupported separators, or human-formatted input contains
+    /// malformed or ambiguous grouping or decimal separators for the configured culture.
+    /// Rejected during normalization or parsing, before evaluation.
     /// </summary>
     InvalidNumberFormat,
 
@@ -117,6 +117,19 @@ public sealed record EvaluationDiagnostic(EvaluationError Code, string Message, 
     /// classified as incomplete. False does not mean that the expression is valid.
     /// </summary>
     public bool IsIncomplete { get; init; }
+
+    internal static EvaluationDiagnostic ForNumericUnderscore(string input, int position)
+    {
+        int end = position + 1;
+        while (end < input.Length && input[end] == '_')
+        {
+            end++;
+        }
+
+        return new EvaluationDiagnostic(EvaluationError.InvalidNumberFormat,
+            "Underscores can't be used as digit separators. Write 1000 instead of 1_000.",
+            position, end - position);
+    }
 
     internal static EvaluationDiagnostic ForUnresolvedIdentifier(string name, int position, int length)
     {

@@ -235,4 +235,7 @@ When evaluation fails, `EvaluationDiagnostic.Code` reports a stable, strongly ty
 - `ArgumentOutOfRange`: An argument value is outside the permitted numerical range for the operation (e.g. `round(1; 29)`).
 - `UndefinedMathResult`: A mathematical function has no defined real-valued result for the given argument (e.g. `sqrt(-1)` or `(-8)^(1/2)`).
 - `AmbiguousLogicalNegation`: A logical negation was applied directly to a comparison without explicit parentheses while `RequireExplicitLogicalNegation` is enabled.
-- `InvalidNumberFormat`: Normalization rejected malformed or ambiguous localized numbers, including invalid grouping, repeated decimal separators, non-ASCII numeric digits, or commas that could both group digits and separate arguments. Invalid/mixed argument separators use `InvalidSyntax`. Diagnostics point into the original input and occur before evaluation; see [Expression Normalization](normalization.md).
+- `InvalidNumberFormat`: A number uses unsupported separators (such as `1_000`) or
+  does not follow the [localized number-formatting rules](normalization.md).
+  An underscore diagnostic highlights the first consecutive run of underscores,
+  in both normalized and raw input. Invalid or mixed argument separators use `InvalidSyntax`.

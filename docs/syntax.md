@@ -21,6 +21,13 @@ Examples use decimal-point syntax. Human input follows the configured culture's 
   - Binary: `0b...` (e.g. `0b10101011`)
   - Octal: `0o...` (e.g. `0o755`)
 
+For large decimal numbers, write the digits together (`1000`) or use the
+[grouping forms for your culture](normalization.md#decimal-and-grouping-rules).
+Underscores are for names, not numeric separators, so `1_000` is not accepted.
+
+To multiply by an underscore-prefixed variable such as `_x`, write `2 _x` or
+`2 * _x`, not `2_x`. See [Variables and Context](variables.md) for naming rules.
+
 ---
 
 ## Constants

@@ -263,6 +263,11 @@ internal sealed class CultureInputNormalizer
         {
             int digits = index;
             ReadDigits(ref index);
+            if (RejectNumericUnderscore(index))
+            {
+                return;
+            }
+
             groups.Add(index - digits);
             var grouping = GroupAt(index);
             if (Matches(index, _decimalSeparator) || grouping is null)
@@ -365,6 +370,11 @@ internal sealed class CultureInputNormalizer
             Emit('.', index, _decimalSeparator.Length);
             index = next;
             ReadDigits(ref index);
+            if (RejectNumericUnderscore(index))
+            {
+                return;
+            }
+
             if (Matches(index, _decimalSeparator))
             {
                 Fail(index, _decimalSeparator.Length,
@@ -398,6 +408,11 @@ internal sealed class CultureInputNormalizer
             {
                 Copy(index, end);
                 index = end;
+                if (RejectNumericUnderscore(index))
+                {
+                    return;
+                }
+
                 ValidateNoGrouping(index, container);
             }
         }
@@ -470,6 +485,11 @@ internal sealed class CultureInputNormalizer
 
         index += length;
         Copy(start, index);
+        if (RejectNumericUnderscore(index))
+        {
+            return;
+        }
+
         var grouping = GroupAt(index);
         if (grouping is { } separator &&
             !(container.IsCall && separator.Separator == ArgumentSeparator(container)) &&
@@ -480,6 +500,17 @@ internal sealed class CultureInputNormalizer
                 "Digit grouping is not supported in radix literals. Remove the " +
                 "grouping separator.");
         }
+    }
+
+    private bool RejectNumericUnderscore(int index)
+    {
+        if (index < _text.Length && _text[index] == '_')
+        {
+            _diagnostic = EvaluationDiagnostic.ForNumericUnderscore(_text, index);
+            return true;
+        }
+
+        return false;
     }
 
     private (string Separator, string Family)? GroupAt(int index)

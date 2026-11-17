@@ -243,13 +243,13 @@ public sealed class LocalizedInputTests
     {
         var culture = (CultureInfo)CultureInfo.InvariantCulture.Clone();
         culture.NumberFormat.NumberDecimalSeparator = "::";
-        culture.NumberFormat.NumberGroupSeparator = "_";
+        culture.NumberFormat.NumberGroupSeparator = "~";
         var options = new NormalizationOptions { ReplaceDivisionColon = false };
-        Assert.AreEqual("1234.50", ExpressionNormalizer.Normalize("1_234::50", culture));
-        Assert.IsTrue(ExpressionNormalizer.TryNormalize("1_234::50", culture, out var text, out _, out var map, options));
+        Assert.AreEqual("1234.50", ExpressionNormalizer.Normalize("1~234::50", culture));
+        Assert.IsTrue(ExpressionNormalizer.TryNormalize("1~234::50", culture, out var text, out _, out var map, options));
         Assert.AreEqual("1234.50", text);
         Assert.AreEqual(new TextSpan(5, 2), map.MapSpan(new TextSpan(4, 1)));
-        Assert.IsFalse(ExpressionNormalizer.TryNormalize("0x10_000", culture, out _, out var diagnostic, options));
+        Assert.IsFalse(ExpressionNormalizer.TryNormalize("0x10~000", culture, out _, out var diagnostic, options));
         Assert.AreEqual(EvaluationError.InvalidNumberFormat, diagnostic!.Code);
     }
 

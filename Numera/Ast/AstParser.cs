@@ -993,6 +993,16 @@ internal sealed class AstParser
         }
     }
 
+    private void RejectNumericUnderscore()
+    {
+        if (Peek() == '_')
+        {
+            var diagnostic = EvaluationDiagnostic.ForNumericUnderscore(_input, _pos);
+            throw new ExpressionException(Diagnostic(
+                diagnostic.Code, diagnostic.Message, _pos, diagnostic.Length));
+        }
+    }
+
     private MathValue ParseNumber()
     {
         int start = _pos;
@@ -1008,6 +1018,8 @@ internal sealed class AstParser
             {
                 Consume();
             }
+
+            RejectNumericUnderscore();
 
             if (_pos == digitsStart)
             {
@@ -1112,6 +1124,8 @@ internal sealed class AstParser
                 EvaluationError.InvalidSyntax, "Expected a number.", start, Math.Max(1, _pos - start))
                 with { IsIncomplete = _pos >= _input.Length });
         }
+
+        RejectNumericUnderscore();
 
         int dot = mantissa.IndexOf('.');
         int fractionalDigits = dot < 0 ? 0 : mantissa.Length - dot - 1;
