@@ -17,8 +17,8 @@ and UTF-8 span formatting and interpolation. `EvaluationResult.ToString()` and
 
 ## Reproducible Random Evaluation
 
-Consider whether consumers need a configurable random source or seed for `rand()`
-and `randi()`, beyond deterministic testing within the library.
+Consider whether consumers need a configurable random source or seed for the
+random functions, beyond deterministic testing within the library.
 
 Before adding public configuration, define sequence ownership and lifetime: whether
 successive evaluations share a sequence, how independent sessions remain isolated,

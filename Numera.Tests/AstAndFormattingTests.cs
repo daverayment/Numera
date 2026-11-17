@@ -1173,7 +1173,7 @@ public sealed class AstAndFormattingTests
     [TestMethod]
     public void PrecedenceIsolation_ExhaustiveCartesianProduct_NeverLeaksAcrossOperatorBoundaries()
     {
-        var engine = CalculatorEngine.Default;
+        var engine = CalculatorEngine.ForCurrentCulture();
 
         // Operators eligible to be the parent or child node in: Op1(Op2(a, b), c).
         var operators = Enum.GetValues<BinaryOperator>()
@@ -1244,7 +1244,7 @@ public sealed class AstAndFormattingTests
     [TestMethod]
     public void PrecedenceIsolation_OperatorOf_MaintainsIsolation()
     {
-        var engine = CalculatorEngine.Default;
+        var engine = CalculatorEngine.ForCurrentCulture();
 
         // 1. 'Of' as child: (10% of 200) <op> 5.
         // 10% of 200 = 20.
@@ -1298,7 +1298,7 @@ public sealed class AstAndFormattingTests
     [TestMethod]
     public void RationalReduction_DeepParenthesesAndGrouping_DissolvesCompletely()
     {
-        var engine = CalculatorEngine.Default;
+        var engine = CalculatorEngine.ForCurrentCulture();
 
         // Deeply nested groupings across products and divisions:
         // ((24 * (1 / 2)) / ((1 / 3) * (2 / 1))) 

@@ -54,7 +54,7 @@ public sealed class PrematureDoubleConversionTests
     [DataRow("log1p(-1-1e-400)")]
     public void LogarithmDomainsUseOriginalInputs(string expression)
     {
-        AssertDomainError(CalculatorEngine.Default, expression);
+        AssertDomainError(CalculatorEngine.ForCurrentCulture(), expression);
     }
 
     [TestMethod]
@@ -127,7 +127,7 @@ public sealed class PrematureDoubleConversionTests
     [TestMethod]
     public void CapturedInputsKeepTheirValueAndOutputsRemainUnverified()
     {
-        var engine = CalculatorEngine.Default;
+        var engine = CalculatorEngine.ForCurrentCulture();
         var captured = engine.Evaluate("x=1+1e-30");
         var result = engine.Evaluate("ln(x)", captured.Context);
         AssertApproximation(result, 1e-30, 3e-45);

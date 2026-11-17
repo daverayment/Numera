@@ -334,6 +334,55 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         };
     }
 
+    private static MathValue EvaluateRandomInteger(IReadOnlyList<MathValue> args, bool inclusive)
+    {
+        string name = inclusive ? "randbetween" : "randi";
+        var minimum = BigInteger.Zero;
+        if (!args[^1].TryGetInteger(out var maximum) ||
+            (args.Count == 2 && !args[0].TryGetInteger(out minimum)))
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.IntegerRequired, $"{name} requires integer bounds."));
+        }
+
+        if (minimum < long.MinValue || minimum > long.MaxValue ||
+            maximum < long.MinValue || maximum > long.MaxValue)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.ArgumentOutOfRange, $"{name} bounds must be within the signed 64-bit integer range."));
+        }
+
+        bool validRange = inclusive ? minimum <= maximum : minimum < maximum;
+        if (!validRange)
+        {
+            string requirement = inclusive ? "minInclusive <= maxInclusive" : "minInclusive < maxExclusive";
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.ArgumentOutOfRange, $"{name} requires {requirement}."));
+        }
+
+        long lower = (long)minimum;
+        long upper = (long)maximum;
+        if (!inclusive)
+        {
+            return new MathValue((BigInteger)Random.Shared.NextInt64(lower, upper));
+        }
+
+        if (upper < long.MaxValue)
+        {
+            return new MathValue((BigInteger)Random.Shared.NextInt64(lower, upper + 1));
+        }
+
+        if (lower > long.MinValue)
+        {
+            return new MathValue((BigInteger)Random.Shared.NextInt64(lower - 1, upper) + 1);
+        }
+
+        // The full signed range has 2^64 outcomes, one for each possible byte pattern.
+        Span<byte> bytes = stackalloc byte[sizeof(long)];
+        Random.Shared.NextBytes(bytes);
+        return new MathValue(new BigInteger(bytes));
+    }
+
     private MathValue EvaluateFunction(ReadOnlySpan<char> name, List<MathValue> args)
     {
         Span<char> lower = stackalloc char[name.Length];
@@ -383,6 +432,11 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         if (lower is "mul")
         {
             return EvaluateMul(args);
+        }
+
+        if (lower is "randi" or "randbetween")
+        {
+            return EvaluateRandomInteger(args, inclusive: lower is "randbetween");
         }
 
         if (args.Count == 0)
@@ -569,21 +623,6 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                     }
 
                     return ToIntegralMathValue(Math.Round(v, MidpointRounding.AwayFromZero));
-
-                case "randi":
-                    if (!args[0].TryGetInteger(out var randomUpperBound))
-                    {
-                        throw new ExpressionException(new EvaluationDiagnostic(
-                            EvaluationError.IntegerRequired, "randi requires an integer bound."));
-                    }
-
-                    if (randomUpperBound <= 0 || randomUpperBound > long.MaxValue)
-                    {
-                        throw new ExpressionException(new EvaluationDiagnostic(
-                            EvaluationError.ArgumentOutOfRange, "randi bound must be a positive integer within valid limits."));
-                    }
-
-                    return new MathValue((BigInteger)Random.Shared.NextInt64((long)randomUpperBound));
 
                 case "arcsin":
                 case "asin":

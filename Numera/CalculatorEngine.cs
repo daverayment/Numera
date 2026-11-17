@@ -28,12 +28,6 @@ namespace Numera;
 public sealed class CalculatorEngine
 {
     /// <summary>
-    /// Creates a default engine capturing the current culture. Keep the returned engine
-    /// to reuse that culture and configuration across calls.
-    /// </summary>
-    public static CalculatorEngine Default => new();
-
-    /// <summary>
     /// Creates a new engine configured for the specified culture, with optional
     /// customizations.
     /// </summary>
@@ -141,7 +135,7 @@ public sealed class CalculatorEngine
     /// Creates a default engine capturing the current culture, with radians and standard
     /// human-input normalization enabled.
     /// </summary>
-    public CalculatorEngine() : this(CalculatorOptions.Default)
+    public CalculatorEngine() : this(CalculatorOptions.ForCurrentCulture())
     {
     }
 
@@ -167,7 +161,7 @@ public sealed class CalculatorEngine
     /// </code>
     /// </remarks>
     public CalculatorEngine(Func<CalculatorOptions, CalculatorOptions> configure) :
-        this(ConfigureOptions(CalculatorOptions.Default, configure))
+        this(ConfigureOptions(CalculatorOptions.ForCurrentCulture(), configure))
     {
     }
 

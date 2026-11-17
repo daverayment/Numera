@@ -14,7 +14,7 @@ public class AstFuzzing
     [TestMethod]
     public void RationalReduction_GenerativeFuzzer_PreservesExactIntegerTruth()
     {
-        var engine = CalculatorEngine.Default;
+        var engine = CalculatorEngine.ForCurrentCulture();
         var rng = new Random(7331);
 
         for (int run = 0; run < 150; run++)
@@ -116,7 +116,7 @@ public class AstFuzzing
     [TestMethod]
     public void ContextChaining_MultiRoundFuzzer_NeverCrashesOrCorrupts()
     {
-        var engine = CalculatorEngine.Default;
+        var engine = CalculatorEngine.ForCurrentCulture();
         var rng = new Random(999);
 
         for (int session = 0; session < 20; session++)

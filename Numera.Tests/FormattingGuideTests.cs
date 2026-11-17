@@ -226,7 +226,7 @@ public sealed class FormattingGuideTests
         const string expected = "x = (ans + 1) / 0";
 
         Assert.AreEqual(expected, Calculator.FormatExpression(input, ExpressionFormatOptions.Ascii, context));
-        Assert.AreEqual(expected, CalculatorEngine.Default.FormatExpression(input, ExpressionFormatOptions.Ascii, context));
+        Assert.AreEqual(expected, CalculatorEngine.ForCurrentCulture().FormatExpression(input, ExpressionFormatOptions.Ascii, context));
         Assert.AreSame(variables, context.Variables);
         Assert.AreEqual(new MathValue(7), context.Variables["x"].Value);
         Assert.AreEqual(new MathValue(11), context.PreviousResult);
@@ -382,8 +382,8 @@ public sealed class FormattingGuideTests
                 Assert.IsFalse(formatted.IsDisplayRounded);
                 Assert.AreSame(result.AssignedVariables, formatted.AssignedVariables);
                 Assert.IsNull(raw.AssignedVariables);
-                Assert.AreEqual(CalculatorEngine.Default.FormatResult(result), formatted);
-                Assert.AreEqual(CalculatorEngine.Default.FormatResult(result.Value), raw);
+                Assert.AreEqual(CalculatorEngine.ForCurrentCulture().FormatResult(result), formatted);
+                Assert.AreEqual(CalculatorEngine.ForCurrentCulture().FormatResult(result.Value), raw);
                 Assert.AreEqual(formatted, Calculator.FormatResult(result, null, null));
                 Assert.AreEqual(raw, Calculator.FormatResult(result.Value, null, null));
             }
@@ -433,8 +433,8 @@ public sealed class FormattingGuideTests
                 Assert.AreEqual(formatted.FractionRepresentation, raw.FractionRepresentation);
                 Assert.AreSame(result.AssignedVariables, formatted.AssignedVariables);
                 Assert.IsNull(raw.AssignedVariables);
-                Assert.AreEqual(CalculatorEngine.Default.FormatResult(result, options, culture), formatted);
-                Assert.AreEqual(CalculatorEngine.Default.FormatResult(result.Value, options, culture), raw);
+                Assert.AreEqual(CalculatorEngine.ForCurrentCulture().FormatResult(result, options, culture), formatted);
+                Assert.AreEqual(CalculatorEngine.ForCurrentCulture().FormatResult(result.Value, options, culture), raw);
                 Assert.AreEqual(result.Value.Serialize(), formatted.Value.Serialize());
                 Assert.AreEqual(result.Value.Serialize(), raw.Value.Serialize());
             }

@@ -72,7 +72,7 @@ public enum FunctionCategory
     Inspection,
 
     /// <summary>
-    /// Pseudo-random number generation (rand, randi).
+    /// Pseudo-random number generation (rand, randi, randbetween).
     /// </summary>
     Random,
 

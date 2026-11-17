@@ -207,7 +207,7 @@ public sealed class IntegrationAndArchitectureTests
     [TestMethod]
     public void CalculatorEngine_WithOptions_DerivesNewEngineWithoutMutatingOriginal()
     {
-        var originalEngine = CalculatorEngine.Default;
+        var originalEngine = CalculatorEngine.ForCurrentCulture();
         Assert.AreEqual(AngleUnit.Radians, originalEngine.Options.AngleUnit);
 
         // Derive degrees engine and confirm original unchanged.

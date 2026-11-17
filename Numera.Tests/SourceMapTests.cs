@@ -252,7 +252,7 @@ public sealed class SourceMapTests
         // Original has leading and trailing '=', Swiss apostrophe grouping, '×',
         // and '**'.
         string original = "= 1'000 × 2 ** 3 =";
-        var engine = new CalculatorEngine(CalculatorOptions.Default);
+        var engine = new CalculatorEngine(CalculatorOptions.ForCurrentCulture());
 
         Assert.IsTrue(engine.TryParse(original, out var node, out _));
 

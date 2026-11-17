@@ -211,7 +211,7 @@ public sealed class ResultCompositionTests
         }
 
         var combined = withoutOptions + Result(new MathValue(3));
-        Assert.AreEqual(CalculatorOptions.Default, combined.Options);
+        Assert.AreEqual(CalculatorOptions.ForCurrentCulture(), combined.Options);
         Assert.AreEqual(new MathValue(5), combined.Value);
         Assert.ThrowsExactly<CalculationLimitException>(() => _ = withOptions + Result(new MathValue(256)));
         Assert.ThrowsExactly<CalculationLimitException>(() => _ = Result(new MathValue(256)) + withOptions);

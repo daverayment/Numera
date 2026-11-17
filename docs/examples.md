@@ -288,8 +288,10 @@ Short-circuiting skips unnecessary **evaluation**, not syntax validation.
 
 ## Random values and application-defined functions
 
+- `randbetween(1, 6)` draws an exact integer from `1` through `6`, like a die.
+- `randi(1, 7)` draws from the same range, excluding the upper bound. `randi(6)`
+  draws from `0` through `5`.
 - `rand()` draws a floating-point number in `[0,1)`; its exactness is Unverified.
-- `randi(6) + 1` draws an exact integer from `1` through `6`.
 - In a session, `r = rand()` captures one draw. `r - r` gives `0` without drawing
   again, but remains Unverified because it used an Unverified input.
 - Two explicitly written `rand()` calls execute twice. Reusing a completed result

@@ -1040,10 +1040,20 @@ internal static class FunctionCatalog
                 Name: "randi",
                 CanonicalName: "randi",
                 Category: FunctionCategory.Random,
-                Signature: Sig1("maxExclusive"),
-                Description: "Returns a pseudo-random integer in the range [0, maxExclusive).",
+                Signature: new FunctionSignature(1, 2,
+                    [new ParameterInfo("minInclusive", IsOptional: true), new ParameterInfo("maxExclusive")]),
+                Description: "Returns a pseudo-random integer from minInclusive (default 0) up to, but not including, maxExclusive. Bounds must be signed 64-bit integers.",
                 Aliases: [],
-                Keywords: ["random integer", "dice", "rng"]),
+                Keywords: ["random integer", "exclusive", "rng"]),
+
+            new FunctionInfo(
+                Name: "randbetween",
+                CanonicalName: "randbetween",
+                Category: FunctionCategory.Random,
+                Signature: Sig2("minInclusive", "maxInclusive"),
+                Description: "Returns a pseudo-random integer between minInclusive and maxInclusive, including both endpoints. Bounds must be signed 64-bit integers.",
+                Aliases: [],
+                Keywords: ["random integer", "dice", "inclusive", "rng"]),
         ];
     }
 }

@@ -10,12 +10,6 @@ namespace Numera;
 /// </summary>
 public sealed record CalculatorOptions
 {
-    /// <summary>
-    /// Creates default options capturing the current culture, with radians and standard
-    /// human-input normalization enabled. Each access returns a new immutable instance.
-    /// </summary>
-    public static CalculatorOptions Default => new();
-
     // Culture and Environment.
 
     /// <summary>
@@ -163,14 +157,13 @@ public sealed record CalculatorOptions
     /// afterwards.
     /// </summary>
     /// <param name="culture">The culture used to read input and format results.</param>
-    /// <returns>Options identical to <see cref="Default"/> except for
-    /// <see cref="Culture"/>.</returns>
+    /// <returns>New options using the specified culture and default settings.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="culture"/> is
     /// null.</exception>
     public static CalculatorOptions ForCulture(CultureInfo culture)
     {
         ArgumentNullException.ThrowIfNull(culture);
-        return Default with { Culture = culture };
+        return new CalculatorOptions { Culture = culture };
     }
 
     /// <summary>
@@ -179,8 +172,7 @@ public sealed record CalculatorOptions
     /// build new options (and a new <see cref="CalculatorEngine"/>) rather than expecting
     /// existing ones to follow.
     /// </summary>
-    /// <returns>Options identical to <see cref="Default"/> except for
-    /// <see cref="Culture"/>.</returns>
+    /// <returns>New options using current culture and default settings.</returns>
     public static CalculatorOptions ForCurrentCulture() =>
         ForCulture(CultureInfo.CurrentCulture);
 }

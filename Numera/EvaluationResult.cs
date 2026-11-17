@@ -25,7 +25,8 @@ namespace Numera;
 /// definition text, and equal expressions ignoring source spans. The left entry is
 /// retained; names present on only one side are included unchanged. Options equality
 /// includes custom-function collection identity. Missing options adopt the other
-/// result's options, or <see cref="CalculatorOptions.Default"/> if both are missing.
+/// result's options, or new defaults from <see cref="CalculatorOptions.ForCurrentCulture"/>
+/// if both are missing.
 /// An operation with only one result keeps that result's variables and uses its
 /// options or the defaults. Conflicts and default-initialized operands throw
 /// <see cref="InvalidOperationException"/> before arithmetic.
@@ -620,7 +621,7 @@ public readonly record struct EvaluationResult :
     public static EvaluationResult operator -(EvaluationResult operand)
     {
         var node = new UnaryNode(UnaryOperator.Negate, operand.GetExpressionNode());
-        var options = operand.Options ?? CalculatorOptions.Default;
+        var options = operand.Options ?? CalculatorOptions.ForCurrentCulture();
         AstValidator.Validate(node, options, allowUnknownFunctions: true, validateNodeInvariants: false);
         operand.Value.ValidateLimits(options.MaxIntegerBits);
         var val = -operand.Value;
@@ -641,7 +642,7 @@ public readonly record struct EvaluationResult :
     public static EvaluationResult operator +(EvaluationResult operand)
     {
         var node = new UnaryNode(UnaryOperator.Positive, operand.GetExpressionNode());
-        var options = operand.Options ?? CalculatorOptions.Default;
+        var options = operand.Options ?? CalculatorOptions.ForCurrentCulture();
         AstValidator.Validate(node, options, allowUnknownFunctions: true, validateNodeInvariants: false);
         operand.Value.ValidateLimits(options.MaxIntegerBits);
         var val = operand.Value;
@@ -1119,7 +1120,7 @@ public readonly record struct EvaluationResult :
     {
         if (left is null)
         {
-            return right ?? CalculatorOptions.Default;
+            return right ?? CalculatorOptions.ForCurrentCulture();
         }
 
         if (right is null || left == right)
@@ -1199,7 +1200,7 @@ public readonly record struct EvaluationResult :
         var leftNode = left.GetExpressionNode();
         var rightNode = new NumberNode(right);
         var node = new BinaryNode(op, leftNode, rightNode);
-        var options = left.Options ?? CalculatorOptions.Default;
+        var options = left.Options ?? CalculatorOptions.ForCurrentCulture();
         AstValidator.Validate(node, options, allowUnknownFunctions: true, validateNodeInvariants: false);
 
         var resultValue = CalculateBinaryValue(left.Value, right, node, options);
@@ -1213,7 +1214,7 @@ public readonly record struct EvaluationResult :
         var leftNode = new NumberNode(left);
         var rightNode = right.GetExpressionNode();
         var node = new BinaryNode(op, leftNode, rightNode);
-        var options = right.Options ?? CalculatorOptions.Default;
+        var options = right.Options ?? CalculatorOptions.ForCurrentCulture();
         AstValidator.Validate(node, options, allowUnknownFunctions: true, validateNodeInvariants: false);
 
         var resultValue = CalculateBinaryValue(left, right.Value, node, options);

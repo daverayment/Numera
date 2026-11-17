@@ -149,8 +149,8 @@ var options = CalculatorOptions.ForCurrentCulture() with
 var engine = new CalculatorEngine(options);
 ```
 
-- `new CalculatorOptions()` and each access to `CalculatorOptions.Default` capture current culture with all passes enabled.
-- `new CalculatorEngine()` and each access to `CalculatorEngine.Default` create an engine capturing current culture. `ForCurrentCulture()` also captures at call time. Existing options and engines do not follow later culture changes.
+- `new CalculatorOptions()` and `CalculatorOptions.ForCurrentCulture()` capture current culture with all passes enabled.
+- `new CalculatorEngine()` and `CalculatorEngine.ForCurrentCulture()` create an engine capturing current culture. Existing options and engines do not follow later culture changes.
 - `Calculator` resolves current culture per call; its results retain the culture used for evaluation.
 - For machine-authored expressions, including `MachineReadable` output, use raw invariant parsing as shown below. Merely choosing invariant culture still enables human-input grouping validation and comma-ambiguity checks.
 - An engine is bound to one culture. Applications serving users with different cultures should keep one engine per culture.

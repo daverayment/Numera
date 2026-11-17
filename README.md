@@ -103,7 +103,7 @@ for examples and the distinction from history-entry identity or persistence.
 
 ### Culture and Formatting Policy
 
-`Calculator` uses `CultureInfo.CurrentCulture` at each call. `new CalculatorEngine()` and `new CalculatorOptions()` capture the current culture when created; `CalculatorEngine.Default` and `CalculatorOptions.Default` also return fresh instances capturing the culture at access time. Reuse an engine to keep its culture and configuration stable.
+`Calculator` uses `CultureInfo.CurrentCulture` at each call. Parameterless constructors and the `CalculatorEngine.ForCurrentCulture()` and `CalculatorOptions.ForCurrentCulture()` factories capture the current culture when creating an instance. Reuse an engine to keep its culture and configuration stable.
 
 Use record `with` expressions to derive reusable options, or fluent `engine.WithCulture(...)`, `WithAngleUnit(...)`, and `WithOptions(...)` to create a differently configured engine without changing the original. `WithOptions(transform)` starts from existing settings; `WithOptions(options)` replaces the whole configuration. Required nulls and null transform results are rejected, not replaced with defaults. See [immutable configuration](docs/architecture.md#immutable-configuration) for examples and the intentionally optional null settings.
 

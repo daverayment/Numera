@@ -54,10 +54,10 @@ public sealed class CalculatorOptionsTests
         try
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
-            var defaults = CalculatorOptions.Default;
+            var defaults = CalculatorOptions.ForCurrentCulture();
             var options = new CalculatorOptions();
             var engine = new CalculatorEngine();
-            var defaultEngine = CalculatorEngine.Default;
+            var defaultEngine = CalculatorEngine.ForCurrentCulture();
             var configuredEngine = new CalculatorEngine(settings => settings with { AngleUnit = AngleUnit.Degrees });
 
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
@@ -70,8 +70,8 @@ public sealed class CalculatorOptionsTests
             Assert.AreEqual(AngleUnit.Degrees, configuredEngine.Options.AngleUnit);
             Assert.IsNotNull(defaults.Normalization);
             Assert.AreEqual(AngleUnit.Radians, defaults.AngleUnit);
-            Assert.AreEqual("en-US", CalculatorOptions.Default.Culture.Name);
-            Assert.AreEqual("en-US", CalculatorEngine.Default.Options.Culture.Name);
+            Assert.AreEqual("en-US", CalculatorOptions.ForCurrentCulture().Culture.Name);
+            Assert.AreEqual("en-US", CalculatorEngine.ForCurrentCulture().Options.Culture.Name);
         }
         finally
         {

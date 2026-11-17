@@ -332,12 +332,12 @@ public class CalculatorEngineTests
     }
 
     [TestMethod]
-    public void PublicDefaultFactoriesContinueToCreateFreshInstances()
+    public void CurrentCultureFactoriesCreateFreshInstances()
     {
-        var first = CalculatorEngine.Default;
-        var second = CalculatorEngine.Default;
-        var firstOptions = CalculatorOptions.Default;
-        var secondOptions = CalculatorOptions.Default;
+        var first = CalculatorEngine.ForCurrentCulture();
+        var second = CalculatorEngine.ForCurrentCulture();
+        var firstOptions = CalculatorOptions.ForCurrentCulture();
+        var secondOptions = CalculatorOptions.ForCurrentCulture();
 
         Assert.AreNotSame(first, second);
         Assert.AreNotSame(first.Options, second.Options);
@@ -422,7 +422,7 @@ public class CalculatorEngineTests
                 ("FormatResult result", () => Calculator.FormatResult(result), () => engine.FormatResult(result)),
                 ("FormatResult value", () => Calculator.FormatResult(result.Value), () => engine.FormatResult(result.Value))
             ];
-            Action fresh = () => CalculatorEngine.Default.TryEvaluate("2+3", out _, out _);
+            Action fresh = () => CalculatorEngine.ForCurrentCulture().TryEvaluate("2+3", out _, out _);
 
             for (int i = 0; i < 64; i++)
             {

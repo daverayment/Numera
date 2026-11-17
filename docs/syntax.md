@@ -328,7 +328,18 @@ Beta arguments produce NaN. NaN arguments propagate.
 
 ### Pseudo-Random Functions
 
+For a six-sided die, use `randbetween(1, 6)`: both endpoints are included.
+The `randi` forms exclude the upper endpoint, so `randi(1, 7)` gives the same
+range, while `randi(6)` draws from `0` through `5`.
+
 | Function | Description |
 | :--- | :--- |
+| `randbetween(min, max)` | Draws an integer from `min` through `max`, including both; requires `min <= max` |
 | `rand()` | Returns a pseudo-random floating-point value in the half-open interval $[0.0, 1.0)$ |
 | `randi(n)` | Returns an integer pseudo-random value in the half-open range $[0, n)$ (requires integer $n > 0$) |
+| `randi(min, max)` | Draws an integer from `min` up to, but not including, `max`; requires `min < max` |
+
+Integer bounds must fit the signed 64-bit range, from `-9223372036854775808`
+through `9223372036854775807`. Negative bounds are allowed. The integer draws are
+Exact; `rand()` returns an Unverified Double. These functions are not suitable for
+cryptographic secrets.
