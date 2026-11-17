@@ -66,6 +66,10 @@ the default display text.
 | `1/3 + 0.5` | `5/6` | Decimal input does not force a rounding boundary |
 | `(2^53 + 1) - 2^53` | `1` | Large consecutive integers remain distinct |
 | `(10^20 + 0.125) - 10^20` | `0.125` | A small amount survives addition to a large one |
+| `8^(1/3)` | `2` | A perfect root expressed as a fractional power |
+| `(-8)^(2/3)` | `4` | An odd root of a negative base, then an integer power |
+| `(-8)^(-1/3)` | `-1/2` | A negative fractional exponent takes the reciprocal |
+| `(16/81)^(3/4)` | `8/27` | Perfect fraction roots remain exact |
 
 Integers, finite decimal literals, and fractions participate in exact arithmetic,
 subject to resource limits. Ordinary Double values supplied by an application,
@@ -75,6 +79,12 @@ Storage follows the calculation's domain: `1/2` and `1/3` are both Rational,
 while `0.5` is Decimal. Exact Decimal arithmetic remains Decimal even when
 `0.5 + 0.5` produces a whole number. This does not change the numeric/fraction
 views above; applications can use `ExactFraction` without inspecting storage.
+
+For fractional powers, write the intended fraction explicitly: `1/3` means a
+third, while a finite decimal resembling it does not. Negative bases require
+an odd reduced denominator; `(-8)^(1/2)` has no real result. A root that is not
+rational, such as `(-2)^(1/3)`, gives an Unverified approximation. See
+[rational powers](syntax.md#rational-powers) for decimal exponents and input types.
 
 ## Percentages, tax, discounts, and pasted input
 

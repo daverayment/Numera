@@ -396,12 +396,12 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         {
             if (lower is "sqrt")
             {
-                return EvaluateRoot(args[0], new MathValue(2));
+                return MathValue.Root(args[0], new MathValue(2));
             }
 
             if (lower is "cbrt")
             {
-                return EvaluateRoot(args[0], new MathValue(3));
+                return MathValue.Root(args[0], new MathValue(3));
             }
 
             if (MathValue.TryToRational(args[0], out var numerator, out var denominator))
@@ -826,7 +826,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                     return EvaluateRound(args[0], args[1]);
 
                 case "root" or "nthroot":
-                    return EvaluateRoot(args[0], args[1]);
+                    return MathValue.Root(args[0], args[1]);
 
                 case "shl":
                     return MathValue.ShiftLeft(args[0], args[1]);
@@ -1039,7 +1039,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
     private MathValue EvaluateStDev(List<MathValue> args)
     {
         var variance = EvaluateVariance(args);
-        return EvaluateRoot(variance, new MathValue(2));
+        return MathValue.Root(variance, new MathValue(2));
     }
 
     private MathValue EvaluateSum(List<MathValue> args)
@@ -1139,7 +1139,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
     {
         if (MathValue.TryToRational(value, out var numerator, out var denominator))
         {
-            var (Value, Exponent) = LogFractionParts(numerator, denominator);
+            var (Value, Exponent) = MathValue.LogFractionParts(numerator, denominator);
             double projected = value.AsDouble();
 
             // Away from one, a normal Double retains enough input precision for the
@@ -1176,60 +1176,16 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
 
     private static (double Value, int Exponent) LogarithmParts(MathValue value) =>
         MathValue.TryToRational(value, out var numerator, out var denominator) ?
-            LogFractionParts(numerator, denominator) : (EvaluateLogarithm(value), 0);
+            MathValue.LogFractionParts(numerator, denominator) : (EvaluateLogarithm(value), 0);
 
     private static double LogFraction(BigInteger numerator, BigInteger denominator)
     {
-        var (Value, Exponent) = LogFractionParts(numerator, denominator);
+        var (Value, Exponent) = MathValue.LogFractionParts(numerator, denominator);
         return Math.ScaleB(Value, Exponent);
-    }
-
-    // Returns ln(numerator/denominator) approximately as Value * 2^Exponent.
-    // The exponent belongs to the logarithm's result, not to its original input.
-    private static (double Value, int Exponent) LogFractionParts(BigInteger numerator, BigInteger denominator)
-    {
-        if (numerator.Sign <= 0)
-        {
-            throw LogarithmDomainException();
-        }
-
-        // n/d = 1 + (n-d)/d. Subtract before conversion so a small difference from
-        // one survives; |n-d|*2 <= d means the offset lies between -0.5 and 0.5.
-        var difference = numerator - denominator;
-        if (BigInteger.Abs(difference) * 2 <= denominator)
-        {
-            int differenceExponent = (int)(BigInteger.Abs(difference).GetBitLength() - denominator.GetBitLength());
-            // Below 2^-54, log(1+x)/x differs from one by less than double precision.
-            // Keep the exponent separate so logn can divide even underflow-sized logs.
-            if (!difference.IsZero && differenceExponent < -54)
-            {
-                return (ScaleFractionAsDouble(difference, denominator, differenceExponent), differenceExponent);
-            }
-
-            return (SpecialFunctions.Log1p(MathValue.DivideIntegersAsDouble(difference, denominator)), 0);
-        }
-
-        double projected = MathValue.DivideIntegersAsDouble(numerator, denominator);
-        if (double.IsNormal(projected))
-        {
-            return (Math.Log(projected), 0);
-        }
-
-        int exponent = (int)(numerator.GetBitLength() - denominator.GetBitLength());
-        double mantissa = ScaleFractionAsDouble(numerator, denominator, exponent);
-        // n/d = mantissa * 2^exponent, hence ln(n/d) = ln(mantissa) + exponent*ln(2).
-        return (Math.Log(mantissa) + exponent * Math.Log(2), 0);
     }
 
     private static ExpressionException LogarithmDomainException() => new(new EvaluationDiagnostic(
         EvaluationError.UndefinedMathResult, "Logarithm is undefined for non-positive values."));
-
-    // Computes (numerator/denominator) * 2^-exponent, shifting exact integers before
-    // conversion so the unscaled fraction need not fit in Double's range.
-    private static double ScaleFractionAsDouble(BigInteger numerator, BigInteger denominator, int exponent) =>
-        exponent >= 0 ?
-            MathValue.DivideIntegersAsDouble(numerator, denominator << exponent) :
-            MathValue.DivideIntegersAsDouble(numerator << -exponent, denominator);
 
     private static double EvaluateHypot(MathValue left, MathValue right)
     {
@@ -1253,74 +1209,8 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
         int exponent = (int)Math.Max(leftNumerator.GetBitLength() - leftDenominator.GetBitLength(),
             rightNumerator.GetBitLength() - rightDenominator.GetBitLength());
         return Math.ScaleB(double.Hypot(
-            ScaleFractionAsDouble(leftNumerator, leftDenominator, exponent),
-            ScaleFractionAsDouble(rightNumerator, rightDenominator, exponent)), exponent);
-    }
-
-    private MathValue EvaluateRoot(MathValue value, MathValue degree)
-    {
-        if (degree.IsZero)
-        {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.UndefinedMathResult, "Root degree cannot be zero."));
-        }
-
-        bool hasFraction = MathValue.TryToRational(value, out var numerator, out var denominator);
-        bool isNegative = hasFraction ? numerator.Sign < 0 : value.DoubleValue < 0;
-        bool hasIntegerDegree = degree.TryGetInteger(out var integerDegree);
-
-        if (isNegative && (!hasIntegerDegree || integerDegree.IsEven))
-        {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.UndefinedMathResult, "A negative number requires an odd integer root degree."));
-        }
-
-        if (hasFraction && hasIntegerDegree && integerDegree > 0 && integerDegree <= int.MaxValue)
-        {
-            int exactDegree = (int)integerDegree;
-            if (numerator.TryGetExactRoot(exactDegree, out var numeratorRoot) &&
-                denominator.TryGetExactRoot(exactDegree, out var denominatorRoot))
-            {
-                return ExactFunctionFraction(numeratorRoot, denominatorRoot, value);
-            }
-        }
-
-        double projectedValue = value.AsDouble();
-        double magnitude = isNegative ? -projectedValue : projectedValue;
-        double root = hasFraction && !numerator.IsZero && !double.IsNormal(magnitude) ?
-            ApproximateFractionRoot(BigInteger.Abs(numerator), denominator, degree) :
-            ApproximateRoot(magnitude, degree.AsDouble());
-
-        return new MathValue(isNegative ? -root : root);
-    }
-
-    private static double ApproximateRoot(double value, double degree) => degree switch
-    {
-        2 => Math.Sqrt(value),
-        3 => Math.Cbrt(value),
-        _ => Math.Pow(value, 1.0 / degree)
-    };
-
-    private static double ApproximateFractionRoot(BigInteger numerator, BigInteger denominator, MathValue degree)
-    {
-        // Keep the magnitude in a separate exponent before converting the fraction to Double.
-        int exponent = (int)(numerator.GetBitLength() - denominator.GetBitLength());
-        double mantissa = ScaleFractionAsDouble(numerator, denominator, exponent);
-        double approximateDegree = degree.AsDouble();
-
-        if (degree.TryGetInteger(out var integerDegree) && integerDegree >= int.MinValue && integerDegree <= int.MaxValue)
-        {
-            // Split the exponent so underflow or overflow occurs only at the final root's scale.
-            int divisor = (int)integerDegree;
-            int rootExponent = exponent / divisor;
-            int remainder = exponent % divisor;
-            double mantissaRoot = ApproximateRoot(mantissa, approximateDegree);
-            double fractionalScale = Math.Pow(2, (double)remainder / divisor);
-            return Math.ScaleB(mantissaRoot * fractionalScale, rootExponent);
-        }
-
-        double logarithm = exponent + Math.Log2(mantissa);
-        return Math.Pow(2, logarithm / approximateDegree);
+            MathValue.ScaleFractionAsDouble(leftNumerator, leftDenominator, exponent),
+            MathValue.ScaleFractionAsDouble(rightNumerator, rightDenominator, exponent)), exponent);
     }
 
     private MathValue RoundFraction(BigInteger numerator, BigInteger denominator, int places, MathValue input)

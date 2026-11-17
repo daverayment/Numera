@@ -1205,15 +1205,16 @@ public readonly partial struct MathValue :
     }
 
     /// <summary>
-    /// Raises a value to a power. Integer exponents of non-Double values are exact;
-    /// otherwise the result is a Double with Unverified exactness.
+    /// Raises a value to a power. Non-Double operands retain rational results when
+    /// recognized exactly, inheriting their operands' exactness. Irrational results
+    /// and operations involving Double values return Unverified Doubles.
     /// </summary>
     /// <exception cref="DivideByZeroException">Zero is raised to a negative power.
     /// </exception>
-    /// <exception cref="CalculationLimitException">The exponent is larger than
+    /// <exception cref="CalculationLimitException">An integer exponent is larger than
     /// <paramref name="maxExponentMagnitude"/>, or the result is too large.</exception>
-    /// <exception cref="ExpressionException">A negative base is raised to a fractional
-    /// exponent.</exception>
+    /// <exception cref="ExpressionException">A finite negative base is raised to a
+    /// finite noninteger exponent without an odd rational denominator.</exception>
     public static MathValue Pow(
         MathValue baseVal, MathValue expVal, int maxExponentMagnitude = CalculationLimits.MaxExponentMagnitude)
     {
@@ -1235,22 +1236,10 @@ public readonly partial struct MathValue :
         if (integral && baseVal.Kind != DataType.Double && expVal.Kind != DataType.Double)
         {
             TryToRational(baseVal, out var numerator, out var denominator);
-            if (exponent.Sign < 0)
-            {
-                (numerator, denominator) = (denominator, numerator);
-            }
-
             int absoluteExponent = (int)BigInteger.Abs(exponent);
             bool decimalDomain = baseVal.Kind != DataType.Rational
                 && (baseVal.Kind == DataType.Decimal || expVal.Kind == DataType.Decimal);
-
-            CheckPower(numerator, absoluteExponent, CalculationLimits.MaxIntegerBits);
-            CheckPower(denominator, absoluteExponent, CalculationLimits.MaxIntegerBits);
-
-            var result = FromExactFraction(
-                BoundedPower(numerator, absoluteExponent),
-                BoundedPower(denominator, absoluteExponent),
-                decimalDomain);
+            var result = ExactFractionPower(numerator, denominator, exponent, decimalDomain);
             long scale = exponent.Sign > 0 ? (long)baseVal.DecimalDisplayScale * absoluteExponent : 0;
 
             return result
@@ -1258,11 +1247,38 @@ public readonly partial struct MathValue :
                 .WithDecimalDisplayScale(Math.Max(result.DecimalDisplayScale, scale));
         }
 
+        if (!integral && baseVal.IsFinite && TryToRational(expVal, out var powerNumerator, out var powerDenominator))
+        {
+            if (baseVal.IsNegative && powerDenominator.IsEven)
+            {
+                throw FractionalPowerDomainException();
+            }
+
+            bool negativeResult = baseVal.IsNegative && !powerNumerator.IsEven;
+            double magnitude;
+            if (TryToRational(baseVal, out var numerator, out var denominator))
+            {
+                if (TryFractionRoot(numerator, denominator, powerDenominator, out var numeratorRoot, out var denominatorRoot))
+                {
+                    bool decimalDomain = baseVal.Kind != DataType.Rational && expVal.Kind != DataType.Rational
+                        && (baseVal.Kind == DataType.Decimal || expVal.Kind == DataType.Decimal);
+                    return ExactFractionPower(numeratorRoot, denominatorRoot, powerNumerator, decimalDomain)
+                        .WithExactness(InheritedExactness(baseVal, expVal));
+                }
+
+                magnitude = ApproximateFractionPower(BigInteger.Abs(numerator), denominator, powerNumerator, powerDenominator);
+            }
+            else
+            {
+                magnitude = Math.Pow(Math.Abs(baseVal.DoubleValue), expVal.ToDouble());
+            }
+
+            return new MathValue(negativeResult ? -magnitude : magnitude);
+        }
+
         if (baseVal.IsFinite && baseVal.IsNegative && expVal.IsFinite && !integral)
         {
-            throw new ExpressionException(new EvaluationDiagnostic(
-                EvaluationError.UndefinedMathResult,
-                "Negative base with a fractional exponent has no real solution."));
+            throw FractionalPowerDomainException();
         }
 
         double approximateBase = baseVal.ToDouble();
@@ -1270,7 +1286,200 @@ public readonly partial struct MathValue :
         return new MathValue(Math.Pow(approximateBase, approximateExponent));
     }
 
-    private static void CheckPower(BigInteger value, int exponent, int bits)
+    private static ExpressionException FractionalPowerDomainException() => new(new EvaluationDiagnostic(
+        EvaluationError.UndefinedMathResult,
+        "A negative base requires an integer exponent or a rational exponent with an odd denominator."));
+
+    private static MathValue ExactFractionPower(
+        BigInteger numerator, BigInteger denominator, BigInteger exponent, bool decimalDomain)
+    {
+        if (exponent.IsZero)
+        {
+            return FromExactFraction(BigInteger.One, BigInteger.One, decimalDomain);
+        }
+
+        if (numerator.IsZero || (BigInteger.Abs(numerator).IsOne && denominator.IsOne))
+        {
+            if (exponent.IsEven)
+            {
+                numerator = BigInteger.Abs(numerator);
+            }
+
+            return FromExactFraction(numerator, denominator, decimalDomain);
+        }
+
+        if (exponent.Sign < 0)
+        {
+            (numerator, denominator) = (denominator, numerator);
+        }
+
+        var absoluteExponent = BigInteger.Abs(exponent);
+        CheckPower(numerator, absoluteExponent, CalculationLimits.MaxIntegerBits);
+        CheckPower(denominator, absoluteExponent, CalculationLimits.MaxIntegerBits);
+
+        // A non-unit component cannot survive these bit checks with a large exponent.
+        // Narrow only after rejecting it, not before inspecting the represented power.
+        int boundedExponent = (int)absoluteExponent;
+        return FromExactFraction(
+            BoundedPower(numerator, boundedExponent),
+            BoundedPower(denominator, boundedExponent), decimalDomain);
+    }
+
+    private static bool TryFractionRoot(
+        BigInteger numerator, BigInteger denominator, BigInteger degree,
+        out BigInteger numeratorRoot, out BigInteger denominatorRoot)
+    {
+        numeratorRoot = default;
+        denominatorRoot = default;
+        if (degree > int.MaxValue)
+        {
+            // Only zero and units can have integer roots beyond the component bit bounds.
+            if ((numerator.IsZero || BigInteger.Abs(numerator).IsOne) && denominator.IsOne)
+            {
+                numeratorRoot = numerator;
+                denominatorRoot = denominator;
+                return true;
+            }
+
+            return false;
+        }
+
+        return numerator.TryGetExactRoot((int)degree, out numeratorRoot)
+            && denominator.TryGetExactRoot((int)degree, out denominatorRoot);
+    }
+
+    private static double ApproximateFractionPower(
+        BigInteger numerator, BigInteger denominator, BigInteger powerNumerator, BigInteger powerDenominator)
+    {
+        double projected = DivideIntegersAsDouble(numerator, denominator);
+        if (BigInteger.Abs(powerNumerator).IsOne && powerDenominator <= int.MaxValue)
+        {
+            var degree = new MathValue(powerNumerator.Sign * powerDenominator);
+            if (!double.IsNormal(projected))
+            {
+                return ApproximateFractionRoot(numerator, denominator, degree);
+            }
+
+            return ApproximateRoot(projected, degree.ToDouble());
+        }
+
+        double power = DivideIntegersAsDouble(powerNumerator, powerDenominator);
+        if (double.IsNormal(projected) && projected is < 0.5 or > 1.5 && double.IsFinite(power))
+        {
+            return Math.Pow(projected, power);
+        }
+
+        // Keep both scales separate: a tiny logarithm and a huge exponent can have
+        // a modest product even when either would round to zero or infinity alone.
+        var (logarithm, logarithmExponent) = LogFractionParts(numerator, denominator);
+        int powerExponent = (int)(BigInteger.Abs(powerNumerator).GetBitLength() - powerDenominator.GetBitLength());
+        double powerMantissa = ScaleFractionAsDouble(powerNumerator, powerDenominator, powerExponent);
+        return Math.Exp(Math.ScaleB(logarithm * powerMantissa, logarithmExponent + powerExponent));
+    }
+
+    internal static MathValue Root(MathValue value, MathValue degree)
+    {
+        if (degree.IsZero)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UndefinedMathResult, "Root degree cannot be zero."));
+        }
+
+        bool hasFraction = TryToRational(value, out var numerator, out var denominator);
+        bool isNegative = hasFraction ? numerator.Sign < 0 : value.DoubleValue < 0;
+        bool hasIntegerDegree = degree.TryGetInteger(out var integerDegree);
+
+        if (isNegative && (!hasIntegerDegree || integerDegree.IsEven))
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UndefinedMathResult, "A negative number requires an odd integer root degree."));
+        }
+
+        if (hasFraction && hasIntegerDegree && integerDegree > 0 && integerDegree <= int.MaxValue &&
+            TryFractionRoot(numerator, denominator, integerDegree, out var numeratorRoot, out var denominatorRoot))
+        {
+            return FromExactFraction(numeratorRoot, denominatorRoot, value.Kind == DataType.Decimal)
+                .WithExactness(InheritedExactness(value, degree));
+        }
+
+        double projectedValue = value.AsDouble();
+        double magnitude = isNegative ? -projectedValue : projectedValue;
+        double root = hasFraction && !numerator.IsZero && !double.IsNormal(magnitude) ?
+            ApproximateFractionRoot(BigInteger.Abs(numerator), denominator, degree) :
+            ApproximateRoot(magnitude, degree.AsDouble());
+
+        return new MathValue(isNegative ? -root : root);
+    }
+
+    private static double ApproximateRoot(double value, double degree) => degree switch
+    {
+        2 => Math.Sqrt(value),
+        3 => Math.Cbrt(value),
+        _ => Math.Pow(value, 1.0 / degree)
+    };
+
+    private static double ApproximateFractionRoot(BigInteger numerator, BigInteger denominator, MathValue degree)
+    {
+        // Keep the magnitude separate so only the final root can underflow or overflow.
+        int exponent = (int)(numerator.GetBitLength() - denominator.GetBitLength());
+        double mantissa = ScaleFractionAsDouble(numerator, denominator, exponent);
+        double approximateDegree = degree.AsDouble();
+
+        if (degree.TryGetInteger(out var integerDegree) && integerDegree >= int.MinValue && integerDegree <= int.MaxValue)
+        {
+            int divisor = (int)integerDegree;
+            int rootExponent = exponent / divisor;
+            int remainder = exponent % divisor;
+            double mantissaRoot = ApproximateRoot(mantissa, approximateDegree);
+            double fractionalScale = Math.Pow(2, (double)remainder / divisor);
+            return Math.ScaleB(mantissaRoot * fractionalScale, rootExponent);
+        }
+
+        double logarithm = exponent + Math.Log2(mantissa);
+        return Math.Pow(2, logarithm / approximateDegree);
+    }
+
+    // Returns ln(numerator/denominator) as Value * 2^Exponent, keeping tiny
+    // differences from one available to logarithm ratios and rational powers.
+    internal static (double Value, int Exponent) LogFractionParts(BigInteger numerator, BigInteger denominator)
+    {
+        if (numerator.Sign <= 0)
+        {
+            throw new ExpressionException(new EvaluationDiagnostic(
+                EvaluationError.UndefinedMathResult, "Logarithm is undefined for non-positive values."));
+        }
+
+        var difference = numerator - denominator;
+        if (BigInteger.Abs(difference) * 2 <= denominator)
+        {
+            int differenceExponent = (int)(BigInteger.Abs(difference).GetBitLength() - denominator.GetBitLength());
+            // Below 2^-54, log(1+x)/x differs from one by less than double precision.
+            if (!difference.IsZero && differenceExponent < -54)
+            {
+                return (ScaleFractionAsDouble(difference, denominator, differenceExponent), differenceExponent);
+            }
+
+            return (SpecialFunctions.Log1p(DivideIntegersAsDouble(difference, denominator)), 0);
+        }
+
+        double projected = DivideIntegersAsDouble(numerator, denominator);
+        if (double.IsNormal(projected))
+        {
+            return (Math.Log(projected), 0);
+        }
+
+        int exponent = (int)(numerator.GetBitLength() - denominator.GetBitLength());
+        double mantissa = ScaleFractionAsDouble(numerator, denominator, exponent);
+        return (Math.Log(mantissa) + exponent * Math.Log(2), 0);
+    }
+
+    // Shift exact components before conversion so the unscaled fraction need not fit Double.
+    internal static double ScaleFractionAsDouble(BigInteger numerator, BigInteger denominator, int exponent) =>
+        exponent >= 0 ?
+            DivideIntegersAsDouble(numerator, denominator << exponent) :
+            DivideIntegersAsDouble(numerator << -exponent, denominator);
+
+    private static void CheckPower(BigInteger value, BigInteger exponent, int bits)
     {
         var abs = BigInteger.Abs(value);
         if (abs > BigInteger.One && (abs.GetBitLength() - 1) * exponent + 1 > bits)

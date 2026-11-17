@@ -196,6 +196,7 @@ positive/negative Infinity arguments in every angle mode.
 | `sqrt(x)` | Square root. Recognized perfect integer squares return exact `BigInteger` roots; other inputs generally use Double |
 | `cbrt(x)` | Cube root |
 | `root(x, n)` | $n$-th root of $x$ |
+| `pow(x, y)` | Raises $x$ to $y$, equivalent to `x^y` |
 | `ln(x)` | Natural logarithm (base $e$) |
 | `log(x)` | Common logarithm (base 10) |
 | `log10(x)` | Base-10 logarithm |
@@ -203,6 +204,28 @@ positive/negative Infinity arguments in every angle mode.
 | `logn(x, base)` | Logarithm of $x$ to an arbitrary base |
 | `log1p(x)` | $\ln(1 + x)$, producing a Double with Unverified exactness |
 | `expm1(x)` | $e^x - 1$, producing a Double with Unverified exactness |
+
+#### Rational powers
+
+Write a fractional exponent as `p/q` when you mean that fraction exactly.
+Numera recognizes perfect rational roots, so `8^(1/3)` gives Exact `2` and
+`(16/81)^(3/4)` gives Exact `8/27`. Other real results, such as `2^(1/3)`,
+are Double approximations with Unverified exactness.
+
+A negative base has a real rational power when the reduced denominator is odd:
+`(-8)^(1/3)` is `-2`, `(-8)^(2/3)` is `4`, and `(-8)^(-1/3)` is `-1/2`.
+An even denominator, as in `(-8)^(1/2)`, reports `UndefinedMathResult`.
+Use parentheses around a negative base: `-8^(2/3)` negates the power of `8`,
+while `(-8)^(2/3)` raises the negative number itself.
+
+Finite decimal exponents mean their exact decimal fractions: `(-32)^0.2`
+is `-2` because `0.2` is `1/5`. A finite decimal resembling `1/3` is not a
+third. Likewise, a Double exponent supplied by an application is not matched
+to a nearby fraction. Use `1/3`, `cbrt(x)`, or `root(x; 3)` for a cube root.
+Stored fractional exponents work the same way through variables and `ans`.
+
+Recognized rational results inherit their inputs' exactness; Unverified inputs
+remain Unverified. Supplied Double bases stay on the approximate path.
 
 Unverified describes what the application can claim, not how many digits are wrong.
 For example, `ln(1)` displays `0` without rounding but is still Unverified, while

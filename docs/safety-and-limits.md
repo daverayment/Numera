@@ -18,6 +18,12 @@ Numera defines hard safety bounds via `CalculationLimits`:
 | **Primality Testing** | `MaxPrimalityBits` | `2,048` bits | Limits Miller-Rabin primality testing to prevent CPU exhaustion on huge primes |
 | **Factorization Bound** | `MaxFactorizationBits` | `128` bits | Prevents denial of service on arbitrary-precision prime factorization |
 
+The exponent-magnitude ceiling applies to integer exponents, not to the numerator
+of a reduced fractional exponent. Exact rational results and their intermediate
+calculations remain subject to the component and intermediate bit bounds.
+See [rational powers](syntax.md#rational-powers) for the real-domain and exactness
+rules.
+
 ### Customizing Limits
 Limits are long-lived configuration, so set them on a `CalculatorOptions` and create a `CalculatorEngine` once. The engine validates the options at construction and can be reused across calls and threads. The static `Calculator` facade always uses the defaults.
 
@@ -169,7 +175,7 @@ When evaluation fails, `EvaluationDiagnostic.Code` reports a stable, strongly ty
 - `LimitExceeded`: A safety guard rejected the operation. `LimitKind` and `LimitValue` identify the guard and its effective ceiling when known.
 - `NumericOverflow`: A numerical operation exceeded the representable bounds of the arithmetic type.
 - `IntegerRequired`: An operation requires integer operands, but received a non-integer or fractional value (e.g. bit shifts, combinatorics).
-- `ArgumentOutOfRange`: An argument value is outside the permitted numerical range for the operation (e.g. negative base with fractional power).
-- `UndefinedMathResult`: A mathematical function has no defined real-valued result for the given argument (e.g. `sqrt(-1)`).
+- `ArgumentOutOfRange`: An argument value is outside the permitted numerical range for the operation (e.g. `round(1; 29)`).
+- `UndefinedMathResult`: A mathematical function has no defined real-valued result for the given argument (e.g. `sqrt(-1)` or `(-8)^(1/2)`).
 - `AmbiguousLogicalNegation`: A logical negation was applied directly to a comparison without explicit parentheses while `RequireExplicitLogicalNegation` is enabled.
 - `InvalidNumberFormat`: Normalization rejected malformed or ambiguous localized numbers, including invalid grouping, repeated decimal separators, non-ASCII numeric digits, or commas that could both group digits and separate arguments. Invalid/mixed argument separators use `InvalidSyntax`. Diagnostics point into the original input and occur before evaluation; see [Expression Normalization](normalization.md).

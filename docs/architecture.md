@@ -44,17 +44,17 @@ flowchart TD
 - `FromFraction` / `FromRational` retain Rational whenever the reduced denominator is not one, even for terminating fractions such as `1/2`. A denominator of one normalizes to Integer.
 - Arithmetic involving Rational stays in that domain, with integral results normalizing to Integer. Explicit Decimal input does not convert a Rational operand to Decimal.
 - Preserves results such as `1/3`, `(1/3)*3`, and `1/3 + 0.5` without expression expansion or replay.
-- Integer powers, including negative powers, use bounded exact fraction arithmetic. Size failures throw `CalculationLimitException`.
+- Integer powers, including negative powers, use bounded exact fraction arithmetic. Rational exponents also retain rational answers when both reduced base components have perfect roots. Taking those roots before the numerator power avoids unnecessary intermediate growth. Size failures throw `CalculationLimitException`.
 - `sqrt`, `cbrt`, `root`, and `nthroot` recognize perfect fraction roots for positive integer degrees by rooting both reduced components. Domain validation uses the original inputs before floating-point approximation.
 - Standard deviation (`stdev` / `stddev`) applies these root rules to sample variance, preserving exact perfect roots.
 
 ### 4. Double (IEEE 754 64-Bit Floating-Point)
 - Backed by hardware `System.Double`.
-- Used for transcendental functions (`sin`, `cos`, `tan`, `ln`, `exp`), roots not recognized as exact, non-integer exponents, and arithmetic mixed with supplied Double values.
+- Used for transcendental functions (`sin`, `cos`, `tan`, `ln`, `exp`), roots and rational powers not recognized as exact, and arithmetic mixed with supplied Double values.
 - Provides approximately 15–17 significant digits across magnitudes up to $\approx \pm 1.8 \times 10^{308}$.
 - Overflows produce `double.PositiveInfinity` or `double.NegativeInfinity`; undefined domains return `NaN` or report structured diagnostics.
 - Approximate roots retain the binary magnitude of exact inputs that would project to zero, subnormal values, or infinity before rooting. Only the final approximate root is subject to Double's output range.
-- Negative finite bases with finite fractional power exponents report `UndefinedMathResult`. Power domain checks use the original values before Double conversion; nonfinite Double exponents follow native floating-point semantics.
+- Negative finite bases accept rational exponents with odd reduced denominators. An even denominator or a fractional Double exponent reports `UndefinedMathResult`. Power domain checks use the original values before Double conversion; nonfinite Double exponents follow native floating-point semantics.
 
 ### Preserving Inputs Before Approximation
 
@@ -62,6 +62,7 @@ Selected functions retain exact input information until floating-point approxima
 
 - `ln`, `log`/`log10`, and `log2` use scaled rational magnitudes when inputs exceed Double's range. For example, `log10(1e-400)` remains approximately `-400`, rather than treating the input as zero.
 - Near one, logarithms use the original fractional difference and compensated `log1p` evaluation. `ln(1+1e-30)` retains its small nonzero result. `logn` keeps tiny logarithms scaled through division, including when either logarithm alone would underflow. `log1p` checks the original input against its domain boundary before forming `1+x`.
+- Approximate rational powers keep the exponent's reduced fraction and use scaled logarithms when needed. For example, `(1+1e-400)^(1e400/3)` remains near `1.39561242508609`, even though converting its base and exponent separately to Double would give `1` and infinity. Irrational outputs remain Unverified, without symbolic radicals or certified error bounds.
 - Degree and gradian `sin`, `cos`, `tan`, `cot`, `sec`, and `csc` reduce exact inputs modulo a revolution before Double conversion, retaining small offsets within large angles. Radian and supplied Double angles use floating-point reduction.
 - `hypot` scales exact inputs before conversion and uses the floating-point hypotenuse routine instead of directly squaring inputs. This avoids intermediate overflow/underflow, including loss of individually underflow-sized inputs whose combined result is representable.
 
