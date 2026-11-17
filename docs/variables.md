@@ -41,6 +41,16 @@ y = x * 2 + 5
 x = y = 42       // y becomes 42 first, then x
 ```
 
+An assignment returns the value it stores, so you can also use it inside a
+larger calculation. `(x = 5) + 1` gives `6`, with `x` holding `5`.
+Later operands can use an earlier assignment: `1 + (y = 2) * y` gives `5`,
+because the assignment runs before the following `y` is read.
+
+These variables appear in the returned context just like top-level assignments;
+parentheses do not make them temporary. An assignment in a skipped logical branch
+does not run: `0 and (x = 5)` gives `0` without assigning `x`. See
+[logical operators](syntax.md#logical-and-bitwise-operations) for short-circuiting.
+
 ### Naming rules
 
 - A name starts with a letter or underscore, followed by letters, ASCII digits or underscores.

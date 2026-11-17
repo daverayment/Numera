@@ -83,19 +83,28 @@ properties do not introduce corresponding recognized constant names.
 
 ## Operators & Precedence
 
-Evaluation follows standard mathematical and scientific computing precedence (highest to lowest):
+Operators are grouped in the following order, from highest to lowest precedence:
 
 | Precedence | Operators | Associativity | Description | Example |
 | :---: | :--- | :---: | :--- | :--- |
 | **1** | `^` | Right | Exponentiation | `2^3^2` = `2^(3^2)` = `512` |
 | **2** | `+`, `-`, `!`, `not`, `~` | Right (Unary) | Unary positive, negation, logical NOT, bitwise NOT | `-10^4` = `-(10^4)` = `-10000` |
-| **3** | `*`, `/`, `%` | Left | Multiplication, division, remainder | `10 % 3` = `1` |
-| **4** | `+`, `-` | Left | Addition, subtraction | `5 - 3 + 2` = `4` |
-| **5** | `<<`, `>>` | Left | Bitwise shifts (integers only) | `1 << 8` = `256` |
-| **6** | `<`, `<=`, `>`, `>=`, `==`, `!=`, `~=` | Chained / Non-assoc | Comparisons and equality | `1 < x <= 10` |
-| **7** | `&&`, `and` | Left | Logical conjunction (short-circuiting) | `x > 0 && y > 0` |
-| **8** | `xor` | Left | Logical exclusive OR | `a xor b` |
-| **9** | `\|\|`, `or` | Left | Logical disjunction (short-circuiting) | `x == 0 \|\| y == 0` |
+| **3** | Implicit multiplication | Left | Multiplication written without `*` | `2(3 + 4)` = `14` |
+| **4** | `*`, `/`, `%` | Left | Multiplication, division, remainder | `10 % 3` = `1` |
+| **5** | `+`, `-` | Left | Addition, subtraction | `5 - 3 + 2` = `4` |
+| **6** | `<<`, `>>` | Left | Bitwise shifts (integers only) | `1 << 8` = `256` |
+| **7** | `<`, `<=`, `>`, `>=`, `==`, `!=`, `~=` | Chained / Non-assoc | Comparisons and equality | `1 < x <= 10` |
+| **8** | `&&`, `and` | Left | Logical conjunction (short-circuiting) | `x > 0 && y > 0` |
+| **9** | `xor` | Left | Logical exclusive OR | `a xor b` |
+| **10** | `\|\|`, `or` | Left | Logical disjunction (short-circuiting) | `x == 0 \|\| y == 0` |
+
+> [!IMPORTANT]
+> Calculators differ in how they read multiplication written without `*`.
+> Numera reads `1/2x` as `1/(2*x)`. The same rule makes `6/2(1+2)` mean
+> `6/(2*(1+2))`, giving `1`.
+> When sharing a calculation, make the grouping explicit: `(6/2)*(1+2)` gives `9`,
+> while `6/(2*(1+2))` gives `1`. See [implicit multiplication](implicit-rules.md)
+> for more examples.
 
 `%` also works as a postfix percentage: `15%` is `0.15`, and `200 + 15%`
 is a markup giving `230`. A following `+` or `-` stays additive, regardless of
@@ -114,8 +123,23 @@ for the full rule and examples.
 - **Chained Comparisons:** Chained comparisons evaluate conjunctively and short-circuit:
   - `1 < x <= 10` evaluates as `1 < x and x <= 10`.
   - `a == b == c` verifies that all three are equal (`a == b and b == c`), rather than folding into `(a == b) == c`.
-- **Truthiness:** `0` evaluates to false. Any non-zero real number (including `NaN` and `Infinity`) evaluates to true. Comparisons return `1` for true and `0` for false.
-- **Grouping:** Parentheses `()` group subexpressions. Square brackets `[]` are not supported.
+- **Grouping:** Parentheses `()` group subexpressions, including [assignments](variables.md#assigning-variables). Square brackets `[]` are not supported.
+
+### Logical and bitwise operations
+
+Logical operators treat `0` as false and every other value as true, including
+NaN and Infinity. Their answers, like comparison results, are always `0` or `1`.
+Both `5` and `3` are true, so `5 xor 3` gives `0`: exactly one of them would
+need to be true for the answer to be `1`.
+
+For individual bits, use the [bitwise functions](#bitwise-functions) instead.
+`bxor(5; 3)` gives `6`. Similarly, `6 and 3` gives `1`, while `band(6; 3)`
+gives `2`. Single `&` and `|` symbols are not supported; use `and`/`or` for
+logic and `band`/`bor` for bits.
+
+`and` and `or` (also written `&&` and `||`) skip the right operand when the
+left already determines the answer. For example, `0 and (x = 5)` returns `0`
+without assigning `x`.
 
 ---
 
@@ -295,8 +319,8 @@ Beta arguments produce NaN. NaN arguments propagate.
 
 | Function | Description |
 | :--- | :--- |
-| `shl(val, count)` | Bitwise left shift |
-| `shr(val, count)` | Bitwise right shift |
+| `shl(val, count)` | Bitwise left shift (also `<<`) |
+| `shr(val, count)` | Bitwise right shift (also `>>`) |
 | `band(a, b)` | Bitwise AND |
 | `bor(a, b)` | Bitwise OR |
 | `bxor(a, b)` | Bitwise XOR |
