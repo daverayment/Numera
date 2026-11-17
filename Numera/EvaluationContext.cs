@@ -108,8 +108,8 @@ public sealed record EvaluationContext
 
     /// <summary>
     /// The value of the standard <c>ans</c> variable: the previous calculation result.
-    /// <c>null</c> means <c>ans</c> is undefined, so using it reports an unknown-constant
-    /// error rather than silently evaluating as zero.
+    /// <c>null</c> means <c>ans</c> is undefined, so using it reports
+    /// <see cref="EvaluationError.NoPreviousResult"/> rather than silently evaluating as zero.
     /// </summary>
     public MathValue? PreviousResult { get; init; }
 

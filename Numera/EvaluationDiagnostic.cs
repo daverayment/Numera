@@ -17,9 +17,9 @@ public enum EvaluationError
     UnknownFunction,
 
     /// <summary>
-    /// An identifier was referenced as a constant but is not recognized by the evaluator.
+    /// A variable name is not defined in the evaluation context or expression.
     /// </summary>
-    UnknownConstant,
+    UnknownVariable,
 
     /// <summary>
     /// A function was invoked with fewer or more arguments than permitted by its arity
@@ -78,6 +78,11 @@ public enum EvaluationError
     /// evaluation.
     /// </summary>
     EvaluationFailed,
+
+    /// <summary>
+    /// The expression uses ans without a previous result in the evaluation context.
+    /// </summary>
+    NoPreviousResult,
 }
 
 /// <summary>
@@ -99,11 +104,33 @@ public enum EvaluationError
 /// <remarks>
 /// Consumers should use Code for programmatic decisions or localization rather than
 /// matching message text, which is intended for human-readable diagnostics.
+/// <see cref="IsIncomplete"/> helps hosts defer unfinished-syntax errors while a user
+/// types. Check API success before showing a result; a false flag does not imply validity.
 /// For <see cref="EvaluationError.LimitExceeded"/>, <see cref="LimitKind"/> and
 /// <see cref="LimitValue"/> identify the rejecting safety guard when known.
 /// </remarks>
 public sealed record EvaluationDiagnostic(EvaluationError Code, string Message, int? Position = null, int Length = 0)
 {
+    /// <summary>
+    /// Gets whether the parser recognized unfinished syntax requiring more input.
+    /// Unknown names, calculation failures, and malformed localized numbers are not
+    /// classified as incomplete. False does not mean that the expression is valid.
+    /// </summary>
+    public bool IsIncomplete { get; init; }
+
+    internal static EvaluationDiagnostic ForUnresolvedIdentifier(string name, int position, int length)
+    {
+        if (name.Equals(EvaluationContext.PreviousResultVariableName, Identifier.Comparison))
+        {
+            return new EvaluationDiagnostic(EvaluationError.NoPreviousResult,
+                "There is no previous result. Evaluate an expression before using 'ans', or supply PreviousResult in the evaluation context.",
+                position, length);
+        }
+
+        return new EvaluationDiagnostic(EvaluationError.UnknownVariable,
+            $"Unknown variable '{name}'.", position, length);
+    }
+
     /// <summary>
     /// Identifies the safety limit that rejected the operation, when known.
     /// Null for other errors and caller-supplied limit errors without this metadata.

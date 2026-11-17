@@ -163,13 +163,53 @@ have their own [documented handling](custom-functions.md#5-exception-handling--s
 
 ---
 
+## While the user is typing
+
+An unfinished expression need not produce a visible error on every keystroke.
+When parsing recognizes missing input, the diagnostic has `IsIncomplete = true`:
+`2 +`, `sin(`, `(2 + 3`, `x =`, and `0x` are examples. A known function name
+such as `sin` also needs more input to form a call. The same applies to registered
+custom functions, without guessing that an unknown name such as `sqr` means `sqrt`.
+
+A host can leave its result and MathJax preview hidden until evaluation succeeds,
+and hold back incomplete-input errors while the user is typing:
+
+```csharp
+var engine = CalculatorEngine.ForCurrentCulture();
+if (engine.TryParse(input, out var expression, out var diagnostic) &&
+	engine.TryEvaluate(expression, out var result, out diagnostic))
+{
+	Console.WriteLine(result.PrimaryDisplay);
+	Console.WriteLine(engine.FormatExpression(expression, ExpressionFormatOptions.LaTeX));
+}
+else if (!diagnostic.IsIncomplete)
+{
+	Console.WriteLine($"{diagnostic.Code}: {diagnostic.Message}");
+}
+```
+
+The flag describes a failed parse, not a partial result. `2 + )`, `max()`,
+unknown names, and calculation errors are not incomplete. A false flag does not
+mean valid; use the success boolean for that. Parsing failures do not execute
+callbacks or commit assignments, and diagnostic spans still point to the original
+input. For `x =`, the span highlights the `=`, even though the missing value
+belongs after it; hosts should use the flag rather than infer incompleteness from
+the span.
+
+This is recognition of unfinished syntax, not a test of every suffix that could
+make an expression valid. Input still follows the configured normalization rules,
+including launcher decoration. Malformed localized numbers such as `1,00` in
+en-US remain `InvalidNumberFormat` with a false flag, even while the user may be
+on the way to typing `1,000`.
+
 ## Diagnostic Error Codes
 
 When evaluation fails, `EvaluationDiagnostic.Code` reports a stable, strongly typed category from the `EvaluationError` enum:
 
 - `InvalidSyntax`: The expression violates grammar rules (e.g. malformed syntax, unbalanced parentheses, unexpected characters).
 - `UnknownFunction`: An identifier was called as a function but is not recognized by the evaluator.
-- `UnknownConstant`: An identifier was referenced as a constant but is not recognized by the evaluator.
+- `UnknownVariable`: A variable name is not defined in the supplied context or expression.
+- `NoPreviousResult`: The expression uses `ans`, but the context has no previous result. Carry forward a successful result's context, or seed `PreviousResult` explicitly.
 - `InvalidArgumentCount`: A function was invoked with fewer or more arguments than permitted by its arity rules.
 - `DivisionByZero`: The expression attempts a division or modulo operation by zero.
 - `LimitExceeded`: A safety guard rejected the operation. `LimitKind` and `LimitValue` identify the guard and its effective ceiling when known.

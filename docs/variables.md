@@ -75,8 +75,10 @@ checks throw `ArgumentException`; a null name throws `ArgumentNullException`.
 ### Incomplete assignments and launcher decoration
 
 `x =` is an incomplete assignment, not a request to evaluate `x`. It reports
-`EvaluationError.InvalidSyntax` at the `=`. Parsing failures do not execute callbacks
-or commit assignments.
+`EvaluationError.InvalidSyntax` at the `=`, with `IsIncomplete = true` when the
+input ends before the value. A closed group such as `(x = )` is malformed instead.
+Parsing failures do not execute callbacks or commit assignments. See
+[typing-aware diagnostics](safety-and-limits.md#while-the-user-is-typing) for UI handling.
 
 With launcher trimming enabled, completed expressions and assignments can have
 trailing equals decoration:
@@ -112,7 +114,8 @@ var context = EvaluationContext.Empty with { PreviousResult = new MathValue(5) }
 ```
 
 Evaluating `5` normally also advances the previous answer to `5`. A null
-`PreviousResult` leaves `ans` undefined.
+`PreviousResult` leaves `ans` undefined; using it reports `NoPreviousResult`,
+not an incomplete expression. Other undefined variable names report `UnknownVariable`.
 
 ---
 

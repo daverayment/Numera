@@ -49,9 +49,8 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
             return Guard(node.Span, () => ValidateValue(contextVar.Value));
         }
 
-        throw new ExpressionException(new EvaluationDiagnostic(
-            EvaluationError.UnknownConstant, $"Unknown constant or variable '{node.Name}'.",
-            node.Span.Start, node.Span.Length));
+        throw new ExpressionException(EvaluationDiagnostic.ForUnresolvedIdentifier(
+            node.Name, node.Span.Start, node.Span.Length));
     }
 
     public MathValue Visit(UnaryNode node)

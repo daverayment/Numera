@@ -144,7 +144,7 @@ internal sealed class AstParser
                         EvaluationError.InvalidSyntax,
                         "An assignment requires a value after '='.",
                         assignmentPosition,
-                        1));
+                        1) with { IsIncomplete = _pos >= _input.Length });
                 }
 
                 // Right-associative recursion: "a = b = 10" parses as "a = (b = 10)".
@@ -730,7 +730,7 @@ internal sealed class AstParser
         SkipWhitespace();
         if (_pos >= _input.Length)
         {
-            throw SyntaxError("Unexpected end of input.");
+            throw SyntaxError("Unexpected end of input.", isIncomplete: true);
         }
 
         var c = Peek();
@@ -749,7 +749,7 @@ internal sealed class AstParser
 
             if (Peek() != ')')
             {
-                throw SyntaxError("Expected ')'.");
+                throw SyntaxError("Expected ')'.", isIncomplete: _pos >= _input.Length);
             }
 
             Consume();
@@ -851,7 +851,8 @@ internal sealed class AstParser
         if (Peek() != '(' && FunctionArity.TryGet(identifier, _options.CustomFunctions, out _))
         {
             throw new ExpressionException(Diagnostic(
-                EvaluationError.InvalidSyntax, $"Function '{identifier}' requires parentheses.", identifierStart, identifier.Length));
+                EvaluationError.InvalidSyntax, $"Function '{identifier}' requires parentheses.", identifierStart, identifier.Length)
+                with { IsIncomplete = _pos >= _input.Length });
         }
 
         if (isVariable)
@@ -872,8 +873,9 @@ internal sealed class AstParser
                 EvaluationError.UnknownFunction, $"Unknown function '{identifier}'.", identifierStart, identifier.Length));
         }
 
-        throw new ExpressionException(Diagnostic(
-            EvaluationError.UnknownConstant, $"Unknown constant or variable '{identifier}'.", identifierStart, identifier.Length));
+        var unresolvedSpan = Span(identifierStart, identifier.Length);
+        throw new ExpressionException(EvaluationDiagnostic.ForUnresolvedIdentifier(
+            identifier, unresolvedSpan.Start, unresolvedSpan.Length));
     }
 
     private bool HasUnambiguousCallArguments()
@@ -953,7 +955,7 @@ internal sealed class AstParser
         }
         else
         {
-            throw SyntaxError("Expected ')'.");
+            throw SyntaxError("Expected ')'.", isIncomplete: _pos >= _input.Length);
         }
 
         return args;
@@ -1010,7 +1012,8 @@ internal sealed class AstParser
             if (_pos == digitsStart)
             {
                 throw SyntaxError(
-                    $"Expected {radix.Name} digits after '0{radix.Prefix}'.");
+                    $"Expected {radix.Name} digits after '0{radix.Prefix}'.",
+                    isIncomplete: _pos >= _input.Length);
             }
 
             // Guard against bit lengths that exceed the maximum integer ceiling before
@@ -1106,7 +1109,8 @@ internal sealed class AstParser
         if (mantissa.IndexOfAnyInRange('0', '9') < 0)
         {
             throw new ExpressionException(Diagnostic(
-                EvaluationError.InvalidSyntax, "Expected a number.", start, Math.Max(1, _pos - start)));
+                EvaluationError.InvalidSyntax, "Expected a number.", start, Math.Max(1, _pos - start))
+                with { IsIncomplete = _pos >= _input.Length });
         }
 
         int dot = mantissa.IndexOf('.');
@@ -1293,8 +1297,9 @@ internal sealed class AstParser
         return _input.AsSpan(start, _pos - start);
     }
 
-    private ExpressionException SyntaxError(string message) =>
-        new(Diagnostic(EvaluationError.InvalidSyntax, message, _pos, _pos < _input.Length ? 1 : 0));
+    private ExpressionException SyntaxError(string message, bool isIncomplete = false) =>
+        new(Diagnostic(EvaluationError.InvalidSyntax, message, _pos, _pos < _input.Length ? 1 : 0)
+            with { IsIncomplete = isIncomplete });
 
     private char Peek(int ahead = 0) => _pos + ahead < _input.Length ? _input[_pos + ahead] : '\0';
 

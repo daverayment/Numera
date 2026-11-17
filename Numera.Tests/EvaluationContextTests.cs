@@ -48,7 +48,7 @@ public sealed class EvaluationContextTests
 
         var cleared = context with { PreviousResult = null };
         Assert.IsFalse(Calculator.TryEvaluate("ans * 2", out _, out var diag, cleared));
-        Assert.AreEqual(EvaluationError.UnknownConstant, diag!.Code);
+        Assert.AreEqual(EvaluationError.NoPreviousResult, diag!.Code);
 
         // The original context is unchanged.
         Assert.AreEqual(100m, Calculator.Evaluate("ans", context).DecimalValue);
@@ -123,7 +123,7 @@ public sealed class EvaluationContextTests
         Assert.IsNull(context.PreviousResult);
         Assert.AreEqual(0, context.Variables.Count);
         Assert.IsFalse(Calculator.TryEvaluate("ans", out _, out var diag, context));
-        Assert.AreEqual(EvaluationError.UnknownConstant, diag.Code);
+        Assert.AreEqual(EvaluationError.NoPreviousResult, diag.Code);
     }
 
     [TestMethod]
@@ -541,11 +541,11 @@ public sealed class EvaluationContextTests
     }
 
     [TestMethod]
-    public void Ans_UninitializedInContext_ProducesUnknownConstantError()
+    public void Ans_UninitializedInContext_ProducesNoPreviousResultError()
     {
         var engine = new CalculatorEngine();
         Assert.IsFalse(engine.TryEvaluate("ans + 1", out _, out var diagnostic, EvaluationContext.Empty));
-        Assert.AreEqual(EvaluationError.UnknownConstant, diagnostic.Code);
+        Assert.AreEqual(EvaluationError.NoPreviousResult, diagnostic.Code);
         Assert.Throws<ExpressionException>(() => engine.Evaluate("ans + 1", EvaluationContext.Empty));
     }
 

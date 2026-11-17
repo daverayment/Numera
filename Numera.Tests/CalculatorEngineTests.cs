@@ -251,7 +251,7 @@ public class CalculatorEngineTests
             Assert.IsTrue(Calculator.TryEvaluate(node, out attempted, out diagnostic), diagnostic?.Message);
             Assert.AreSame(first.Options, attempted.Options);
             Assert.IsFalse(Calculator.TryEvaluate("ans", out _, out diagnostic));
-            Assert.AreEqual(EvaluationError.UnknownConstant, diagnostic.Code);
+            Assert.AreEqual(EvaluationError.NoPreviousResult, diagnostic.Code);
         }
         finally
         {

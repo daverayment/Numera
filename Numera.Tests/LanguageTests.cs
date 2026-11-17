@@ -38,7 +38,7 @@ public class LanguageTests
     [DataRow("1 || min()", EvaluationError.InvalidArgumentCount)]
     [DataRow("0 && pow(4)", EvaluationError.InvalidArgumentCount)]
     [DataRow("1 || absent(7)", EvaluationError.UnknownFunction)]
-    [DataRow("0 && absent", EvaluationError.UnknownConstant)]
+    [DataRow("0 && absent", EvaluationError.UnknownVariable)]
     [DataRow("min(7,)", EvaluationError.InvalidSyntax)]
     [DataRow("9/0", EvaluationError.DivisionByZero)]
     [DataRow("sqrt(-1)", EvaluationError.UndefinedMathResult)]
@@ -752,9 +752,9 @@ public class LanguageTests
         var varsResult = Calculator.Evaluate("3 * x + 4 * y", optionsVars);
         Assert.AreEqual(new MathValue(40m), varsResult.Value);
 
-        // 3. Unbound variable produces UnknownConstant diagnostic
+        // 3. Unbound variable produces UnknownVariable diagnostic
         Assert.IsFalse(Calculator.TryEvaluate("z + 1", out _, out var diagnostic, optionsVars));
         Assert.IsNotNull(diagnostic);
-        Assert.AreEqual(EvaluationError.UnknownConstant, diagnostic.Code);
+        Assert.AreEqual(EvaluationError.UnknownVariable, diagnostic.Code);
     }
 }
