@@ -25,6 +25,32 @@ public static class EvaluationResultComparers
     /// </remarks>
     public static IEqualityComparer<EvaluationResult> Content { get; } = new ContentComparer();
 
+    internal static bool ValuesEqual(MathValue left, MathValue right)
+    {
+        if (left.Kind != right.Kind || left.Exactness != right.Exactness ||
+            left.DecimalDisplayScale != right.DecimalDisplayScale)
+        {
+            return false;
+        }
+
+        if (left.Kind == MathValue.DataType.Double)
+        {
+            return BitConverter.DoubleToInt64Bits(left.DoubleValue) ==
+                BitConverter.DoubleToInt64Bits(right.DoubleValue);
+        }
+
+        if (left.Kind == MathValue.DataType.Decimal)
+        {
+            Span<int> first = stackalloc int[4];
+            Span<int> second = stackalloc int[4];
+            decimal.GetBits(left.DecimalValue, first);
+            decimal.GetBits(right.DecimalValue, second);
+            return first.SequenceEqual(second);
+        }
+
+        return left.Equals(right);
+    }
+
     private sealed class ContentComparer : IEqualityComparer<EvaluationResult>
     {
         public bool Equals(EvaluationResult x, EvaluationResult y) =>
@@ -126,32 +152,6 @@ public static class EvaluationResultComparers
                 hash.Add(variable.Expression);
                 hash.Add(variable.Definition, StringComparer.Ordinal);
             }
-        }
-
-        private static bool ValuesEqual(MathValue left, MathValue right)
-        {
-            if (left.Kind != right.Kind || left.Exactness != right.Exactness ||
-                left.DecimalDisplayScale != right.DecimalDisplayScale)
-            {
-                return false;
-            }
-
-            if (left.Kind == MathValue.DataType.Double)
-            {
-                return BitConverter.DoubleToInt64Bits(left.DoubleValue) ==
-                    BitConverter.DoubleToInt64Bits(right.DoubleValue);
-            }
-
-            if (left.Kind == MathValue.DataType.Decimal)
-            {
-                Span<int> first = stackalloc int[4];
-                Span<int> second = stackalloc int[4];
-                decimal.GetBits(left.DecimalValue, first);
-                decimal.GetBits(right.DecimalValue, second);
-                return first.SequenceEqual(second);
-            }
-
-            return left.Equals(right);
         }
 
         private static void AddValue(ref HashCode hash, MathValue value)

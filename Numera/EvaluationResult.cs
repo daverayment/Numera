@@ -19,12 +19,24 @@ namespace Numera;
 /// those operators.
 /// </para>
 /// <para>
-/// When combining two results, their variables are merged; the right result wins on name
-/// conflicts. The left result's options are used if present, otherwise the right
-/// result's, otherwise <see cref="CalculatorOptions.Default"/>. An operation with only
-/// one result keeps that result's variables and uses its options or the defaults.
+/// Combining two results requires compatible variables and equal options when both
+/// supply options. Shared variable names are compared case-insensitively and must have
+/// identical stored values (including representation, exactness, and scale), equal
+/// definition text, and equal expressions ignoring source spans. The left entry is
+/// retained; names present on only one side are included unchanged. Options equality
+/// includes custom-function collection identity. Missing options adopt the other
+/// result's options, or <see cref="CalculatorOptions.Default"/> if both are missing.
+/// An operation with only one result keeps that result's variables and uses its
+/// options or the defaults. Conflicts and default-initialized operands throw
+/// <see cref="InvalidOperationException"/> before arithmetic.
 /// Calculation limits apply to the values, intermediate arithmetic, and combined
 /// expression.
+/// </para>
+/// <para>
+/// Stored expressions describe calculation history, not a replayable snapshot of
+/// bindings. In particular, two operands can refer to different earlier values of
+/// <c>ans</c>; composition uses their captured values and replaces <c>ans</c> with the
+/// combined answer.
 /// </para>
 /// <para>
 /// Comparisons with <see cref="MathValue"/> compare numbers, ignoring other result
@@ -378,6 +390,8 @@ public readonly record struct EvaluationResult :
     /// </remarks>
     /// <exception cref="CalculationLimitException">A calculation or expression limit is
     /// exceeded.</exception>
+    /// <exception cref="InvalidOperationException">An operand is default-initialized,
+    /// or the results have conflicting variables or options.</exception>
     public static EvaluationResult operator +(EvaluationResult left, EvaluationResult right) =>
         Combine(left, right, BinaryOperator.Add);
 
@@ -397,6 +411,8 @@ public readonly record struct EvaluationResult :
     /// </remarks>
     /// <exception cref="CalculationLimitException">A calculation or expression limit is
     /// exceeded.</exception>
+    /// <exception cref="InvalidOperationException">An operand is default-initialized,
+    /// or the results have conflicting variables or options.</exception>
     public static EvaluationResult operator -(EvaluationResult left, EvaluationResult right) =>
         Combine(left, right, BinaryOperator.Subtract);
 
@@ -408,6 +424,8 @@ public readonly record struct EvaluationResult :
     /// <returns>A new result containing the product.</returns>
     /// <exception cref="CalculationLimitException">A calculation or expression limit is
     /// exceeded.</exception>
+    /// <exception cref="InvalidOperationException">An operand is default-initialized,
+    /// or the results have conflicting variables or options.</exception>
     public static EvaluationResult operator *(EvaluationResult left, EvaluationResult right) =>
         Combine(left, right, BinaryOperator.Multiply);
 
@@ -420,6 +438,8 @@ public readonly record struct EvaluationResult :
     /// <exception cref="DivideByZeroException">The divisor is zero.</exception>
     /// <exception cref="CalculationLimitException">A calculation or expression limit is
     /// exceeded.</exception>
+    /// <exception cref="InvalidOperationException">An operand is default-initialized,
+    /// or the results have conflicting variables or options.</exception>
     public static EvaluationResult operator /(EvaluationResult left, EvaluationResult right) =>
         Combine(left, right, BinaryOperator.Divide);
 
@@ -434,6 +454,8 @@ public readonly record struct EvaluationResult :
     /// <exception cref="DivideByZeroException">The divisor is zero.</exception>
     /// <exception cref="CalculationLimitException">A calculation or expression limit is
     /// exceeded.</exception>
+    /// <exception cref="InvalidOperationException">An operand is default-initialized,
+    /// or the results have conflicting variables or options.</exception>
     public static EvaluationResult operator %(EvaluationResult left, EvaluationResult right) =>
         Combine(left, right, BinaryOperator.Modulo);
 
@@ -445,6 +467,8 @@ public readonly record struct EvaluationResult :
     /// <returns>A new result containing the sum.</returns>
     /// <exception cref="CalculationLimitException">A calculation or expression limit is
     /// exceeded.</exception>
+    /// <exception cref="InvalidOperationException">The result is default-initialized.
+    /// </exception>
     public static EvaluationResult operator +(EvaluationResult left, MathValue right) =>
         Combine(left, right, BinaryOperator.Add);
 
@@ -460,6 +484,8 @@ public readonly record struct EvaluationResult :
     /// </remarks>
     /// <exception cref="CalculationLimitException">A calculation or expression limit is
     /// exceeded.</exception>
+    /// <exception cref="InvalidOperationException">The result is default-initialized.
+    /// </exception>
     public static EvaluationResult operator +(MathValue left, EvaluationResult right) =>
         Combine(left, right, BinaryOperator.Add);
 
@@ -471,6 +497,8 @@ public readonly record struct EvaluationResult :
     /// <returns>A new result containing the difference.</returns>
     /// <exception cref="CalculationLimitException">A calculation or expression limit is
     /// exceeded.</exception>
+    /// <exception cref="InvalidOperationException">The result is default-initialized.
+    /// </exception>
     public static EvaluationResult operator -(EvaluationResult left, MathValue right) =>
         Combine(left, right, BinaryOperator.Subtract);
 
@@ -488,6 +516,8 @@ public readonly record struct EvaluationResult :
     /// </remarks>
     /// <exception cref="CalculationLimitException">A calculation or expression limit is
     /// exceeded.</exception>
+    /// <exception cref="InvalidOperationException">The result is default-initialized.
+    /// </exception>
     public static EvaluationResult operator -(MathValue left, EvaluationResult right) =>
         Combine(left, right, BinaryOperator.Subtract);
 
@@ -499,6 +529,8 @@ public readonly record struct EvaluationResult :
     /// <returns>A new result containing the product.</returns>
     /// <exception cref="CalculationLimitException">A calculation or expression limit is
     /// exceeded.</exception>
+    /// <exception cref="InvalidOperationException">The result is default-initialized.
+    /// </exception>
     public static EvaluationResult operator *(EvaluationResult left, MathValue right) =>
         Combine(left, right, BinaryOperator.Multiply);
 
@@ -510,6 +542,8 @@ public readonly record struct EvaluationResult :
     /// <returns>A new result containing the product.</returns>
     /// <exception cref="CalculationLimitException">A calculation or expression limit is
     /// exceeded.</exception>
+    /// <exception cref="InvalidOperationException">The result is default-initialized.
+    /// </exception>
     public static EvaluationResult operator *(MathValue left, EvaluationResult right) =>
         Combine(left, right, BinaryOperator.Multiply);
 
@@ -522,6 +556,8 @@ public readonly record struct EvaluationResult :
     /// <exception cref="DivideByZeroException">The divisor is zero.</exception>
     /// <exception cref="CalculationLimitException">A calculation or expression limit is
     /// exceeded.</exception>
+    /// <exception cref="InvalidOperationException">The result is default-initialized.
+    /// </exception>
     public static EvaluationResult operator /(EvaluationResult left, MathValue right) =>
         Combine(left, right, BinaryOperator.Divide);
 
@@ -534,6 +570,8 @@ public readonly record struct EvaluationResult :
     /// <exception cref="DivideByZeroException">The divisor is zero.</exception>
     /// <exception cref="CalculationLimitException">A calculation or expression limit is
     /// exceeded.</exception>
+    /// <exception cref="InvalidOperationException">The result is default-initialized.
+    /// </exception>
     public static EvaluationResult operator /(MathValue left, EvaluationResult right) =>
         Combine(left, right, BinaryOperator.Divide);
 
@@ -548,6 +586,8 @@ public readonly record struct EvaluationResult :
     /// <exception cref="DivideByZeroException">The divisor is zero.</exception>
     /// <exception cref="CalculationLimitException">A calculation or expression limit is
     /// exceeded.</exception>
+    /// <exception cref="InvalidOperationException">The result is default-initialized.
+    /// </exception>
     public static EvaluationResult operator %(EvaluationResult left, MathValue right) =>
         Combine(left, right, BinaryOperator.Modulo);
 
@@ -562,6 +602,8 @@ public readonly record struct EvaluationResult :
     /// <exception cref="DivideByZeroException">The divisor is zero.</exception>
     /// <exception cref="CalculationLimitException">A calculation or expression limit is
     /// exceeded.</exception>
+    /// <exception cref="InvalidOperationException">The result is default-initialized.
+    /// </exception>
     public static EvaluationResult operator %(MathValue left, EvaluationResult right) =>
         Combine(left, right, BinaryOperator.Modulo);
 
@@ -573,6 +615,8 @@ public readonly record struct EvaluationResult :
     /// </returns>
     /// <exception cref="CalculationLimitException">A calculation or expression limit is
     /// exceeded.</exception>
+    /// <exception cref="InvalidOperationException">The result is default-initialized.
+    /// </exception>
     public static EvaluationResult operator -(EvaluationResult operand)
     {
         var node = new UnaryNode(UnaryOperator.Negate, operand.GetExpressionNode());
@@ -592,6 +636,8 @@ public readonly record struct EvaluationResult :
     /// values remain negative.</returns>
     /// <exception cref="CalculationLimitException">A calculation or expression limit is
     /// exceeded.</exception>
+    /// <exception cref="InvalidOperationException">The result is default-initialized.
+    /// </exception>
     public static EvaluationResult operator +(EvaluationResult operand)
     {
         var node = new UnaryNode(UnaryOperator.Positive, operand.GetExpressionNode());
@@ -1058,8 +1104,78 @@ public readonly record struct EvaluationResult :
 
     // Context and AST preservation helpers.
 
-    private ExpressionNode GetExpressionNode() =>
-        Context.PreviousExpression ?? new NumberNode(Value);
+    private ExpressionNode GetExpressionNode()
+    {
+        if (Context is null)
+        {
+            throw new InvalidOperationException(
+                "Cannot perform arithmetic on a default-initialized evaluation result.");
+        }
+
+        return Context.PreviousExpression ?? new NumberNode(Value);
+    }
+
+    private static CalculatorOptions GetCompositionOptions(CalculatorOptions? left, CalculatorOptions? right)
+    {
+        if (left is null)
+        {
+            return right ?? CalculatorOptions.Default;
+        }
+
+        if (right is null || left == right)
+        {
+            return left;
+        }
+
+        RequireMatchingOption(left.Culture, right.Culture, nameof(CalculatorOptions.Culture));
+        RequireMatchingOption(left.AngleUnit, right.AngleUnit, nameof(CalculatorOptions.AngleUnit));
+        RequireMatchingOption(left.Normalization, right.Normalization, nameof(CalculatorOptions.Normalization));
+        RequireMatchingOption(left.AllowImplicitMultiplication, right.AllowImplicitMultiplication, nameof(CalculatorOptions.AllowImplicitMultiplication));
+        RequireMatchingOption(left.AllowPostfixFactorial, right.AllowPostfixFactorial, nameof(CalculatorOptions.AllowPostfixFactorial));
+        RequireMatchingOption(left.RequireExplicitLogicalNegation, right.RequireExplicitLogicalNegation, nameof(CalculatorOptions.RequireExplicitLogicalNegation));
+        RequireMatchingOption(left.CustomFunctions, right.CustomFunctions, nameof(CalculatorOptions.CustomFunctions));
+        RequireMatchingOption(left.MaxInputLength, right.MaxInputLength, nameof(CalculatorOptions.MaxInputLength));
+        RequireMatchingOption(left.MaxNestingDepth, right.MaxNestingDepth, nameof(CalculatorOptions.MaxNestingDepth));
+        RequireMatchingOption(left.MaxIntegerBits, right.MaxIntegerBits, nameof(CalculatorOptions.MaxIntegerBits));
+        RequireMatchingOption(left.MaxExponentMagnitude, right.MaxExponentMagnitude, nameof(CalculatorOptions.MaxExponentMagnitude));
+        RequireMatchingOption(left.ResultFormat, right.ResultFormat, nameof(CalculatorOptions.ResultFormat));
+        throw new InvalidOperationException("Cannot combine results with different calculator options.");
+    }
+
+    private static void RequireMatchingOption<T>(T left, T right, string name)
+    {
+        if (!EqualityComparer<T>.Default.Equals(left, right))
+        {
+            throw new InvalidOperationException($"Cannot combine results with different '{name}' options.");
+        }
+    }
+
+    private static VariableCollection MergeCompatibleVariables(VariableCollection left, VariableCollection right)
+    {
+        if (ReferenceEquals(left, right))
+        {
+            return left;
+        }
+
+        var additions = new List<Variable>();
+        foreach (var variable in right)
+        {
+            if (!left.TryGetVariable(variable.Name, out var existing))
+            {
+                additions.Add(variable);
+                continue;
+            }
+
+            if (!EvaluationResultComparers.ValuesEqual(existing.Value, variable.Value) ||
+                !StringComparer.Ordinal.Equals(existing.Definition, variable.Definition) ||
+                !object.Equals(existing.Expression, variable.Expression))
+            {
+                throw new InvalidOperationException($"Cannot combine results with conflicting variable '{existing.Name}'.");
+            }
+        }
+
+        return left.SetItems(additions);
+    }
 
     private static EvaluationResult Combine(
         EvaluationResult left, EvaluationResult right, BinaryOperator op)
@@ -1067,12 +1183,12 @@ public readonly record struct EvaluationResult :
         var leftNode = left.GetExpressionNode();
         var rightNode = right.GetExpressionNode();
         var node = new BinaryNode(op, leftNode, rightNode);
-        var options = left.Options ?? right.Options ?? CalculatorOptions.Default;
+        var options = GetCompositionOptions(left.Options, right.Options);
+        var mergedVariables = MergeCompatibleVariables(left.Context.Variables, right.Context.Variables);
         AstValidator.Validate(node, options, allowUnknownFunctions: true, validateNodeInvariants: false);
 
         var resultValue = CalculateBinaryValue(left.Value, right.Value, node, options);
 
-        var mergedVariables = left.Context.Variables.SetItems(right.Context.Variables);
         var mergedContext = new EvaluationContext(mergedVariables, resultValue, node);
         return new EvaluationResult(resultValue, mergedContext, options: options);
     }

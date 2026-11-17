@@ -18,15 +18,15 @@ public sealed class CapturedValueTests
     }
 
     [TestMethod]
-    public void ResultCompositionUsesValuesRatherThanMergedBindings()
+    public void ResultCompositionUsesCapturedValuesWithCompatibleBindings()
     {
         var engine = new CalculatorEngine();
         var first = engine.Evaluate("x", engine.Evaluate("x = 3").Context);
-        var second = engine.Evaluate("6", engine.Evaluate("x = 6").Context);
+        var second = engine.Evaluate("6", first.Context);
 
         var combined = first + second;
         Assert.AreEqual(new MathValue(9), combined.Value);
-        Assert.AreEqual(new MathValue(6), engine.Evaluate("x", combined.Context).Value);
+        Assert.AreEqual(new MathValue(3), engine.Evaluate("x", combined.Context).Value);
         Assert.AreEqual(new MathValue(9), combined.Context.PreviousResult);
     }
 
@@ -203,7 +203,8 @@ public sealed class CapturedValueTests
         var oversized = Calculator.Evaluate("256");
         Action[] operations =
         [
-            () => _ = zero * oversized,
+            () => _ = zero * new EvaluationResult(
+                oversized.Value, oversized.Context, options: engine.Options),
             () => _ = zero * oversized.Value,
             () => _ = oversized.Value * zero,
             () => _ = zero.Value / new EvaluationResult(
@@ -215,8 +216,8 @@ public sealed class CapturedValueTests
             Assert.Throws<CalculationLimitException>(operation);
         }
 
-        Assert.AreEqual(new MathValue(0), (oversized * zero).Value);
-        Assert.AreSame(oversized.Options, (oversized * zero).Options);
+        Assert.ThrowsExactly<InvalidOperationException>(() => _ = zero * oversized);
+        Assert.ThrowsExactly<InvalidOperationException>(() => _ = oversized * zero);
     }
 
     [TestMethod]
@@ -264,7 +265,9 @@ public sealed class CapturedValueTests
         {
             CustomFunctions = [CustomFunction.Create("tick", () => new MathValue(++calls))]
         });
-        var combined = Calculator.Evaluate("1") + source.Evaluate("tick()");
+        var captured = source.Evaluate("tick()");
+        var withoutOptions = new EvaluationResult(captured.Value, captured.Context);
+        var combined = Calculator.Evaluate("1") + withoutOptions;
         Assert.AreEqual(new MathValue(2), combined.Value);
         Assert.AreEqual(1, calls);
         Assert.IsTrue((combined + new MathValue(double.PositiveInfinity)).Value.DoubleValue

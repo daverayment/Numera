@@ -161,6 +161,59 @@ Console.WriteLine($"Delta in round 3: {r3.AssignedVariables.Single().Name}"); //
 
 ---
 
+## Combining completed results
+
+You can also do arithmetic on results you already have:
+
+```csharp
+var engine = new CalculatorEngine();
+var subtotal = engine.Evaluate("200");
+var increase = engine.Evaluate("10%");
+var total = subtotal + increase; // 220, using calculator percentage rules
+
+var next = engine.Evaluate("ans / 2", total.Context); // 110
+```
+
+Here, `total.Context` gives you the combined answer as `ans`, along with the
+variables from both results. The arithmetic uses values already calculated, so
+assignments, random calls, and custom functions do not run again. No new
+assignments are recorded.
+
+For the results to share a context, any variable found on both sides must match.
+Names are compared case-insensitively. The stored values must have the same
+representation, exactness, and display scale; Decimal and Double values are
+compared bit-for-bit. Definition text must match exactly, and expressions must be
+structurally equal, ignoring source positions.
+
+A matching variable keeps its spelling, metadata, and collection position from
+the left result. Variables found only on the right are appended in their existing
+order.
+
+The calculator options must be equal when both results supply them, including
+display settings. If you create separate options with custom functions, reuse
+the same function collection: matching names and signatures alone do not mean
+that functions have the same implementation. A manually constructed result
+without options uses the other result's options, or library defaults if neither
+supplies them.
+
+A conflicting variable or option causes `InvalidOperationException` before any
+arithmetic, with the name or setting identified in the message. A
+default-initialized `EvaluationResult` has no usable context and cannot take part
+in arithmetic.
+
+The stored expression helps you display and inspect the calculation's history,
+but it is not necessarily a formula you can replay in the combined context.
+For example, the two original expressions may refer to different earlier values
+of `ans`. The arithmetic uses each result's calculated value; `ans` in the
+combined context holds the new answer.
+
+If you only need numeric arithmetic, use `subtotal.Value + increase.Value`.
+The answer is `200.1`: a `MathValue` stores the number, not the percentage notation
+that makes the result-level addition an increase. Arithmetic between a result
+and a plain value keeps the result's context and settings.
+
+---
+
 ## Safety and limits
 
 Variables get no special treatment: they sit behind the same limits as everything else (see [Safety Limits](safety-and-limits.md)).

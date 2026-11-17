@@ -64,9 +64,26 @@ There is no character-output ceiling. `SignificantDigits` controls primary-displ
 
 These size limits are not execution-time guarantees and cannot constrain work performed inside caller callbacks.
 
-Completed-result arithmetic checks the captured operands and the final value against the selected options' integer and rational-component limits. Operands are checked before arithmetic, even when cancellation would produce a small result. Binary composition selects the left result's options when available, otherwise the right result's options, otherwise the defaults. Unary composition uses the operand's options or the defaults.
+### Arithmetic on Completed Results
 
-Composition also applies the selected structural AST limits to its metadata, without evaluating that metadata. This prevents repeated shared-expression composition from creating an exponentially large inspection workload. Metadata is not required to resolve functions against the receiving engine: its captured values are already authoritative.
+You can use an `EvaluationResult` in further arithmetic, such as `result * 2`.
+Numera uses the value already calculated; it does not run the original expression
+or its functions again.
+
+The input values and the answer must all fit the integer and fraction-size limits.
+Inputs are checked first, so multiplying an oversized value by zero does not bypass
+a limit. These checks use the results' calculator options, falling back to library
+defaults when no options are supplied.
+
+Numera also limits the size and depth of the combined expression tree it keeps for
+display and inspection. Repeatedly combining results cannot grow that tree without
+bound, even when the numeric answer stays small. Keeping the tree does not mean
+evaluating it again.
+
+Combining two results also requires compatible variables and calculator options.
+See [combining completed results](variables.md#combining-completed-results) for
+how these are matched, how missing options are handled, and what happens on a
+conflict.
 
 ### Identifying the Limit
 
