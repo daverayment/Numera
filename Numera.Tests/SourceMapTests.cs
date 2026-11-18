@@ -10,6 +10,37 @@ namespace Numera.Tests;
 public sealed class SourceMapTests
 {
     [TestMethod]
+    [DataRow("-(3) 4", 0, 6, 4, 2, 1, 5)]
+    [DataRow("+sqrt(9) 4", 0, 10, 8, 1, 7, 9)]
+    [DataRow("= \u2212(3) 4 =", 2, 6, 4, 4, 1, 7)]
+    public void SignedImplicitProductsKeepOperandSpans(
+        string input, int start, int length, int signedLength, int operandStart, int operandLength, int rightStart)
+    {
+        var engine = CalculatorEngine.ForCulture(System.Globalization.CultureInfo.InvariantCulture);
+        var tree = engine.Parse(input);
+        Assert.IsInstanceOfType<BinaryNode>(tree);
+        var product = (BinaryNode)tree;
+        Assert.AreEqual(BinaryOperator.Multiply, product.Op);
+        Assert.IsTrue(product.IsImplicit);
+        Assert.AreEqual(new TextSpan(start, length), product.Span);
+        Assert.IsInstanceOfType<UnaryNode>(product.Left);
+        var signed = (UnaryNode)product.Left;
+        Assert.AreEqual(new TextSpan(start, signedLength), signed.Span);
+        Assert.AreEqual(new TextSpan(operandStart, operandLength), signed.Operand.Span);
+        Assert.AreEqual(new TextSpan(rightStart, 1), product.Right.Span);
+    }
+
+    [TestMethod]
+    public void ErrorsInsideSignedImplicitProductsKeepTheirOriginalSpan()
+    {
+        var engine = CalculatorEngine.ForCulture(System.Globalization.CultureInfo.InvariantCulture);
+        var exception = Assert.ThrowsExactly<ExpressionException>(() => engine.Evaluate("= \u2212(1 / 0) 4 ="));
+        Assert.AreEqual(EvaluationError.DivisionByZero, exception.Diagnostic.Code);
+        Assert.AreEqual(4, exception.Diagnostic.Position);
+        Assert.AreEqual(5, exception.Diagnostic.Length);
+    }
+
+    [TestMethod]
     public void Identity_MapsEverythingToItself()
     {
         var map = SourceMap.Identity(5);

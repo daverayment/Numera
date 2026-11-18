@@ -1,4 +1,6 @@
-﻿namespace Numera.Tests;
+﻿using System.Globalization;
+
+namespace Numera.Tests;
 
 [TestClass]
 public sealed class ImplicitMultiplicationTests
@@ -79,6 +81,67 @@ public sealed class ImplicitMultiplicationTests
         var engine = CreateEngineWithCustomFunctions();
         var result = engine.Evaluate(expression);
         Assert.AreEqual(expected, result.ToDouble(), 1e-12);
+    }
+
+    [TestMethod]
+    [DataRow("-(3)4", -12)]
+    [DataRow("-(3) 4", -12)]
+    [DataRow("+(3)4", 12)]
+    [DataRow("--(3)4", 12)]
+    [DataRow("-+(3)4", -12)]
+    [DataRow("-sqrt(9)4", -12)]
+    [DataRow("+sqrt(9)4", 12)]
+    [DataRow("--sqrt(9)4", 12)]
+    [DataRow("-triple(3)4", -36)]
+    [DataRow("-(1+2)(3+4)2", -42)]
+    [DataRow("12/-(2)3", -2)]
+    [DataRow("-2^(3)4", -32)]
+    [DataRow("(-3)4", -12)]
+    [DataRow("-(~3)4", 16)]
+    [DataRow("-((3)!)4", -24)]
+    [DataRow("-(-(3))4", 12)]
+    [DataRow("-3(4)5", -60)]
+    [DataRow("3(-sqrt(9))4", -36)]
+    [DataRow("-(4).5", -2)]
+    [DataRow("-sqrt(16).5", -2)]
+    public void UnarySignsPreserveGroupAndFunctionAdjacency(string expression, int expected)
+    {
+        var normalized = CreateEngineWithCustomFunctions().WithCulture(CultureInfo.InvariantCulture);
+        var raw = normalized.WithOptions(options => options with { Normalization = null });
+        foreach (var engine in new[] { normalized, raw })
+        {
+            var tree = engine.Parse(expression);
+            var result = engine.Evaluate(tree);
+            Assert.AreEqual(new MathValue(expected), result.Value);
+            Assert.AreEqual(CalculationExactness.Exact, result.Exactness);
+
+            string text = engine.FormatExpression(tree, ExpressionFormatOptions.Ascii);
+            Assert.AreEqual(result.Value, raw.Evaluate(text).Value, text);
+
+            var strict = engine.WithOptions(options => options with { AllowImplicitMultiplication = false });
+            Assert.IsFalse(strict.TryEvaluate(expression, out _, out var diagnostic));
+            Assert.AreEqual(EvaluationError.InvalidSyntax, diagnostic.Code);
+        }
+    }
+
+    [TestMethod]
+    [DataRow("-3 4")]
+    [DataRow("+3 4")]
+    [DataRow("--3 4")]
+    [DataRow("-.5 4")]
+    [DataRow("-(2)^2 3")]
+    [DataRow("~(3) 4")]
+    [DataRow("-~(3) 4")]
+    [DataRow("-(3)! 4")]
+    public void SignsDoNotPermitBareNumbersOrUnwrapOtherUnaryOperators(string expression)
+    {
+        Assert.IsFalse(TestEngines.RawEngine.TryEvaluate(expression, out _, out var rawDiagnostic));
+        Assert.AreEqual(EvaluationError.InvalidSyntax, rawDiagnostic.Code);
+        Assert.IsFalse(rawDiagnostic.IsIncomplete);
+
+        var normalized = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+        Assert.IsFalse(normalized.TryEvaluate(expression, out _, out var normalizedDiagnostic));
+        Assert.IsFalse(normalizedDiagnostic.IsIncomplete);
     }
 
     [TestMethod]

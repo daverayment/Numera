@@ -277,6 +277,19 @@ public sealed class ExpressionRoundTripTests
     }
 
     [TestMethod]
+    [DataRow("-(3) 4", "-3 * 4", "\u22123 \u00D7 4", @"-3 \cdot 4")]
+    [DataRow("+(3) 4", "+3 * 4", "+3 \u00D7 4", @"+3 \cdot 4")]
+    public void SignedGroupProductsUseUnambiguousMultiplicationAcrossStyles(
+        string expression, string ascii, string typographic, string latex)
+    {
+        var tree = Engine.Parse(expression);
+        Assert.AreEqual(ascii, Engine.FormatExpression(tree, ExpressionFormatOptions.Ascii));
+        Assert.AreEqual(typographic, Engine.FormatExpression(tree, ExpressionFormatOptions.Typographic));
+        Assert.AreEqual(latex, Engine.FormatExpression(tree, ExpressionFormatOptions.LaTeX));
+        Assert.AreEqual(Engine.Evaluate(tree).Value, Engine.Evaluate(ascii).Value);
+    }
+
+    [TestMethod]
     public void FormattingDoesNotExecuteCallbacksOrAssignments()
     {
         int calls = 0;

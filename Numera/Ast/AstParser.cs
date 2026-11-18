@@ -600,14 +600,18 @@ internal sealed class AstParser
             return true;
         }
 
-        // Find the rightmost term of the preceding expression, but stop unwrapping if
-        // the node itself is a parenthesized group (e.g. do not unwrap inside (3 + 4).
+        // Find the rightmost term through binary expressions and unary signs, but
+        // stop at a parenthesized group (e.g. do not unwrap inside (3 + 4)).
         ExpressionNode rightmost = left;
         while (_groupExtents is null || !_groupExtents.ContainsKey(rightmost))
         {
             if (rightmost is BinaryNode binary)
             {
                 rightmost = binary.Right;
+            }
+            else if (rightmost is UnaryNode { Op: UnaryOperator.Negate or UnaryOperator.Positive } unary)
+            {
+                rightmost = unary.Operand;
             }
             else
             {

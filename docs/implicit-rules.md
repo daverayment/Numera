@@ -42,6 +42,9 @@ Where whitespace is allowed, adding a space does not change the multiplication.
 | **Function Call** | Function Call | **Yes** | `sqrt(16)cbrt(27)` | `4 * 3` |
 | **Function Call** | Number | **Yes** | `sqrt(16)2`, `triple(3) 4` | `4 * 2`, `9 * 4` |
 
+A leading `+` or `-` does not change these adjacency rules: `-(3) 4` and
+`-sqrt(9) 4` both mean multiplication and give `-12`, while `-3 4` is rejected.
+
 ## Numbers, keywords, and names
 1. **No Silent Digit Grouping:** Two bare numbers separated by spaces (`1 000`, `2 3`) can never form implicit multiplication.
 2. **Keywords Blocked:** Reserved keywords (`and`, `or`, `xor`, `not`, `of`, `true`, `false`) can never start an implicit product (`2true` is rejected, and `2and 3` evaluates as logical `2 && 3`).
