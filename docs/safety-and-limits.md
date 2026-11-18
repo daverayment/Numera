@@ -89,14 +89,16 @@ conflict.
 
 Limit failures use `EvaluationError.LimitExceeded`. The diagnostic's `LimitKind`
 identifies the safety guard, and `LimitValue` gives the ceiling it used: an engine
-setting or a fixed safety bound. The message names the limit too, but use the
-structured fields for UI decisions or localization rather than matching message text.
+setting or a fixed safety bound. Default messages use readable descriptions rather
+than API property names: for example, "The factorial argument limit was exceeded
+(1000)." Use the structured fields for UI decisions or localization rather than
+matching message text.
 
-| Expression | `LimitKind` | `LimitValue` with default settings |
-| :--- | :--- | ---: |
-| `1001!` | `FactorialArgument` | 1,000 |
-| `9999^9999` | `IntegerBits` | 16,384 bits |
-| `sqrt(2^16000)` | `ExponentMagnitude` | 10,000 |
+| Expression | `LimitKind` | Setting or constant | `LimitValue` with default settings |
+| :--- | :--- | :--- | ---: |
+| `1001!` | `FactorialArgument` | `CalculationLimits.MaxFactorialArgument` | 1,000 |
+| `9999^9999` | `IntegerBits` | `CalculatorOptions.MaxIntegerBits` | 16,384 bits |
+| `sqrt(2^16000)` | `ExponentMagnitude` | `CalculatorOptions.MaxExponentMagnitude` | 10,000 |
 
 The first guard to reject the calculation determines the diagnostic. In the last
 example, the inner power exceeds the exponent limit before the square root runs.

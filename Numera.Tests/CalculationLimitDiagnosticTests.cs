@@ -10,20 +10,20 @@ namespace Numera.Tests;
 public sealed class CalculationLimitDiagnosticTests
 {
     [TestMethod]
-    [DataRow("1001!", CalculationLimitKind.FactorialArgument, 1000, "MaxFactorialArgument", 0, 5)]
-    [DataRow("factorial(1001)", CalculationLimitKind.FactorialArgument, 1000, "MaxFactorialArgument", 0, 15)]
-    [DataRow("9999^9999", CalculationLimitKind.IntegerBits, 16384, "MaxIntegerBits", 0, 9)]
-    [DataRow("2^10001", CalculationLimitKind.ExponentMagnitude, 10000, "MaxExponentMagnitude", 0, 7)]
-    [DataRow("sqrt(2^16000)", CalculationLimitKind.ExponentMagnitude, 10000, "MaxExponentMagnitude", 5, 7)]
+    [DataRow("1001!", CalculationLimitKind.FactorialArgument, 1000, "factorial argument", 0, 5)]
+    [DataRow("factorial(1001)", CalculationLimitKind.FactorialArgument, 1000, "factorial argument", 0, 15)]
+    [DataRow("9999^9999", CalculationLimitKind.IntegerBits, 16384, "integer or reduced fraction component size", 0, 9)]
+    [DataRow("2^10001", CalculationLimitKind.ExponentMagnitude, 10000, "exponent magnitude", 0, 7)]
+    [DataRow("sqrt(2^16000)", CalculationLimitKind.ExponentMagnitude, 10000, "exponent magnitude", 5, 7)]
     public void EvaluationReportsTheRejectingLimitAndSourceSpan(
-        string expression, CalculationLimitKind kind, int ceiling, string setting, int position, int length)
+        string expression, CalculationLimitKind kind, int ceiling, string description, int position, int length)
     {
         var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
 
         Assert.IsFalse(engine.TryEvaluate(expression, out var result, out var diagnostic));
         Assert.IsNotNull(diagnostic);
         AssertLimit(diagnostic, kind, ceiling);
-        Assert.Contains(setting, diagnostic.Message);
+        Assert.Contains(description, diagnostic.Message);
         Assert.AreEqual(position, diagnostic.Position);
         Assert.AreEqual(length, diagnostic.Length);
         Assert.IsFalse(result.HasAssignments);
@@ -230,6 +230,33 @@ public sealed class CalculationLimitDiagnosticTests
     }
 
     [TestMethod]
+    [DataRow(CalculationLimitKind.InputLength, "input length", "UTF-16 code units")]
+    [DataRow(CalculationLimitKind.NestingDepth, "nesting depth", "levels")]
+    [DataRow(CalculationLimitKind.IntegerBits, "integer or reduced fraction component size", "bits")]
+    [DataRow(CalculationLimitKind.IntermediateBits, "arithmetic intermediate size", "bits")]
+    [DataRow(CalculationLimitKind.FactorialArgument, "factorial argument", "")]
+    [DataRow(CalculationLimitKind.ExponentMagnitude, "exponent magnitude", "")]
+    [DataRow(CalculationLimitKind.PrimalityBits, "primality input size", "bits")]
+    [DataRow(CalculationLimitKind.FactorizationBits, "factorization input size", "bits")]
+    public void DefaultMessagesUseReadableLimitDescriptions(CalculationLimitKind kind, string description, string unit)
+    {
+        var unspecified = new CalculationLimitException(kind);
+        Assert.AreEqual($"The {description} limit was exceeded.", unspecified.Message);
+        Assert.AreEqual(kind, unspecified.Diagnostic.LimitKind);
+        Assert.IsNull(unspecified.Diagnostic.LimitValue);
+
+        string amount = "42";
+        if (unit.Length > 0)
+        {
+            amount += $" {unit}";
+        }
+
+        var specified = new CalculationLimitException(kind, 42);
+        Assert.AreEqual($"The {description} limit was exceeded ({amount}).", specified.Message);
+        AssertLimit(specified.Diagnostic, kind, 42);
+    }
+
+    [TestMethod]
     public void EveryLimitKindHasADescriptiveMessageAndSurvivesDiagnosticEnrichment()
     {
         foreach (var kind in Enum.GetValues<CalculationLimitKind>())
@@ -244,6 +271,7 @@ public sealed class CalculationLimitDiagnosticTests
             Assert.AreEqual(kind, exception.Diagnostic.LimitKind);
             Assert.AreEqual(ceiling, exception.Diagnostic.LimitValue);
             Assert.AreNotEqual(new CalculationLimitException().Message, exception.Message);
+            Assert.DoesNotContain("Max", exception.Message);
 
             var positioned = exception.Diagnostic with { Position = 3, Length = 2 };
             Assert.AreEqual(kind, positioned.LimitKind);
