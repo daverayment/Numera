@@ -126,8 +126,10 @@ public sealed record EvaluationDiagnostic(EvaluationError Code, string Message, 
             end++;
         }
 
-        return new EvaluationDiagnostic(EvaluationError.InvalidNumberFormat,
-            "Underscores can't be used as digit separators. Write 1000 instead of 1_000.",
+        return new EvaluationDiagnostic(
+            EvaluationError.InvalidNumberFormat,
+            "Underscores can't be used as digit separators. Use '*' to multiply by " +
+            "an underscore-prefixed variable.",
             position, end - position);
     }
 

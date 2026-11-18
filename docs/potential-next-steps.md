@@ -51,6 +51,17 @@ behavior. Before introducing an API, define source-span handling, propagation
 through subsequent calculations, and how to avoid noisy hints for ordinary
 expressions. Formatted-expression previews remain the simpler first option.
 
+## Incomplete Localized Numbers
+
+Investigate recognizing unfinished culture-specific numeric input through
+`EvaluationDiagnostic.IsIncomplete`, such as a partially typed digit group. Define
+recognized prefixes using the configured decimal separator, grouping separator, and
+group sizes; malformed grouping alone is not evidence that input is incomplete.
+
+Use culture-specific prefix tests to distinguish unfinished entries from invalid
+numbers without relaxing normalization rules or changing diagnostic codes and source
+spans. Localized-number format errors currently leave `IsIncomplete` false.
+
 ## Inverse Trigonometric Special Values
 
 Consider recognizing rational inverse-trigonometric inputs with proven rational

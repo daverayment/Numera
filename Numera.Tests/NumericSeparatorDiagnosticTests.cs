@@ -5,6 +5,9 @@ namespace Numera.Tests;
 [TestClass]
 public sealed class NumericSeparatorDiagnosticTests
 {
+    private const string ExpectedMessage =
+        "Underscores can't be used as digit separators. Use '*' to multiply by an underscore-prefixed variable.";
+
     private static readonly CalculatorEngine Engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
     private static readonly CalculatorEngine RawEngine = Engine.WithOptions(options => options with { Normalization = null });
 
@@ -22,6 +25,7 @@ public sealed class NumericSeparatorDiagnosticTests
     [DataRow("2e3_4", 3, 1)]
     [DataRow("2E-3__4", 4, 2)]
     [DataRow("0e99999_0", 7, 1)]
+    [DataRow("0x1F_00", 4, 1)]
     [DataRow("0xFF_000", 4, 1)]
     [DataRow("0b101__0", 5, 2)]
     [DataRow("0o7_x", 3, 1)]
@@ -39,8 +43,7 @@ public sealed class NumericSeparatorDiagnosticTests
             Assert.AreEqual(position, parsed.Position);
             Assert.AreEqual(length, parsed.Length);
             Assert.IsFalse(parsed.IsIncomplete);
-            StringAssert.Contains(parsed.Message, "Underscores can't be used as digit separators.");
-            StringAssert.Contains(parsed.Message, "1000");
+            Assert.AreEqual(ExpectedMessage, parsed.Message);
 
             Assert.IsFalse(engine.TryEvaluate(input, out _, out var evaluated));
             Assert.AreEqual(parsed, evaluated);
@@ -56,6 +59,7 @@ public sealed class NumericSeparatorDiagnosticTests
         Assert.AreEqual(EvaluationError.InvalidNumberFormat, normalized.Code);
         Assert.AreEqual(position, normalized.Position);
         Assert.AreEqual(length, normalized.Length);
+        Assert.AreEqual(ExpectedMessage, normalized.Message);
     }
 
     [TestMethod]
@@ -78,6 +82,8 @@ public sealed class NumericSeparatorDiagnosticTests
             var explicitOnly = configured.WithOptions(options => options with { AllowImplicitMultiplication = false });
             Assert.IsFalse(explicitOnly.TryEvaluate("2_x", out _, out var explicitDiagnostic, context));
             Assert.AreEqual(EvaluationError.InvalidNumberFormat, explicitDiagnostic.Code);
+            Assert.AreEqual(ExpectedMessage, explicitDiagnostic.Message);
+            Assert.AreEqual(new MathValue(14), explicitOnly.Evaluate("2*_x", context).Value);
         }
     }
 
@@ -130,7 +136,7 @@ public sealed class NumericSeparatorDiagnosticTests
             Assert.IsFalse(engine.TryEvaluate(input, out _, out var diagnostic));
             Assert.AreEqual(EvaluationError.InvalidNumberFormat, diagnostic.Code);
             Assert.AreEqual(input.IndexOf('_'), diagnostic.Position);
-            StringAssert.Contains(diagnostic.Message, "Underscores can't be used as digit separators.");
+            Assert.AreEqual(ExpectedMessage, diagnostic.Message);
         }
 
         culture.NumberFormat.NumberDecimalSeparator = "::";
