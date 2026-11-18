@@ -3,6 +3,18 @@
 These are optional post-v1 investigations, not requirements for the initial release.
 Prioritize release readiness over expanding the numerical model.
 
+## Evaluator Guard Allocations
+
+Revisit capturing lambdas passed to `AstEvaluator.Guard` if profiling shows that
+repeated evaluation creates meaningful GC pressure. Measure allocations and throughput
+in Release builds on the supported runtime, separating evaluation from parsing.
+
+Local `try`/`catch` blocks could remove closure and delegate allocations while retaining
+the shared exception-enrichment helper, at the cost of more repetitive code. Preserve
+diagnostic source spans, exception filters, operand order, and short-circuit behavior.
+Keep exactness-propagation collection allocations outside this focused investigation.
+Ordinary interactive evaluation does not currently justify the additional code.
+
 ## MathValue Default Formatting
 
 Review the boundary between representation-native `MathValue.ToString()` and

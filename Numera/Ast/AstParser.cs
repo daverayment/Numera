@@ -124,7 +124,7 @@ internal sealed class AstParser
         int savePos = _pos;
 
         // Check if input begins with: <Identifier> '=' (and not "==").
-        if (IsIdentifierStart(Peek()))
+        if (Identifier.IsIdentifierStart(Peek()))
         {
             var identifierSpan = ParseIdentifier();
             string identifier = identifierSpan.ToString();
@@ -572,13 +572,13 @@ internal sealed class AstParser
 
     private int GetIdentifierLengthAt(int pos)
     {
-        if (pos >= _input.Length || !IsIdentifierStart(_input[pos]))
+        if (pos >= _input.Length || !Identifier.IsIdentifierStart(_input[pos]))
         {
             return 0;
         }
 
         int length = 1;
-        while (pos + length < _input.Length && IsIdentifierPart(_input[pos + length]))
+        while (pos + length < _input.Length && Identifier.IsIdentifierPart(_input[pos + length]))
         {
             length++;
         }
@@ -767,7 +767,7 @@ internal sealed class AstParser
             throw SyntaxError("Logical negation is only allowed at the start of a logical operand; wrap the negated expression in parentheses.");
         }
 
-        if (IsIdentifierStart(c))
+        if (Identifier.IsIdentifierStart(c))
         {
             int kwPos = _pos;
             if (MatchKeyword("not"))
@@ -1286,12 +1286,6 @@ internal sealed class AstParser
         return result;
     }
 
-    private static bool IsIdentifierStart(char c) =>
-        char.IsLetter(c) || c == '_';
-
-    private static bool IsIdentifierPart(char c) =>
-        (char.IsLetter(c) || char.IsAsciiDigit(c) || c == '_') && !ConstantCatalog.IsConstantLetter(c);
-
     private ReadOnlySpan<char> ParseIdentifier()
     {
         var start = _pos;
@@ -1304,7 +1298,7 @@ internal sealed class AstParser
         while (_pos < _input.Length)
         {
             char ch = Peek();
-            if (!IsIdentifierPart(ch))
+            if (!Identifier.IsIdentifierPart(ch))
             {
                 break;
             }
@@ -1334,7 +1328,7 @@ internal sealed class AstParser
     private bool IsKeywordAt(string keyword) =>
         _pos + keyword.Length <= _input.Length &&
         _input.AsSpan(_pos, keyword.Length).Equals(keyword, Identifier.Comparison) &&
-        (_pos + keyword.Length == _input.Length || !IsIdentifierPart(_input[_pos + keyword.Length]));
+        (_pos + keyword.Length == _input.Length || !Identifier.IsIdentifierPart(_input[_pos + keyword.Length]));
 
     private bool MatchKeyword(string keyword)
     {
