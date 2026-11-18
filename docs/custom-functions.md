@@ -112,6 +112,10 @@ To prevent subtle mathematical ambiguities and maintain consistency:
 - Custom functions cannot be assigned to as variables (e.g. `myFunc = 10` throws `EvaluationError.InvalidSyntax`).
 Reserved custom-function names are rejected with `ArgumentException` when the function is created.
 
+Contexts supplied to an engine must also keep variable names distinct from its
+registered custom functions. See [variable naming rules](variables.md#naming-rules)
+for context compatibility and error handling.
+
 ### 5. Exception Handling & Safety Limits
 - If a custom function throws `DivideByZeroException`, it is mapped to `EvaluationError.DivisionByZero`.
 - If a custom function throws `CalculationLimitException` or returns a value exceeding the engine's configured integer or rational component limits, the ceiling violation is enforced immediately.

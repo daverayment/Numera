@@ -10,14 +10,16 @@ namespace Numera;
 /// <remarks>
 /// <para>
 /// Instances are immutable and safe to share across threads and calls. Immutability is
-/// enforced by the type system: variables are held in an immutable <see cref="VariableCollection"/>,
-/// so even a caller who casts <see cref="Variables"/> back to a mutable interface cannot
-/// modify them.
+/// enforced by the type system: variables are held in an immutable
+/// <see cref="VariableCollection"/>, so even a caller who casts <see cref="Variables"/>
+/// back to a mutable interface cannot modify them.
 /// </para>
 /// <para>
 /// Variable names are case-insensitive (ordinal) and cannot shadow constants,
 /// language keywords, or built-in functions, including aliases. The name <c>ans</c>
-/// is reserved for <see cref="PreviousResult"/>.
+/// is reserved for <see cref="PreviousResult"/>. Custom-function name conflicts are
+/// checked by the receiving <see cref="CalculatorEngine"/>, whose options hold the
+/// registrations.
 /// </para>
 /// <para>
 /// Equality is by value: two contexts are equal if they define the same variables (names

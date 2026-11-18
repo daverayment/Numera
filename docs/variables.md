@@ -72,6 +72,15 @@ syntax, and `EvaluationContext` checks for reserved names. For example, `"foo ba
 and `"2x"` are invalid identifiers, while `"pi"` and `"sin"` are reserved. These
 checks throw `ArgumentException`; a null name throws `ArgumentNullException`.
 
+An engine's registered custom functions also reserve their names. If it registers
+`tw`, a supplied context cannot contain a variable named `tw` or `TW`, even when
+the expression does not use that name.
+
+This is an invalid context argument, not an expression error. Parsing, evaluation,
+and expression formatting throw `ArgumentException` with parameter name `context`;
+`TryParse` and `TryEvaluate` throw it too. Rename the variable or function before
+using that context with the engine.
+
 ### Incomplete assignments and launcher decoration
 
 `x =` is an incomplete assignment, not a request to evaluate `x`. It reports

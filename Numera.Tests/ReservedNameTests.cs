@@ -128,6 +128,118 @@ public sealed class ReservedNameTests
     }
 
     [TestMethod]
+    [DataRow("tw", "tw")]
+    [DataRow("tw", "TW")]
+    [DataRow("_tw", "_TW")]
+    [DataRow("\u03B1", "\u0391")]
+    [DataRow("i", "I")]
+    public void ConflictingContextsAreRejectedAcrossEngineEntryPoints(string functionName, string variableName)
+    {
+        int calls = 0;
+        var engine = Engine.WithOptions(options => options with
+        {
+            CustomFunctions = [CustomFunction.Create(functionName, value =>
+            {
+                calls++;
+                return value * new MathValue(2);
+            })]
+        });
+        var context = new EvaluationContext([new Variable(variableName, 7)], new MathValue(11));
+        var identifier = new IdentifierNode(variableName);
+        var number = new NumberNode(new MathValue(1));
+        var call = new FunctionCallNode(functionName, [new NumberNode(new MathValue(3))]);
+
+        foreach (var configured in new[] { engine, engine.WithOptions(options => options with { Normalization = null }) })
+        {
+            Action[] operations =
+            [
+                () => configured.Evaluate(variableName, context),
+                () => configured.Evaluate("1", context),
+                () => configured.Evaluate($"{functionName}(3)", context),
+                () => configured.Evaluate($"0 and {functionName}(3)", context),
+                () => configured.Evaluate(identifier, context),
+                () => configured.Evaluate(number, context),
+                () => configured.Evaluate(call, context),
+                () => configured.TryEvaluate("1", out _, out _, context),
+                () => configured.TryEvaluate(number, out _, out _, context),
+                () => configured.Parse(variableName, context),
+                () => configured.Parse("unbound", context, allowUnboundVariables: true),
+                () => configured.TryParse("1", out _, out _, context),
+                () => configured.TryParse("unbound", out _, out _, context, allowUnboundVariables: true),
+                () => configured.FormatExpression(variableName, context: context),
+                () => configured.FormatExpression("1", ExpressionFormatOptions.Ascii, context),
+                () => configured.FormatExpression($"{functionName}(3)", context: context),
+                () => configured.FormatExpression("other(x)", context: context)
+            ];
+
+            foreach (var operation in operations)
+            {
+                var exception = Assert.ThrowsExactly<ArgumentException>(operation);
+                Assert.AreEqual("context", exception.ParamName);
+                Assert.Contains($"Context variable '{variableName}' cannot shadow the registered custom function '{functionName}'.", exception.Message);
+                Assert.AreEqual(0, calls);
+            }
+        }
+
+        Assert.AreEqual(new MathValue(7), context.Variables[variableName].Value);
+        Assert.AreEqual(new MathValue(11), context.PreviousResult);
+        Assert.AreEqual(new MathValue(7), Engine.Evaluate(variableName, context).Value);
+    }
+
+    [TestMethod]
+    [DataRow("tw", "tw2")]
+    [DataRow("_tw", "tw")]
+    [DataRow("i", "\u0131")]
+    [DataRow("i", "\u0130")]
+    public void NonconflictingContextsPreserveVariableAndFunctionResolution(string functionName, string variableName)
+    {
+        var engine = Engine.WithOptions(options => options with
+        {
+            CustomFunctions = [CustomFunction.Create(functionName, value => value * new MathValue(2))]
+        });
+        var context = new EvaluationContext([new Variable(variableName, 7)]);
+        string expression = $"{variableName} + {functionName}(3)";
+
+        foreach (var configured in new[] { engine, engine.WithOptions(options => options with { Normalization = null }) })
+        {
+            var node = configured.Parse(expression, context);
+            Assert.AreEqual(new MathValue(13), configured.Evaluate(expression, context).Value);
+            Assert.AreEqual(new MathValue(13), configured.Evaluate(node, context).Value);
+            Assert.IsTrue(configured.TryEvaluate(expression, out var result, out var diagnostic, context));
+            Assert.IsNull(diagnostic);
+            Assert.AreEqual(new MathValue(13), result.Value);
+            Assert.IsTrue(configured.TryParse(expression, out _, out diagnostic, context));
+            Assert.IsNull(diagnostic);
+            Assert.AreEqual(expression, configured.FormatExpression(expression, ExpressionFormatOptions.Ascii, context));
+        }
+    }
+
+    [TestMethod]
+    public void ContextsWithoutVariablesDoNotConflictWithFunctionsOrHistoricalMetadata()
+    {
+        var engine = Engine.WithOptions(options => options with
+        {
+            CustomFunctions = [CustomFunction.Create("tw", value => value * new MathValue(2))]
+        });
+        EvaluationContext?[] contexts =
+        [
+            null,
+            EvaluationContext.Empty,
+            new EvaluationContext
+            {
+                PreviousResult = new MathValue(7),
+                PreviousExpression = new IdentifierNode("tw")
+            }
+        ];
+
+        foreach (var context in contexts)
+        {
+            Assert.AreEqual(new MathValue(6), engine.Evaluate("tw(3)", context).Value);
+            Assert.AreEqual(new MathValue(6), engine.Evaluate(engine.Parse("tw(3)", context), context).Value);
+        }
+    }
+
+    [TestMethod]
     public void ContextKeepsPreviousResultGuidanceAheadOfOtherReservedNames()
     {
         var exception = Assert.ThrowsExactly<ArgumentException>(() =>

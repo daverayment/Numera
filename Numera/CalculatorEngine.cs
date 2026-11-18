@@ -253,9 +253,13 @@ public sealed class CalculatorEngine
     /// <param name="context">Optional variables and previous result.</param>
     /// <returns>The result of the evaluation as a <see cref="EvaluationResult"/>.
     /// </returns>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is null.</exception>
-    /// <exception cref="NumeraException">Thrown if normalization, parsing or evaluation fails. Check
-    /// <see cref="NumeraException.Diagnostic"/> for structured details.</exception>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
+    /// null.</exception>
+    /// <exception cref="ArgumentException">A context variable shadows a registered
+    /// custom function.</exception>
+    /// <exception cref="NumeraException">Thrown if normalization, parsing or evaluation
+    /// fails. Check <see cref="NumeraException.Diagnostic"/> for structured details.
+    /// </exception>
     public EvaluationResult Evaluate(string expression, EvaluationContext? context = null)
     {
         ArgumentNullException.ThrowIfNull(expression);
@@ -291,14 +295,36 @@ public sealed class CalculatorEngine
     /// </returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="node"/> is null.
     /// </exception>
+    /// <exception cref="ArgumentException">A context variable shadows a registered
+    /// custom function.</exception>
     /// <exception cref="NumeraException">Thrown if evaluation fails.</exception>
     public EvaluationResult Evaluate(ExpressionNode node, EvaluationContext? context = null)
     {
         ArgumentNullException.ThrowIfNull(node);
 
+        ValidateContext(context);
         AstValidator.Validate(node, Options);
 
         return EvaluateValidated(node, context);
+    }
+
+    private void ValidateContext(EvaluationContext? context)
+    {
+        if (context is null || context.Variables.Count == 0 || Options.CustomFunctions.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var function in Options.CustomFunctions)
+        {
+            if (context.Variables.TryGetVariable(function.Name, out var variable))
+            {
+                throw new ArgumentException(
+                    $"Context variable '{variable.Name}' cannot shadow the registered " +
+                    $"custom function '{function.Name}'.",
+                    nameof(context));
+            }
+        }
     }
 
     /// <summary>
@@ -352,6 +378,9 @@ public sealed class CalculatorEngine
     /// parsing or evaluation failed.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
     /// null.</exception>
+    /// <exception cref="ArgumentException">A context variable shadows a registered
+    /// custom function. This is an invalid argument, not an expression diagnostic.
+    /// </exception>
     public bool TryEvaluate(
         string expression,
         out EvaluationResult result,
@@ -388,6 +417,9 @@ public sealed class CalculatorEngine
     /// <param name="context">Optional variables and previous result.</param>
     /// <returns><c>true</c> if evaluation succeeded; otherwise <c>false</c>.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="node"/> is null.
+    /// </exception>
+    /// <exception cref="ArgumentException">A context variable shadows a registered
+    /// custom function. This is an invalid argument, not an expression diagnostic.
     /// </exception>
     public bool TryEvaluate(
         ExpressionNode node,
@@ -427,6 +459,8 @@ public sealed class CalculatorEngine
     /// <returns>The root node of the syntax tree.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
     /// null.</exception>
+    /// <exception cref="ArgumentException">A context variable shadows a registered
+    /// custom function.</exception>
     /// <exception cref="NumeraException">Thrown if normalization or parsing fails, or
     /// limits are exceeded.</exception>
     public ExpressionNode Parse(
@@ -442,6 +476,7 @@ public sealed class CalculatorEngine
         bool allowUnknownFunctions)
     {
         ArgumentNullException.ThrowIfNull(expression);
+        ValidateContext(context);
 
         // Checked before normalizing so oversized input is rejected without doing any
         // rewriting work.
@@ -480,6 +515,9 @@ public sealed class CalculatorEngine
     /// <returns><c>true</c> if parsing succeeded; otherwise <c>false</c>.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
     /// null.</exception>
+    /// <exception cref="ArgumentException">A context variable shadows a registered
+    /// custom function. This is an invalid argument, not an expression diagnostic.
+    /// </exception>
     public bool TryParse(
         string expression,
         [NotNullWhen(true)] out ExpressionNode? node,
@@ -523,6 +561,8 @@ public sealed class CalculatorEngine
     /// </remarks>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is
     /// null.</exception>
+    /// <exception cref="ArgumentException">A context variable shadows a registered
+    /// custom function.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown if the rendering options are
     /// invalid.</exception>
     /// <exception cref="NumeraException">Thrown if the expression cannot be normalized or
