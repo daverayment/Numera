@@ -74,7 +74,7 @@ public sealed class EvaluationContextTests
 
         foreach (string name in names)
         {
-            AssertContextRejectsBinding(name, "reserved");
+            AssertContextRejectsBinding(name, "cannot shadow");
         }
     }
 

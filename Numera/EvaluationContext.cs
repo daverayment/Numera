@@ -80,24 +80,10 @@ public sealed record EvaluationContext
 
             foreach (var variable in value)
             {
-                if (KeywordCatalog.IsReserved(variable.Name))
+                if (ReservedNames.Classify(variable.Name).Description is { } reservedFor)
                 {
                     throw new ArgumentException(
-                        $"Variable name '{variable.Name}' is reserved for a language keyword.",
-                        nameof(Variables));
-                }
-
-                if (ConstantCatalog.TryResolve(variable.Name, out _, out _))
-                {
-                    throw new ArgumentException(
-                        $"Variable name '{variable.Name}' is reserved for a built-in constant.",
-                        nameof(Variables));
-                }
-
-                if (FunctionCatalog.TryGetInfo(variable.Name, out _))
-                {
-                    throw new ArgumentException(
-                        $"Variable name '{variable.Name}' is reserved for a built-in function.",
+                        $"Variable name '{variable.Name}' cannot shadow {reservedFor}.",
                         nameof(Variables));
                 }
             }

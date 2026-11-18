@@ -248,24 +248,18 @@ internal static class AstValidator
                     throw Invalid(node, EvaluationError.InvalidSyntax, "Assignment must specify a value.");
                 }
 
-                if (ConstantCatalog.TryResolve(assignment.VariableName, out _, out _))
+                string? reservedNameMessage = ReservedNames.Classify(assignment.VariableName, options.CustomFunctions).Kind switch
                 {
-                    throw Invalid(node, EvaluationError.InvalidSyntax, $"Cannot assign to constant name '{assignment.VariableName}'.");
-                }
+                    ReservedNameKind.None => null,
+                    ReservedNameKind.Constant => $"Cannot assign to constant name '{assignment.VariableName}'.",
+                    ReservedNameKind.BuiltInFunction or ReservedNameKind.CustomFunction => $"Cannot assign to function name '{assignment.VariableName}'.",
+                    ReservedNameKind.Keyword or ReservedNameKind.PreviousResult => $"Cannot assign to reserved name '{assignment.VariableName}'.",
+                    _ => throw new InvalidOperationException("Unexpected assignment name classification.")
+                };
 
-                if (FunctionCatalog.TryGetInfo(assignment.VariableName, out _))
+                if (reservedNameMessage is not null)
                 {
-                    throw Invalid(node, EvaluationError.InvalidSyntax, $"Cannot assign to function name '{assignment.VariableName}'.");
-                }
-
-                if (options.CustomFunctions.TryGetFunction(assignment.VariableName, out _))
-                {
-                    throw Invalid(node, EvaluationError.InvalidSyntax, $"Cannot assign to function name '{assignment.VariableName}'.");
-                }
-
-                if (KeywordCatalog.IsReserved(assignment.VariableName))
-                {
-                    throw Invalid(node, EvaluationError.InvalidSyntax, $"Cannot assign to reserved name '{assignment.VariableName}'.");
+                    throw Invalid(node, EvaluationError.InvalidSyntax, reservedNameMessage);
                 }
 
                 break;

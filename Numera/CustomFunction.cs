@@ -42,8 +42,8 @@ public sealed class CustomFunction
     /// <param name="implementation">The callback delegate that executes the function.
     /// </param>
     /// <param name="description">Optional description of the function.</param>
-    /// <exception cref="ArgumentException">The signature has a negative minimum or a
-    /// maximum less than its minimum.</exception>
+    /// <exception cref="ArgumentException">The name is invalid or reserved, or the
+    /// signature has a negative minimum or a maximum less than its minimum.</exception>
     public CustomFunction(
         string name,
         FunctionSignature signature,
@@ -71,33 +71,10 @@ public sealed class CustomFunction
                 nameof(name));
         }
 
-        // Protect "ans" from being shadowed by a custom function name.
-        if (name.Equals(EvaluationContext.PreviousResultVariableName, Identifier.Comparison))
+        if (ReservedNames.Classify(name).Description is { } reservedFor)
         {
             throw new ArgumentException(
-                $"Custom function name '{name}' cannot shadow the " +
-                $"'{EvaluationContext.PreviousResultVariableName}' variable.",
-                nameof(name));
-        }
-
-        if (KeywordCatalog.IsReserved(name))
-        {
-            throw new ArgumentException(
-                $"Custom function name '{name}' cannot shadow reserved keyword.",
-                nameof(name));
-        }
-
-        if (ConstantCatalog.TryResolve(name, out _, out _))
-        {
-            throw new ArgumentException(
-                $"Custom function name '{name}' cannot shadow reserved constant.",
-                nameof(name));
-        }
-
-        if (FunctionCatalog.TryGetInfo(name, out _))
-        {
-            throw new ArgumentException(
-                $"Custom function name '{name}' cannot shadow built-in function.",
+                $"Custom function name '{name}' cannot shadow {reservedFor}.",
                 nameof(name));
         }
 

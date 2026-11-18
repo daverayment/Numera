@@ -176,52 +176,43 @@ internal sealed class AstParser
 
     private void ValidateAssignableIdentifier(string name, int pos)
     {
-        if (KeywordCatalog.IsReserved(name))
+        string message;
+        switch (ReservedNames.Classify(name, _options.CustomFunctions))
         {
-            throw new ExpressionException(Diagnostic(
-                EvaluationError.InvalidSyntax,
-                $"Cannot assign to '{name}' because it is a reserved language keyword.",
-                pos,
-                name.Length));
+            case { Kind: ReservedNameKind.None }:
+                return;
+
+            case { Kind: ReservedNameKind.Keyword or ReservedNameKind.PreviousResult }:
+                message = $"Cannot assign to '{name}' because it is a reserved language keyword.";
+                break;
+
+            case { Kind: ReservedNameKind.Constant, Constant: { } constant }:
+                string detail = constant.Kind switch
+                {
+                    ConstantKind.E => "Euler's number (~ 2.71828)",
+                    ConstantKind.Pi => "Archimedes' constant π (~ 3.14159)",
+                    ConstantKind.Tau => "the circle constant τ (~ 6.28318)",
+                    ConstantKind.Phi => "the golden ratio φ (~ 1.61803)",
+                    ConstantKind.True or ConstantKind.False => "a boolean literal",
+                    _ => "a built-in mathematical constant"
+                };
+                message = $"Cannot assign to '{name}' because it is reserved for {detail}. Choose a different variable name.";
+                break;
+
+            case { Kind: ReservedNameKind.BuiltInFunction, BuiltInFunction: { } function }:
+                string aliasNote = function.IsAlias ? $" (alias for '{function.CanonicalName}')" : "";
+                message = $"Cannot assign to name '{name}' because it is a built-in function{aliasNote}.";
+                break;
+
+            case { Kind: ReservedNameKind.CustomFunction }:
+                message = $"Cannot assign to name '{name}' because it is registered as a custom function.";
+                break;
+
+            default:
+                throw new InvalidOperationException("The reserved-name classification is invalid or missing its metadata.");
         }
 
-        if (ConstantCatalog.TryResolve(name, out var constantKind, out _))
-        {
-            string detail = constantKind switch
-            {
-                ConstantKind.E => "Euler's number (~ 2.71828)",
-                ConstantKind.Pi => "Archimedes' constant π (~ 3.14159)",
-                ConstantKind.Tau => "the circle constant τ (~ 6.28318)",
-                ConstantKind.Phi => "the golden ratio φ (~ 1.61803)",
-                ConstantKind.True or ConstantKind.False => "a boolean literal",
-                _ => "a built-in mathematical constant"
-            };
-
-            throw new ExpressionException(Diagnostic(
-                EvaluationError.InvalidSyntax,
-                $"Cannot assign to '{name}' because it is reserved for {detail}. Choose a different variable name.",
-                pos,
-                name.Length));
-        }
-
-        if (FunctionCatalog.TryGetInfo(name, out var fnInfo))
-        {
-            string aliasNote = fnInfo.IsAlias ? $" (alias for '{fnInfo.CanonicalName}')" : "";
-            throw new ExpressionException(Diagnostic(
-                EvaluationError.InvalidSyntax,
-                $"Cannot assign to name '{name}' because it is a built-in function{aliasNote}.",
-                pos,
-                name.Length));
-        }
-
-        if (_options.CustomFunctions.TryGetFunction(name, out _))
-        {
-            throw new ExpressionException(Diagnostic(
-                EvaluationError.InvalidSyntax,
-                $"Cannot assign to name '{name}' because it is registered as a custom function.",
-                pos,
-                name.Length));
-        }
+        throw new ExpressionException(Diagnostic(EvaluationError.InvalidSyntax, message, pos, name.Length));
     }
 
     // Operator precedence (lowest to highest):
