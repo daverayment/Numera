@@ -223,9 +223,9 @@ public sealed record EvaluationContext
     }
 
     /// <summary>
-    /// Value equality. The compiler-generated record equality would compare the variables
-    /// dictionary by reference, making two contexts with identical variables unequal, so
-    /// it is replaced with a comparison of the contents.
+    /// Value equality compares variable names and numeric values, and the previous
+    /// numeric result. Names use ordinal, case-insensitive comparison. Variable order,
+    /// definitions, and expression history do not participate.
     /// </summary>
     /// <param name="other">The context to compare with.</param>
     /// <returns><c>true</c> if both contexts have equal previous results and the same
@@ -249,9 +249,8 @@ public sealed record EvaluationContext
             return true;
         }
 
-        // A null and an empty variable set both mean "no variables".
-        int count = Variables?.Count ?? 0;
-        if (count != (other.Variables?.Count ?? 0))
+        int count = Variables.Count;
+        if (count != other.Variables.Count)
         {
             return false;
         }
@@ -261,10 +260,9 @@ public sealed record EvaluationContext
             return true;
         }
 
-        foreach (var variable in Variables!)
+        foreach (var variable in Variables)
         {
-            // TODO: compare Variables directly?
-            if (!other.Variables!.TryGetVariable(variable.Name, out var otherVariable) ||
+            if (!other.Variables.TryGetVariable(variable.Name, out var otherVariable) ||
                 !EqualityComparer<MathValue>.Default.Equals(variable.Value, otherVariable.Value))
             {
                 return false;
@@ -283,12 +281,9 @@ public sealed record EvaluationContext
     public override int GetHashCode()
     {
         int variablesHash = 0;
-        if (Variables is not null)
+        foreach (var variable in Variables)
         {
-            foreach (var variable in Variables)
-            {
-                variablesHash += HashCode.Combine(NameComparer.GetHashCode(variable.Name), variable.Value);
-            }
+            variablesHash += HashCode.Combine(NameComparer.GetHashCode(variable.Name), variable.Value);
         }
 
         return HashCode.Combine(PreviousResult, variablesHash);

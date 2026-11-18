@@ -264,6 +264,20 @@ public sealed class EvaluationContextTests
     }
 
     [TestMethod]
+    public void ContextEqualityIgnoresDefinitionsAndExpressionHistory()
+    {
+        var engine = new CalculatorEngine();
+        var contextA = engine.Evaluate("x = 2 + 2").Context;
+        var contextB = engine.Evaluate("x = 4").Context;
+
+        Assert.AreNotEqual(contextA.PreviousExpression, contextB.PreviousExpression);
+        Assert.AreNotEqual(contextA.Variables["x"].Definition, contextB.Variables["x"].Definition);
+        Assert.AreNotEqual(contextA.Variables["x"].Expression, contextB.Variables["x"].Expression);
+        Assert.AreEqual(contextA, contextB);
+        Assert.AreEqual(contextA.GetHashCode(), contextB.GetHashCode());
+    }
+
+    [TestMethod]
     public void Contexts_WithDifferentVariableValuesAreNotEqual()
     {
         var contextA = new EvaluationContext(Vars(("x", 1m)), null);

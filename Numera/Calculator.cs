@@ -60,7 +60,7 @@ public static class Calculator
     /// <param name="expression">The expression to evaluate, e.g. <c>2 + 2 * sqrt(16)</c>.
     /// </param>
     /// <param name="context">Optional variables and previous result.</param>
-    /// <returns>The result of the evaluation and the updated exectuion context as an
+    /// <returns>The result of the evaluation and the updated execution context as an
     /// <see cref="EvaluationResult"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/>
     /// is null.</exception>
