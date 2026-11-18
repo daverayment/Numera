@@ -100,6 +100,23 @@ A short-circuited branch that never runs does not introduce its own uncertainty.
 The library does not symbolically prove that uncertainty cancels: `pi-pi` remains
 Unverified even though the mathematical answer is zero.
 
+## "Why can a random result be Exact?"
+
+Exactness describes the numeric value of a completed draw, not whether that draw
+can be predicted or reproduced. If `randbetween(1, 6)` draws `4`, its value is
+exactly `4`. Randomness determines which integer is chosen, not how accurately
+that integer is represented.
+
+With Exact bounds, `randi(...)` and `randbetween(...)` return Exact integers.
+Unverified bounds keep the result Unverified, following the usual propagation
+rule. By contrast, `rand()` returns a Double and follows the conservative Double
+policy: it remains Unverified even if a particular draw is exactly representable.
+That status does not mean the random generator is less reliable.
+
+Neither status measures the generator's statistical quality or cryptographic
+security. These functions are not suitable for generating cryptographic secrets.
+See [pseudo-random functions](syntax.md#pseudo-random-functions) for their ranges.
+
 ## "My app supplies numbers or custom functions"
 
 Constructing an Integer, Decimal, or fraction asserts that the supplied value is exact.

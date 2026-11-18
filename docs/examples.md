@@ -297,7 +297,10 @@ Short-circuiting skips unnecessary **evaluation**, not syntax validation.
 - Two explicitly written `rand()` calls execute twice. Reusing a completed result
   does not execute its expression again.
 
+An Exact draw means the sampled integer is exact, not that the next draw is
+predictable. See [randomness and exactness](exactness.md#why-can-a-random-result-be-exact).
 These random functions are not a source of cryptographic secrets.
+
 Applications can register additional named functions, such as a unit conversion
 or business calculation. Such names are not built-ins unless the host registers
 them; their exactness depends on their *returned* values and conservatively propagates

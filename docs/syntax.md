@@ -348,6 +348,8 @@ range, while `randi(6)` draws from `0` through `5`.
 | `randi(min, max)` | Draws an integer from `min` up to, but not including, `max`; requires `min < max` |
 
 Integer bounds must fit the signed 64-bit range, from `-9223372036854775808`
-through `9223372036854775807`. Negative bounds are allowed. The integer draws are
-Exact; `rand()` returns an Unverified Double. These functions are not suitable for
-cryptographic secrets.
+through `9223372036854775807`. Negative bounds are allowed. With Exact bounds,
+integer draws are Exact; `rand()` returns an Unverified Double. Exactness describes
+the sampled value, not whether it is predictable or reproducible. See
+[randomness and exactness](exactness.md#why-can-a-random-result-be-exact).
+These functions are not suitable for cryptographic secrets.
