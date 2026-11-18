@@ -455,8 +455,10 @@ internal sealed class CultureInputNormalizer
         {
             if (_groupSizes.Length == 0 || _groupSizes[sizeIndex] == 0 || groups[group] != _groupSizes[sizeIndex])
             {
-                var sep = separators[group - 1];
-                Fail(sep.Position, sep.Length, "Invalid digit-group size. " + NumberMessage());
+                var (Position, Length) = separators[group - 1];
+                Fail(Position, Length,
+                    "Invalid digit-group size. Check the digit grouping, or insert an " +
+                    "operator such as '*' between separate numbers. " + NumberMessage());
                 return false;
             }
 

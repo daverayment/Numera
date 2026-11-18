@@ -84,6 +84,9 @@ variable and function names, not digit grouping, so `1_000` is not accepted.
 - Straight/curly apostrophes and ordinary, non-breaking, narrow non-breaking, and thin spaces remain portable grouping forms. They must obey the configured group sizes. Do not mix native punctuation, apostrophe, and space grouping families within one number.
 - Grouping is not allowed in fractional parts, exponents, or radix literals. For example, `1.2.3`, `1 23 456` in en-US, and `0x10 000` are invalid. Numeric literals use ASCII digits `0` through `9`; identifier digits are not normalized as numbers.
 
+Spaces between digits are interpreted as grouping, not multiplication. Write
+`2 * 3` for separate factors; `2 3` is invalid digit grouping.
+
 #### Argument separators and ambiguity
 
 The culture's list separator separates function arguments. **Semicolon is also an explicit alternative in every culture.** A direct semicolon selects semicolon style for that entire call, including numbers before it. Other argument separators cannot be mixed into that call; commas may still occur as valid decimal or grouping punctuation.

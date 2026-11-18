@@ -126,6 +126,67 @@ public sealed class LocalizedInputTests
     }
 
     [TestMethod]
+    [DataRow("en-US", "2 3", 1)]
+    [DataRow("en-US", "2\u00A03", 1)]
+    [DataRow("en-US", "2\u202F3", 1)]
+    [DataRow("en-US", "2\u20093", 1)]
+    [DataRow("en-US", "2'3", 1)]
+    [DataRow("en-US", "2,3", 1)]
+    [DataRow("en-US", "= 2 ** 3 + 2 3 =", 12)]
+    [DataRow("de-DE", "2 3", 1)]
+    [DataRow("de-DE", "2.3", 1)]
+    [DataRow("fr-FR", "2 3", 1)]
+    [DataRow("hi-IN", "2 3", 1)]
+    public void InvalidGroupSizesSuggestAnOperatorAcrossStringApis(string culture, string input, int position)
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.GetCultureInfo(culture));
+        Assert.IsFalse(ExpressionNormalizer.TryNormalize(input, engine.Options.Culture, out var text, out var diagnostic));
+        Assert.IsNull(text);
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(EvaluationError.InvalidNumberFormat, diagnostic.Code);
+        Assert.AreEqual(position, diagnostic.Position);
+        Assert.AreEqual(1, diagnostic.Length);
+        Assert.IsFalse(diagnostic.IsIncomplete);
+        Assert.Contains("Invalid digit-group size.", diagnostic.Message);
+        Assert.Contains("insert an operator such as '*' between separate numbers", diagnostic.Message);
+        Assert.Contains($"Use '{engine.Options.Culture.NumberFormat.NumberDecimalSeparator}' for decimals", diagnostic.Message);
+        Assert.Contains($"'{engine.Options.Culture.TextInfo.ListSeparator}' between arguments", diagnostic.Message);
+
+        Assert.AreEqual(diagnostic, Assert.ThrowsExactly<ExpressionException>(() =>
+            ExpressionNormalizer.Normalize(input, engine.Options.Culture)).Diagnostic);
+        Assert.IsFalse(engine.TryParse(input, out var node, out var parsed));
+        Assert.IsNull(node);
+        Assert.AreEqual(diagnostic, parsed);
+        Assert.IsFalse(engine.TryEvaluate(input, out _, out var evaluated));
+        Assert.AreEqual(diagnostic, evaluated);
+        Assert.AreEqual(diagnostic, Assert.ThrowsExactly<ExpressionException>(() => engine.Parse(input)).Diagnostic);
+        Assert.AreEqual(diagnostic, Assert.ThrowsExactly<ExpressionException>(() => engine.Evaluate(input)).Diagnostic);
+        Assert.AreEqual(diagnostic, Assert.ThrowsExactly<ExpressionException>(() => engine.FormatExpression(input)).Diagnostic);
+    }
+
+    [TestMethod]
+    [DataRow("en-US", "1 234")]
+    [DataRow("en-US", "1\u00A0234")]
+    [DataRow("en-US", "1\u202F234")]
+    [DataRow("en-US", "1\u2009234")]
+    [DataRow("de-DE", "1 234")]
+    [DataRow("fr-FR", "1 234")]
+    [DataRow("hi-IN", "1 234")]
+    public void ValidGroupingAndSuggestedExplicitMultiplicationRemainAccepted(string culture, string groupedNumber)
+    {
+        var engine = CalculatorEngine.ForCulture(CultureInfo.GetCultureInfo(culture));
+        foreach (bool allowImplicitMultiplication in new[] { true, false })
+        {
+            var configured = engine.WithOptions(options => options with
+            {
+                AllowImplicitMultiplication = allowImplicitMultiplication
+            });
+            Assert.AreEqual(new MathValue(1234), configured.Evaluate(groupedNumber).Value);
+            Assert.AreEqual(new MathValue(6), configured.Evaluate("2 * 3").Value);
+        }
+    }
+
+    [TestMethod]
     [DataRow("en-US", "max(1, 2;3)")]
     [DataRow("de-DE", "max(1, 2)")]
     [DataRow("de-DE", "max(x,2)")]
