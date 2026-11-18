@@ -195,7 +195,7 @@ internal sealed class AstEvaluator : IExpressionVisitor<MathValue>
                 var result = customFunction.Implementation(args);
                 return ValidateValue(PropagateExactness(result, args));
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 throw Enrich(ex, node.Span);
             }

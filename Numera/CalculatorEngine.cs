@@ -260,6 +260,8 @@ public sealed class CalculatorEngine
     /// <exception cref="NumeraException">Thrown if normalization, parsing or evaluation
     /// fails. Check <see cref="NumeraException.Diagnostic"/> for structured details.
     /// </exception>
+    /// <exception cref="OperationCanceledException">A custom callback cancels the
+    /// operation. The original exception propagates unchanged.</exception>
     public EvaluationResult Evaluate(string expression, EvaluationContext? context = null)
     {
         ArgumentNullException.ThrowIfNull(expression);
@@ -298,6 +300,8 @@ public sealed class CalculatorEngine
     /// <exception cref="ArgumentException">A context variable shadows a registered
     /// custom function.</exception>
     /// <exception cref="NumeraException">Thrown if evaluation fails.</exception>
+    /// <exception cref="OperationCanceledException">A custom callback cancels the
+    /// operation. The original exception propagates unchanged.</exception>
     public EvaluationResult Evaluate(ExpressionNode node, EvaluationContext? context = null)
     {
         ArgumentNullException.ThrowIfNull(node);
@@ -381,6 +385,8 @@ public sealed class CalculatorEngine
     /// <exception cref="ArgumentException">A context variable shadows a registered
     /// custom function. This is an invalid argument, not an expression diagnostic.
     /// </exception>
+    /// <exception cref="OperationCanceledException">A custom callback cancels the
+    /// operation. Cancellation propagates rather than returning <c>false</c>.</exception>
     public bool TryEvaluate(
         string expression,
         out EvaluationResult result,
@@ -421,6 +427,8 @@ public sealed class CalculatorEngine
     /// <exception cref="ArgumentException">A context variable shadows a registered
     /// custom function. This is an invalid argument, not an expression diagnostic.
     /// </exception>
+    /// <exception cref="OperationCanceledException">A custom callback cancels the
+    /// operation. Cancellation propagates rather than returning <c>false</c>.</exception>
     public bool TryEvaluate(
         ExpressionNode node,
         out EvaluationResult result,

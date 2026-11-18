@@ -181,6 +181,10 @@ to isolate such faults should handle and log them at its own application boundar
 without treating a failed calculation as a usable result. Custom callback failures
 have their own [documented handling](custom-functions.md#5-exception-handling--safety-limits).
 
+Cancellation from a custom callback also propagates: `OperationCanceledException`
+and its derived types are not converted to diagnostics, even by `TryEvaluate`.
+Handle cancellation separately from rejected expressions.
+
 ---
 
 ## While the user is typing

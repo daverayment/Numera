@@ -117,6 +117,13 @@ registered custom functions. See [variable naming rules](variables.md#naming-rul
 for context compatibility and error handling.
 
 ### 5. Exception Handling & Safety Limits
+If your callback observes cancellation, it can throw `OperationCanceledException`
+(for example, through `CancellationToken.ThrowIfCancellationRequested()`). The
+original exception, including its cancellation token, propagates unchanged through
+both `Evaluate` and `TryEvaluate`, for text and parsed trees. This also applies to
+derived exceptions such as `TaskCanceledException`: cancellation is not a failed
+expression diagnostic or a `false` return from `TryEvaluate`.
+
 - If a custom function throws `DivideByZeroException`, it is mapped to `EvaluationError.DivisionByZero`.
 - If a custom function throws `CalculationLimitException` or returns a value exceeding the engine's configured integer or rational component limits, the ceiling violation is enforced immediately.
 - Any other uncaught exception thrown by a callback is wrapped into an `ExpressionException` with `EvaluationError.EvaluationFailed` preserving the original exception message and source location span.

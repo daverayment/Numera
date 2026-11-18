@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Numerics;
 
 namespace Numera.Tests;
@@ -242,20 +243,130 @@ public sealed class CustomFunctionTests
     [TestMethod]
     public void CustomFunction_UnhandledCallbackException_MapsToEvaluationFailed()
     {
+        var failure = new InvalidOperationException("Custom failure message");
         var options = new CalculatorOptions
         {
             CustomFunctions =
             [
-                CustomFunction.Create("blowUp", _ => throw new InvalidOperationException("Custom failure message"))
+                CustomFunction.Create("blowUp", _ => throw failure)
             ]
         };
 
         var engine = new CalculatorEngine(options);
+        const string expression = "1 + blowUp(10)";
+        var node = engine.Parse(expression);
 
-        var ex = Assert.Throws<ExpressionException>(() => engine.Evaluate("blowUp(10)"));
-        Assert.AreEqual(EvaluationError.EvaluationFailed, ex.Diagnostic.Code);
-        Assert.IsTrue(ex.Diagnostic.Message.Contains("Custom failure message"));
-        Assert.IsNotNull(ex.Diagnostic.Position);
+        Action[] operations =
+        [
+            () => engine.Evaluate(expression),
+            () => engine.Evaluate(node)
+        ];
+        foreach (var operation in operations)
+        {
+            var ex = Assert.ThrowsExactly<ExpressionException>(operation);
+            Assert.AreEqual(EvaluationError.EvaluationFailed, ex.Diagnostic.Code);
+            Assert.AreEqual(failure.Message, ex.Diagnostic.Message);
+            Assert.AreEqual(4, ex.Diagnostic.Position);
+            Assert.AreEqual(10, ex.Diagnostic.Length);
+            Assert.AreSame(failure, ex.InnerException);
+
+            Assert.IsFalse(engine.TryEvaluate(expression, out _, out var diagnostic));
+            Assert.AreEqual(ex.Diagnostic, diagnostic);
+            Assert.IsFalse(engine.TryEvaluate(node, out _, out diagnostic));
+            Assert.AreEqual(ex.Diagnostic, diagnostic);
+        }
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void CustomFunction_CancellationPropagatesUnchangedAcrossEvaluationEntryPoints(bool taskCanceled)
+    {
+        using var source = new CancellationTokenSource();
+        source.Cancel();
+        OperationCanceledException cancellation;
+        if (taskCanceled)
+        {
+            cancellation = new TaskCanceledException("Callback canceled", null, source.Token);
+        }
+        else
+        {
+            cancellation = new OperationCanceledException("Callback canceled", source.Token);
+        }
+
+        int canceledCalls = 0;
+        int otherCalls = 0;
+        var engine = new CalculatorEngine(CalculatorOptions.ForCulture(CultureInfo.InvariantCulture) with
+        {
+            CustomFunctions =
+            [
+                CustomFunction.Create("stop", () =>
+                {
+                    canceledCalls++;
+                    throw cancellation;
+                }),
+                CustomFunction.Create("later", () =>
+                {
+                    otherCalls++;
+                    return MathValue.One;
+                }),
+                CustomFunction.Create("combine", (a, b) =>
+                {
+                    otherCalls++;
+                    return a + b;
+                })
+            ]
+        });
+        string[] expressions = ["stop()", "1 + stop()", "abs(stop())", "combine(stop(), later())"];
+
+        foreach (var configured in new[] { engine, engine.WithOptions(options => options with { Normalization = null }) })
+        {
+            foreach (string expression in expressions)
+            {
+                int callsBeforeParsing = canceledCalls;
+                var node = configured.Parse(expression);
+                Assert.AreEqual(callsBeforeParsing, canceledCalls);
+                Action[] operations =
+                [
+                    () => configured.Evaluate(expression),
+                    () => configured.Evaluate(node),
+                    () => configured.TryEvaluate(expression, out _, out _),
+                    () => configured.TryEvaluate(node, out _, out _)
+                ];
+
+                foreach (var operation in operations)
+                {
+                    int callsBeforeEvaluation = canceledCalls;
+                    var exception = Assert.Throws<OperationCanceledException>(operation);
+                    Assert.AreSame(cancellation, exception);
+                    Assert.AreEqual(source.Token, exception.CancellationToken);
+                    Assert.AreEqual(callsBeforeEvaluation + 1, canceledCalls);
+                    Assert.AreEqual(0, otherCalls);
+                }
+            }
+        }
+    }
+
+    [TestMethod]
+    [DataRow("0 and stop()", 0)]
+    [DataRow("1 or stop()", 1)]
+    [DataRow("2 < 1 < stop()", 0)]
+    public void CustomFunction_SkippedCancellationCallbackIsNotInvoked(string expression, int expected)
+    {
+        var engine = new CalculatorEngine(CalculatorOptions.ForCulture(CultureInfo.InvariantCulture) with
+        {
+            CustomFunctions = [CustomFunction.Create("stop", () => throw new OperationCanceledException())]
+        });
+        var node = engine.Parse(expression);
+
+        Assert.AreEqual(new MathValue(expected), engine.Evaluate(expression).Value);
+        Assert.AreEqual(new MathValue(expected), engine.Evaluate(node).Value);
+        Assert.IsTrue(engine.TryEvaluate(expression, out var result, out var diagnostic));
+        Assert.IsNull(diagnostic);
+        Assert.AreEqual(new MathValue(expected), result.Value);
+        Assert.IsTrue(engine.TryEvaluate(node, out result, out diagnostic));
+        Assert.IsNull(diagnostic);
+        Assert.AreEqual(new MathValue(expected), result.Value);
     }
 
     [TestMethod]
