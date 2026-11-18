@@ -644,7 +644,12 @@ public sealed class VariableCollectionTests
         Assert.IsFalse(empty.ContainsKey("x"));
         Assert.IsFalse(empty.TryGetVariable("x", out _));
         Assert.Throws<KeyNotFoundException>(() => _ = empty["x"]);
-        Assert.Throws<IndexOutOfRangeException>(() => _ = empty[0]);
+        foreach (var index in new[] { int.MinValue, -1, 0, int.MaxValue })
+        {
+            var exception = Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => _ = empty[index]);
+            Assert.AreEqual("index", exception.ParamName);
+            Assert.AreEqual(index, exception.ActualValue);
+        }
     }
 
     [TestMethod]
@@ -744,8 +749,13 @@ public sealed class VariableCollectionTests
     {
         VariableCollection vars = [("x", new MathValue(5m))];
 
-        Assert.Throws<IndexOutOfRangeException>(() => _ = vars[-1]);
-        Assert.Throws<IndexOutOfRangeException>(() => _ = vars[1]);
+        foreach (var index in new[] { int.MinValue, -1, vars.Count, int.MaxValue })
+        {
+            var exception = Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => _ = vars[index]);
+            Assert.AreEqual("index", exception.ParamName);
+            Assert.AreEqual(index, exception.ActualValue);
+        }
+
         Assert.Throws<KeyNotFoundException>(() => _ = vars["nonexistent"]);
     }
 

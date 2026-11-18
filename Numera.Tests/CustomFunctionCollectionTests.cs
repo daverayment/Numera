@@ -205,9 +205,20 @@ public sealed class CustomFunctionCollectionTests
     {
         CustomFunctionCollection functions = [F("alpha"), F("betaCustom")];
 
-        Assert.Throws<IndexOutOfRangeException>(() => _ = functions[-1]);
-        Assert.Throws<IndexOutOfRangeException>(() => _ = functions[2]);
-        Assert.Throws<IndexOutOfRangeException>(() => _ = CustomFunctionCollection.Empty[0]);
+        foreach (var index in new[] { int.MinValue, -1, functions.Count, int.MaxValue })
+        {
+            var exception = Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => _ = functions[index]);
+            Assert.AreEqual("index", exception.ParamName);
+            Assert.AreEqual(index, exception.ActualValue);
+        }
+
+        foreach (var index in new[] { int.MinValue, -1, 0, int.MaxValue })
+        {
+            var exception = Assert.ThrowsExactly<ArgumentOutOfRangeException>(
+                () => _ = CustomFunctionCollection.Empty[index]);
+            Assert.AreEqual("index", exception.ParamName);
+            Assert.AreEqual(index, exception.ActualValue);
+        }
     }
 
     [TestMethod]

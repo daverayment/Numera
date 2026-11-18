@@ -70,14 +70,16 @@ public sealed class VariableCollection : IReadOnlyList<Variable>
     /// </summary>
     /// <param name="index">Index of the variable in the collection.</param>
     /// <returns>The <see cref="Variable"/> at the given positional index.</returns>
-    /// <exception cref="IndexOutOfRangeException"/>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if the index is negative or
+    /// greater than or equal to <see cref="Count"/>.</exception>
     public Variable this[int index]
     {
         get
         {
             if (_storage is null || index < 0 || index >= _storage.Count)
             {
-                throw new IndexOutOfRangeException($"Index {index} is out of range.");
+                throw new ArgumentOutOfRangeException(
+                    nameof(index), index, "Index is out of range.");
             }
 
             return _storage.GetAt(index).Value;
