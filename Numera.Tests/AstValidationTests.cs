@@ -195,6 +195,101 @@ public class AstValidationTests
     }
 
     [TestMethod]
+    [DataRow("tick() + (1 || min())", EvaluationError.InvalidArgumentCount)]
+    [DataRow("tick() + (0 && tick(1))", EvaluationError.InvalidArgumentCount)]
+    [DataRow("tick() + (1 || missing(7))", EvaluationError.UnknownFunction)]
+    public void TextEvaluationValidatesSkippedBranchesBeforeCallbacks(string expression, EvaluationError expectedError)
+    {
+        int calls = 0;
+        var engine = new CalculatorEngine(new CalculatorOptions
+        {
+            CustomFunctions = [CustomFunction.Create("tick", () => new MathValue(++calls))]
+        });
+
+        Assert.IsFalse(engine.TryEvaluate(expression, out _, out var diagnostic));
+        Assert.IsNotNull(diagnostic);
+        Assert.AreEqual(expectedError, diagnostic.Code);
+        var exception = Assert.ThrowsExactly<ExpressionException>(() => engine.Evaluate(expression));
+        Assert.AreEqual(diagnostic, exception.Diagnostic);
+        Assert.AreEqual(0, calls);
+    }
+
+    [TestMethod]
+    public void PublicAstEvaluationRevalidatesAgainstTheReceivingEngine()
+    {
+        int calls = 0;
+        var engine = new CalculatorEngine(new CalculatorOptions
+        {
+            CustomFunctions = [CustomFunction.Create("tick", () => new MathValue(++calls))]
+        });
+        var node = engine.Parse("tick() + (0 && 256)");
+        (CalculatorEngine Receiver, EvaluationError Error, CalculationLimitKind? Limit)[] cases =
+        [
+            (engine.WithOptions(options => options with { MaxIntegerBits = 8 }), EvaluationError.LimitExceeded, CalculationLimitKind.IntegerBits),
+            (engine.WithOptions(options => options with { MaxNestingDepth = 2 }), EvaluationError.LimitExceeded, CalculationLimitKind.NestingDepth),
+            (engine.WithOptions(options => options with { MaxInputLength = 2 }), EvaluationError.LimitExceeded, CalculationLimitKind.AstNodeCount),
+            (engine.WithOptions(options => options with { CustomFunctions = CustomFunctionCollection.Empty }), EvaluationError.UnknownFunction, null),
+            (engine.WithOptions(options => options with
+            {
+                CustomFunctions = [CustomFunction.Create("tick", value => new MathValue(++calls))]
+            }), EvaluationError.InvalidArgumentCount, null)
+        ];
+
+        foreach (var (receiver, expectedError, expectedLimit) in cases)
+        {
+            Assert.IsFalse(receiver.TryEvaluate(node, out _, out var diagnostic));
+            Assert.IsNotNull(diagnostic);
+            Assert.AreEqual(expectedError, diagnostic.Code);
+            Assert.AreEqual(expectedLimit, diagnostic.LimitKind);
+            var exception = Assert.Throws<NumeraException>(() => receiver.Evaluate(node));
+            Assert.AreEqual(diagnostic, exception.Diagnostic);
+            Assert.AreEqual(0, calls);
+        }
+    }
+
+    [TestMethod]
+    public void TextAndAstEvaluationPreserveCapturedResultsAndRunCallbacksOnce()
+    {
+        int calls = 0;
+        var engine = new CalculatorEngine(new CalculatorOptions
+        {
+            CustomFunctions = [CustomFunction.Create("tick", () => new MathValue(++calls))]
+        });
+        var context = new EvaluationContext([new Variable("existing", 7)], new MathValue(1));
+        const string expression = "x = existing + tick() + ans / 3";
+        var node = engine.Parse(expression, context);
+        Assert.AreEqual(0, calls);
+
+        var textResult = engine.Evaluate(expression, context);
+        Assert.AreEqual(1, calls);
+        Assert.AreEqual(new MathValue(25) / new MathValue(3), textResult.Value);
+        Assert.AreEqual(1, textResult.AssignedVariables.Count);
+        Assert.AreEqual(textResult.Value, textResult.AssignedVariables["x"].Value);
+        Assert.AreEqual(textResult.Value, textResult.Context.PreviousResult);
+        Assert.AreSame(engine.Options, textResult.Options);
+
+        calls = 0;
+        var astResult = engine.Evaluate(node, context);
+        Assert.AreEqual(1, calls);
+        Assert.IsTrue(EvaluationResultComparers.Content.Equals(textResult, astResult));
+        Assert.AreSame(node, astResult.Context.PreviousExpression);
+
+        calls = 0;
+        Assert.IsTrue(engine.TryEvaluate(expression, out var attemptedText, out var textDiagnostic, context));
+        Assert.IsNull(textDiagnostic);
+        Assert.AreEqual(1, calls);
+        Assert.IsTrue(EvaluationResultComparers.Content.Equals(textResult, attemptedText));
+
+        calls = 0;
+        Assert.IsTrue(engine.TryEvaluate(node, out var attemptedAst, out var astDiagnostic, context));
+        Assert.IsNull(astDiagnostic);
+        Assert.AreEqual(1, calls);
+        Assert.IsTrue(EvaluationResultComparers.Content.Equals(textResult, attemptedAst));
+        Assert.IsFalse(context.Variables.ContainsKey("x"));
+        Assert.AreEqual(new MathValue(1), context.PreviousResult);
+    }
+
+    [TestMethod]
     public void ValidConstantAndImplicitMultiplicationAreAccepted()
     {
         Assert.IsTrue(Calculator.TryEvaluate(new IdentifierNode("pi", ConstantKind.Pi), out _, out _));

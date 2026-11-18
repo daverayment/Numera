@@ -115,6 +115,9 @@ the failure can be associated with the input.
 ### Manually Constructed Expression Trees
 
 Evaluation validates the entire AST before executing any node or custom callback.
+For text input, validation is part of parsing. An AST supplied directly is validated
+against the receiving engine's options, even if another engine parsed it.
+
 Variable references, assignment targets, and function names must satisfy
 `Identifier.IsValidIdentifier`; malformed names such as `1x` or `a b` report
 `InvalidSyntax`, with the offending node's source span when supplied. Expression

@@ -262,7 +262,7 @@ public sealed class CalculatorEngine
 
         try
         {
-            return Evaluate(Parse(expression, context), context);
+            return EvaluateValidated(Parse(expression, context), context);
         }
         catch (DivideByZeroException exception)
         {
@@ -298,6 +298,14 @@ public sealed class CalculatorEngine
 
         AstValidator.Validate(node, Options);
 
+        return EvaluateValidated(node, context);
+    }
+
+    /// <summary>
+    /// Evaluates a tree already validated against this engine's options.
+    /// </summary>
+    private EvaluationResult EvaluateValidated(ExpressionNode node, EvaluationContext? context)
+    {
         try
         {
             var evaluator = new AstEvaluator(Options, context);
