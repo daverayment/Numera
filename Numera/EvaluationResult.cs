@@ -49,7 +49,7 @@ namespace Numera;
 /// <para>
 /// Use the constructor when creating a result yourself. A default-initialized result has
 /// no usable context or assignment collection. Its <see cref="HasAssignments"/> is false,
-/// <see cref="SingleAssignedVariable"/> is null, and <see cref="ReferencedVariables"/>
+/// <see cref="SingleAssignedVariable"/> is null, and <see cref="ReferencedVariableNames"/>
 /// and <see cref="VariableReferences"/> are empty. These indicate no recorded metadata,
 /// not successful evaluation. Check the return value of <c>TryEvaluate</c> before using
 /// its result's calculated value or context.
@@ -108,15 +108,15 @@ public readonly record struct EvaluationResult :
     /// used only as assignment targets. Names are compared case-insensitively.
     /// A default-initialized result has no recorded references and returns an empty set.
     /// </remarks>
-    public IReadOnlySet<string> ReferencedVariables =>
-        Context?.PreviousExpression?.GetReferencedVariables() ?? FrozenSet<string>.Empty;
+    public IReadOnlySet<string> ReferencedVariableNames =>
+        Context?.PreviousExpression?.GetReferencedVariableNames() ?? FrozenSet<string>.Empty;
 
     /// <summary>
     /// Gets each variable reference and its source position, including repeated uses of a
     /// name.
     /// </summary>
     /// <remarks>
-    /// Follows the same rules as <see cref="ReferencedVariables"/> and is empty if no
+    /// Follows the same rules as <see cref="ReferencedVariableNames"/> and is empty if no
     /// references are recorded. After arithmetic on results, positions still refer to the
     /// original expressions, not the combined display text.
     /// A default-initialized result has no recorded references and returns an empty list.

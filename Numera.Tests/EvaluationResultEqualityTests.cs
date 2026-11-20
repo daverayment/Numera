@@ -57,8 +57,8 @@ public sealed class EvaluationResultEqualityTests
 
         Assert.IsTrue(result.HasAssignments);
         Assert.AreEqual("y", result.SingleAssignedVariable);
-        Assert.HasCount(1, result.ReferencedVariables);
-        Assert.Contains("x", result.ReferencedVariables);
+        Assert.HasCount(1, result.ReferencedVariableNames);
+        Assert.Contains("x", result.ReferencedVariableNames);
         Assert.HasCount(2, result.VariableReferences);
         Assert.AreEqual(new TextSpan(4, 1), result.VariableReferences[0].Span);
         Assert.AreEqual(new TextSpan(8, 1), result.VariableReferences[1].Span);
@@ -75,7 +75,7 @@ public sealed class EvaluationResultEqualityTests
     {
         Assert.IsFalse(result.HasAssignments);
         Assert.IsNull(result.SingleAssignedVariable);
-        Assert.IsEmpty(result.ReferencedVariables);
+        Assert.IsEmpty(result.ReferencedVariableNames);
         Assert.IsEmpty(result.VariableReferences);
         Assert.IsNull(result.Context);
         Assert.IsNull(result.AssignedVariables);
@@ -99,7 +99,7 @@ public sealed class EvaluationResultEqualityTests
         Assert.IsNull(result.Options);
         Assert.IsFalse(result.HasAssignments);
         Assert.IsNull(result.SingleAssignedVariable);
-        Assert.IsEmpty(result.ReferencedVariables);
+        Assert.IsEmpty(result.ReferencedVariableNames);
         Assert.IsEmpty(result.VariableReferences);
         Assert.AreEqual(new MathValue(3), context.PreviousResult);
 
@@ -112,7 +112,7 @@ public sealed class EvaluationResultEqualityTests
         var emptyContextResult = new EvaluationResult(new MathValue(7), EvaluationContext.Empty);
         Assert.AreSame(EvaluationContext.Empty, emptyContextResult.Context);
         Assert.IsFalse(emptyContextResult.HasAssignments);
-        Assert.HasCount(0, emptyContextResult.ReferencedVariables);
+        Assert.HasCount(0, emptyContextResult.ReferencedVariableNames);
     }
 
     [TestMethod]

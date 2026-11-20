@@ -1101,7 +1101,7 @@ public sealed class AstAndFormattingTests
         // 1. Literal number has zero references
         var num = new NumberNode(new MathValue(42), new TextSpan(0, 2));
         Assert.IsEmpty(num.GetVariableReferences());
-        Assert.IsEmpty(num.GetReferencedVariables());
+        Assert.IsEmpty(num.GetReferencedVariableNames());
 
         // 2. Unary expression (e.g. -x)
         var unary = new UnaryNode(
@@ -1121,8 +1121,8 @@ public sealed class AstAndFormattingTests
             new TextSpan(0, 5));
         var binaryRefs = binary.GetVariableReferences();
         Assert.HasCount(2, binaryRefs, "Both syntactic occurrences are recorded");
-        Assert.HasCount(1, binary.GetReferencedVariables(), "Case-insensitive unique set collapses duplicates");
-        Assert.Contains("x", binary.GetReferencedVariables());
+        Assert.HasCount(1, binary.GetReferencedVariableNames(), "Case-insensitive unique set collapses duplicates");
+        Assert.Contains("x", binary.GetReferencedVariableNames());
 
         // 4. Function call node (e.g. max(a, b, c))
         var fn = new FunctionCallNode(
@@ -1163,7 +1163,7 @@ public sealed class AstAndFormattingTests
         var assignRefs = assign.GetVariableReferences();
         Assert.HasCount(2, assignRefs);
         Assert.AreSequenceEqual(new[] { "x", "y" }, assignRefs.Select(r => r.Name).ToList());
-        Assert.DoesNotContain("z", assign.GetReferencedVariables());
+        Assert.DoesNotContain("z", assign.GetReferencedVariableNames());
 
         // 7. Unknown node type throws NotSupportedException via exhaustive pattern matching
         var custom = new DummyTestNode();
@@ -1536,8 +1536,8 @@ public sealed class AstAndFormattingTests
         Assert.IsInstanceOfType<BinaryNode>(node);
         Assert.AreEqual(BinaryOperator.Multiply, ((BinaryNode)node).Op);
         Assert.IsTrue(((BinaryNode)node).IsImplicit);
-        Assert.HasCount(1, node.GetReferencedVariables());
-        Assert.Contains("x", node.GetReferencedVariables());
+        Assert.HasCount(1, node.GetReferencedVariableNames());
+        Assert.Contains("x", node.GetReferencedVariableNames());
         Assert.AreEqual(new MathValue(25), engine.Evaluate(node, context).Value);
         Assert.IsTrue(engine.TryParse(input, out var parsed, out var diagnostic, allowUnboundVariables: true), diagnostic?.Message);
         Assert.AreEqual(node, parsed);

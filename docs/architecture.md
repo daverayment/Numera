@@ -598,12 +598,12 @@ Numera separates point-in-time calculation state from caller-driven workflow pol
 - **Snapshot Variables**: User variables store the evaluated `MathValue` snapshot along with metadata (`ExpressionNode? Expression` and `string? Definition`). Normal variable evaluation reads the evaluated snapshot value rather than re-executing the defining AST.
 - **Syntactic Dependencies & References**:
   - `ExpressionNode.GetVariableReferences()` walks syntax trees iteratively to collect all syntactic variable reads (names and `TextSpan` source locations). It strictly excludes constants (`pi`, `e`, `tau`) and assignment targets on the left-hand side.
-  - `ExpressionNode.GetReferencedVariables()` yields a case-insensitive set of referenced variable names.
-  - `Variable.ReferencedVariables` returns the set of variables read by the variable's defining expression.
-  - `EvaluationResult.ReferencedVariables` and `VariableReferences` expose the syntactic dependencies of the evaluated expression.
+	- `ExpressionNode.GetReferencedVariableNames()` yields a case-insensitive set of referenced variable names.
+  - `Variable.ReferencedVariableNames` returns the set of variable names read by the variable's defining expression.
+  - `EvaluationResult.ReferencedVariableNames` gives the distinct names used by the evaluated expression; `VariableReferences` gives each occurrence with its source location. For `x + x * y`, the names are `x` and `y`, while the references contain three occurrences.
 - **Failed Evaluation Metadata**: A failed `TryEvaluate` returns a default result.
   Its `HasAssignments` is false, `SingleAssignedVariable` is null, and
-  `ReferencedVariables` and `VariableReferences` are empty. These mean no recorded
+	`ReferencedVariableNames` and `VariableReferences` are empty. These mean no recorded
   metadata, not successful calculation. Always check the boolean return and use the
   diagnostic on failure; a default result has no usable evaluation context.
 - **Caller-Controlled Replay & Reactive Recalculation**: By preserving canonical ASTs on variables and context transitions, callers (REPLs, spreadsheet engines, UI dependency graphs) can implement topological re-evaluation and history replay without Numera forcing a heavyweight runtime state machine.

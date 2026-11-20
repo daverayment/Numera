@@ -374,7 +374,7 @@ var r3 = engine.Evaluate("total = bill + tip + ans", context);
 Console.WriteLine(r3.Value); // 156
 
 // Syntactic read dependencies (bill, tip, ans):
-foreach (var dep in r3.ReferencedVariables)
+foreach (var dep in r3.ReferencedVariableNames)
 {
     Console.WriteLine($"Referenced: {dep}");
 }

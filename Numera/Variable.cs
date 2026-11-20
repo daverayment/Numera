@@ -47,8 +47,8 @@ public readonly record struct Variable
     /// Gets the unique set of variable names referenced by this variable's defining expression,
     /// or an empty set if the variable has no defining expression.
     /// </summary>
-    public IReadOnlySet<string> ReferencedVariables =>
-        Expression?.GetReferencedVariables() ?? FrozenSet<string>.Empty;
+    public IReadOnlySet<string> ReferencedVariableNames =>
+        Expression?.GetReferencedVariableNames() ?? FrozenSet<string>.Empty;
 
     /// <summary>
     /// Initializes a new instance of the Variable class with a name, value, optional AST

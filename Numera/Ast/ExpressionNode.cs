@@ -161,7 +161,7 @@ public abstract record ExpressionNode(TextSpan Span = default)
     /// Gets the unique set of variable names referenced by this expression, compared case-insensitively.
     /// </summary>
     /// <returns>A set of distinct variable names referenced within this expression tree.</returns>
-    public IReadOnlySet<string> GetReferencedVariables()
+    public IReadOnlySet<string> GetReferencedVariableNames()
     {
         var set = new HashSet<string>(Identifier.Comparer);
         foreach (var reference in GetVariableReferences())

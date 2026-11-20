@@ -260,7 +260,7 @@ public sealed class ResultCompositionTests
 
         Assert.AreEqual(new MathValue(17), combined.Value);
         Assert.AreEqual(new MathValue(17), combined.Context.PreviousResult);
-        Assert.Contains("ans", combined.ReferencedVariables);
+        Assert.Contains("ans", combined.ReferencedVariableNames);
         Assert.HasCount(2, combined.VariableReferences);
         Assert.IsFalse(combined.HasAssignments);
         Assert.AreEqual(new MathValue(34), engine.Evaluate("ans * 2", combined.Context).Value);

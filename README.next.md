@@ -2,22 +2,30 @@
   <img src="assets/FxGear128x128.png" alt="Numera logo" width="128" height="128" />
 </p>
 
-# Numera
+<h1 align="center">Numera</h1>
 
-A calculator for **.NET 10** applications where people type expressions and expect useful answers.
+Numera is a calculator library designed for easy integration into apps. It accepts familiar mathematical input, starts with practical human-first defaults, and lets you adapt its behaviour and presentation to your application. When an input is incomplete or cannot be evaluated, diagnostics help pinpoint the issue and explain what needs attention.
 
+## Why Numera?
+The highlights:
+- Exact integer, decimal, and fractional arithmetic where supported, with floating-point approximations for other calculations.
+- Human-friendly, culture-aware input parsing.
+- Helpful diagnostics for user input, and numeric or exact-fraction displays for answers.
+- More than 60 built-in functions, from min/max to statistics and numeric analysis, plus your own custom functions.
+- Start with the static `Calculator` class; create a reusable `CalculatorEngine` when your app needs different defaults.
+- Named variables and a previous answer for calculations that build on each other.
+
+# Quickstart
 Let's start with one calculation, then turn it into a small calculator app.
 
-
-## "I just want to calculate something"
-
-Install the Numera package via NuGet:
+First, install Numera in your .NET project via NuGet:
 
 ```bash
 dotnet add package Numera
 ```
 
-Now evaluate your first expression:
+## 1. "I just want to calculate something"
+Evaluate your first expression:
 
 ```csharp
 using Numera;
@@ -26,25 +34,29 @@ var result = Calculator.Evaluate("2 + 2");
 Console.WriteLine(result);
 ```
 
-That's all you need. You don't have to configure a calculator or decide how to store its numbers.
+Try swapping in one of these:
 
-Try replacing the expression:
+Expression | Answer
+--- | ---
+`0.1 + 0.2` | `0.3`
+`2 + 3 * 4` | `14`
+`(2 + 3) * 4` | `20`
+`200 + 15%` | `230`
+`sqrt(144)` | `12`
+`5!` | `120`
+`6 (1/3)` | `2`
 
-| Try this | You should see |
-| --- | --- |
-| `2 + 3 * 4` | `14` |
-| `(2 + 3) * 4` | `20` |
-| `200 + 15%` | `230` |
-| `sqrt(144)` | `12` |
-| `5!` | `120` |
+Numera preserves exact integer, decimal, and fractional arithmetic where supported, so `0.1 + 0.2` gives exactly `0.3`. Some functions, such as `sqrt(2)`, produce floating-point approximations instead.
 
-The result also works in a message: `$"Your answer is {result}"`. If you are writing a script or adding a calculation to an existing app, you can stop here.
+For scripts and one-off calculations, there's nothing else to set up.
 
-## "I want to work with user input in my app"
+## 2. "I want to work with user input in my app"
 
-People make typos, and an expression is often incomplete while they are typing. Instead of throwing an exception for each unsuccessful calculation, let's give them a chance to try again:
+User input can contain typos, and an expression is often incomplete while being composed. Instead of throwing an exception for each unsuccessful calculation, let's give users a chance to try again in this next example:
 
 ```csharp
+using Numera;
+
 while (true)
 {
 	Console.Write("> ");
@@ -64,8 +76,10 @@ while (true)
 	}
 }
 ```
+> [!NOTE]
+> Each main quickstart example can replace `Program.cs` in a console app. Shorter snippets are labelled as adaptations or continuations of an earlier example.
 
-Run it and enter a few expressions. A blank line finishes the session:
+The key here is the `TryEvaluate` call; it returns a value that indicates whether the evaluation succeeded or not. Run the example and enter a few expressions. A blank line ends the session:
 
 ```text
 > 2 + 2
@@ -76,15 +90,15 @@ Run it and enter a few expressions. A blank line finishes the session:
 Couldn't calculate: Unexpected end of input.
 ```
 
-The same `TryEvaluate` call fits into a textbox event handler. If you want to underline the problem or supply your own error messages, [diagnostics](https://github.com/daverayment/Numera/blob/main/docs/safety-and-limits.md#error-handling-patterns) give you more than the message shown here, including exactly where the error occurred.
+The same `TryEvaluate` call suits a textbox event handler well. When it fails, `diagnostic.IsIncomplete` helps you avoid showing an error while the user is still composing an expression. The [diagnostics guide](https://github.com/daverayment/Numera/blob/main/docs/safety-and-limits.md#error-handling-patterns) also shows how to underline where a problem is in the expression or to supply your own messages.
 
-## "I want to keep calculating with the previous answer"
+## 3. "I want to keep calculating with the previous answer"
 
-Suppose someone is working out a restaurant bill. They want to remember the subtotal, calculate a tip, then add it to the bill without retyping either number.
-
-Give your calculator some memory with an `EvaluationContext`:
+Suppose you're working out a restaurant bill. Give your calculator a context so it can remember named variables and the last answer at each step:
 
 ```csharp
+using Numera;
+
 var context = EvaluationContext.Empty;
 
 var result = Calculator.Evaluate("subtotal = 120", context);
@@ -100,84 +114,96 @@ Console.WriteLine(result); // 138
 context = result.Context;
 ```
 
-`subtotal` remembers the named value; `ans` means the previous answer, which was `18`. Try starting with `subtotal = 200` instead: the next two answers become `30` and `230`.
+In the final expression here, `subtotal` remembers the named value, and `ans` means the previous answer, which was `18`. Try starting with `subtotal = 200` instead: the next two answers become `30` and `230`.
 
-The important step is saving `result.Context` after each successful calculation. To give the input loop above the same memory, pass `context` as the last argument to `TryEvaluate` and update it only on success. Keep a separate context for each user's calculator.
-
-You can keep using `Calculator` for these kinds of application use cases. The [variables guide](https://github.com/daverayment/Numera/blob/main/docs/variables.md) goes further into named values and sessions. You only need to create a custom `CalculatorEngine` when you want to go beyond the defaults.
-
-## "My app needs different calculator defaults"
-
-Let's say you're building a school calculator. You want angles in degrees, and six significant digits are enough for its normal display.
-
-Create a calculator with those defaults and reuse it:
+The important step is saving `result.Context` after each successful calculation. To adapt the input loop in [the second example](#2-i-want-to-work-with-user-input-in-my-app), declare `var context = EvaluationContext.Empty;` before the loop, then replace its `if`/`else` block with this:
 
 ```csharp
-var calculator = new CalculatorEngine(new CalculatorOptions
+if (Calculator.TryEvaluate(input, out var result, out var diagnostic, context))
+{
+    Console.WriteLine(result);
+    context = result.Context;
+}
+else
+{
+    Console.WriteLine($"Couldn't calculate: {diagnostic.Message}");
+}
+```
+
+An unsuccessful calculation leaves your saved context unchanged. Keep a separate context for each user's calculator.
+
+You can keep using `Calculator` for these kinds of application use cases. The [variables guide](https://github.com/daverayment/Numera/blob/main/docs/variables.md) further describes named values and sessions. You only need to create a custom `CalculatorEngine` when you want to go beyond the defaults.
+
+## 4. "My app needs different calculator defaults"
+
+Let's say you're building a classroom calculator. You want angles in degrees instead of the radians default, and six significant digits are enough for its normal display.
+
+We can create a reusable calculator with those options like this:
+
+```csharp
+using Numera;
+
+var options = new CalculatorOptions
 {
 	AngleUnit = AngleUnit.Degrees,
 	ResultFormat = new ResultFormatOptions
 	{
 		SignificantDigits = 6
 	}
-});
+};
+var calculator = new CalculatorEngine(options);
 
 Console.WriteLine(calculator.Evaluate("sin(90)")); // 1
 Console.WriteLine(calculator.Evaluate("1/3"));     // 0.333333
 ```
 
-Try `cos(180)` and `tan(45)` too: you should see `-1` and `1`. Without the customization to use degrees, angles are interpreted in radians.
+Reuse the calculator for later calculations. It keeps the options and culture it was created with, and its results retain those display settings. On a system with a comma decimal separator, the last answer displays as `0,333333` instead.
 
-These examples show a decimal point. Your calculator follows the current culture, so you might see `0,333333` instead. Enter decimals using that same convention. For example, with German culture, try `1,5 + 2,5` to get `4,0`.
+For an explicit culture choice, see the [culture guide](https://github.com/daverayment/Numera/blob/main/docs/normalization.md#quick-example). The [configuration guide](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#immutable-configuration) covers creating another configuration without changing this calculator.
 
-An engine keeps the culture it was created with; its results keep their display settings too. If your app needs to select a particular user's culture explicitly, the [culture guide](https://github.com/daverayment/Numera/blob/main/docs/normalization.md#quick-example) shows how.
+## 5. "I'd like a button that shows the exact fraction"
 
-Use `result.FormatResult()` to retain those settings, especially for saved history.
-`calculator.FormatResult(result)` instead selects that engine's policy, while
-`Calculator.FormatResult(result)` uses library display defaults and current culture at
-the formatting call. Both engine and facade also accept raw `MathValue` values.
+Sometimes the person using your app may want to see `1/3` instead of `0.333333`. Let's add a toggle for that without changing the calculation.
 
-You can pass the same contexts to `calculator.Evaluate` and `calculator.TryEvaluate` that you used with `Calculator`. Changing settings doesn't require a different way of managing sessions.
-
-If you need a second configuration, `calculator.WithAngleUnit(...)` and `calculator.WithOptions(...)` return new engines without changing this one. You can also base reusable options on other options using record `with` expressions. The [configuration guide](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#immutable-configuration) explains both workflows and how complete replacement differs from changing selected settings.
-
-## "I'd like a button that shows the exact fraction"
-
-Six digits make a third easier to display, but sometimes the person using your app wants to see `1/3` instead. Let's add a toggle without changing the calculation.
-
-Using the configured `calculator` from above:
+We'll use the same configuration option to choose six significant digits for the normal display again:
 
 ```csharp
+using Numera;
+
+var options = new CalculatorOptions
+{
+    ResultFormat = new ResultFormatOptions
+    {
+        SignificantDigits = 6
+    }
+};
+var calculator = new CalculatorEngine(options);
+
 var result = calculator.Evaluate("1/3");
 var formatted = result.FormatResult();
 bool showFraction = true;
-string? display = showFraction
-	? formatted.FractionRepresentation
-	: formatted.PrimaryDisplay;
 
-if (display is not null)
+if (showFraction && formatted.FractionRepresentation is not null)
 {
-	Console.WriteLine(display);
+    Console.WriteLine(formatted.FractionRepresentation);
 }
 else
 {
-	Console.WriteLine("An exact fraction is not available.");
+    Console.WriteLine(formatted.PrimaryDisplay);
 }
 ```
 
-With `showFraction` set to `true`, this prints `1/3`. Set it to `false` and you'll see `0.333333`. In a UI, enable the fraction toggle when `formatted.FractionRepresentation` is present. `result.HasExactFraction` also tells you whether an exact fraction is available.
-
-The primary display and machine-readable text are always present. Alternatives are null when unavailable, such as hexadecimal for a third. All text is prepared before `FormatResult()` returns, so switching views does not trigger more formatting or exceptions. Long representations remain available: your app can check `.Length` before showing them. Significant digits are not a character budget; the [sizing guide](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#representation-lengths) explains the extra space for signs, separators, exponents, and leading zeros.
+With `showFraction` set to `true`, this prints `1/3`. Set it to `false` and you'll see the decimal representation. In a UI, enable the fraction toggle when `formatted.FractionRepresentation` is present. `result.HasExactFraction` also tells you whether an exact fraction is available.
 
 Try a few different answers:
 
-| Expression | Numeric view | Exact fraction available? |
-| --- | --- | --- |
-| `1/3` | `0.333333` | Yes: `1/3` |
-| `1/8` | `0.125` | Yes: `1/8` |
-| `sqrt(2)` | `1.41421` | No: this is a floating-point approximation |
+Expression | Numeric view | Exact fraction available?
+--- | --- | ---
+`1/3` | `0.333333` | Yes: `1/3`
+`1/8` | `0.125` | Yes: `1/8`
+`sqrt(2)` | `1.41421` | No: this is a floating-point approximation
 
-For `1/3`, `result.Exactness` is `Exact` and only the decimal display is rounded, so your UI can explain that the exact answer is available behind the fraction button. In contrast, `ln(1)` displays `0` without rounding but remains `Unverified`: a clean-looking answer does not establish exactness. `formatted.IsDisplayRounded` describes the presentation, not the calculation. [The exactness guide](https://github.com/daverayment/Numera/blob/main/docs/exactness.md) shows how to label these cases and use the status to understand a value's calculation path, without mistaking it for an error estimate or full history.
+For `1/3`, the calculation is exact; only its numeric display is rounded. `formatted.IsDisplayRounded` describes that display rounding, while `result.Exactness` describes calculation exactness. An unrounded display alone does not establish exactness. See the [exactness guide](https://github.com/daverayment/Numera/blob/main/docs/exactness.md) for UI labelling examples.
 
 The shortened display hasn't replaced the stored answer. Still using the same `result`:
 
@@ -187,18 +213,49 @@ Console.WriteLine(result * 3); // 1, not 0.999999
 
 Use the result itself for further calculations, rather than feeding its display text back into the calculator.
 
+## Optional recipe: "I want my own functions"
+
+Your app can expose its own calculations alongside the built-in functions. For example, let people convert kilometres to miles with `miles(...)`:
+
+```csharp
+using Numera;
+
+var options = new CalculatorOptions
+{
+    CustomFunctions =
+    [
+        CustomFunction.Create("miles", (MathValue kilometres) => kilometres / 1.609344m)
+    ]
+};
+var calculator = new CalculatorEngine(options);
+
+Console.WriteLine(calculator.Evaluate("miles(5)"));
+```
+
+The callback receives calculated values and returns a value; you don't need to work with the expression tree. The [custom-functions guide](https://github.com/daverayment/Numera/blob/main/docs/custom-functions.md) covers functions with more arguments and how Numera handles callback errors.
+
 ## Where would you like to go next?
 
 You don't need to learn the rest of the API to use the examples above. When your app needs more:
 
-- **"I need a number for another .NET API."** Both results and values offer `ToDouble()`, `ToDecimal()`, `ToBigInteger()`, and explicit numeric casts. [Conversion contracts](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#inspection--conversion) explain rounding, range limits, and why integer conversions never truncate.
+- **"I need a number for another .NET API."** Use `ToDouble()`, `ToDecimal()`, or `ToBigInteger()`. [Conversion contracts](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#inspection--conversion) explain rounding and range limits.
 - **"I need to compare answers or history content."** Result equality is numeric; use `EvaluationResultComparers.Content` for metadata-aware comparison. [Result comparison](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#result-equality-and-content-comparison) explains the contract.
-- **"I want my own functions, such as a tax or unit conversion."** [Register a custom function](https://github.com/daverayment/Numera/blob/main/docs/custom-functions.md) implemented in your application code.
+- **"I want function suggestions as people type."** Use `calculator.SearchFunctions(...)` to find built-in and custom functions, with metadata for an autocomplete menu. See [discovery and autocomplete](https://github.com/daverayment/Numera/blob/main/docs/custom-functions.md#discovery--autocomplete).
 - **"I need to copy or save an answer without display rounding."** [Machine-readable expressions and serialization](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#display-vs-machine-readable-text-and-culture) serve different purposes from the user-facing display.
-- **"I want to show the formula, not just its answer."** [Expression rendering](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#on-demand-abstract-syntax-tree-ast--formatting) can produce typography or LaTeX.
+- **"I want to show the formula, not just its answer."** [Expression rendering](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#on-demand-abstract-syntax-tree-ast--formatting) can produce typography or LaTeX / MathJAX.
+- **"I need other answer formats or have limited display space."** The [presentation guide](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#representation-lengths) covers exact-fraction and radix alternatives, prepared formatting snapshots, and representation lengths.
 - **"What else can people type?"** Browse the [calculation examples](docs/examples.md) or the [syntax and functions reference](https://github.com/daverayment/Numera/blob/main/docs/syntax.md).
 
 Before exposing a calculator to untrusted input, review the [limits and diagnostics guide](https://github.com/daverayment/Numera/blob/main/docs/safety-and-limits.md). Numera's exact arithmetic is bounded, and its limits do not impose execution-time guarantees on your custom functions.
+
+## Building from Source
+
+With the .NET 10 or later SDK installed, run these commands from the repository root:
+
+```
+dotnet build
+dotnet test
+```
 
 ## License
 

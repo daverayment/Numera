@@ -409,7 +409,7 @@ public sealed class EvaluationContextTests
     }
 
     [TestMethod]
-    public void ReferencedVariables_And_VariableReferences_ExposeDependencyInformation()
+    public void ReferencedVariableNames_And_VariableReferences_ExposeDependencyInformation()
     {
         var engine = new CalculatorEngine();
         var context = new EvaluationContext(
@@ -424,31 +424,31 @@ public sealed class EvaluationContextTests
 
         // 1. Unassigned expression with references
         var res1 = engine.Evaluate("15% of subtotal + ans", context);
-        Assert.Contains("subtotal", res1.ReferencedVariables);
-        Assert.Contains("ans", res1.ReferencedVariables);
-        Assert.DoesNotContain("pi", res1.ReferencedVariables);
+        Assert.Contains("subtotal", res1.ReferencedVariableNames);
+        Assert.Contains("ans", res1.ReferencedVariableNames);
+        Assert.DoesNotContain("pi", res1.ReferencedVariableNames);
 
         var refs = res1.VariableReferences;
         Assert.HasCount(2, refs);
         Assert.Contains(r => r.Name.Equals("subtotal", StringComparison.OrdinalIgnoreCase) && r.Span.HasValue, refs);
         Assert.Contains(r => r.IsAns && r.Span.HasValue, refs);
 
-        // 2. Assignment expression: ReferencedVariables only contains RHS inputs, not LHS assigned name
+        // 2. Assignment expression: ReferencedVariableNames only contains RHS inputs, not LHS assigned name
         var res2 = engine.Evaluate("total = bill + tip", context);
-        Assert.Contains("bill", res2.ReferencedVariables);
-        Assert.Contains("tip", res2.ReferencedVariables);
-        Assert.DoesNotContain("total", res2.ReferencedVariables);
+        Assert.Contains("bill", res2.ReferencedVariableNames);
+        Assert.Contains("tip", res2.ReferencedVariableNames);
+        Assert.DoesNotContain("total", res2.ReferencedVariableNames);
 
         // 3. Check on the assigned Variable instance directly
         Assert.IsTrue(res2.AssignedVariables.TryGetVariable("total", out var totalVar));
-        Assert.Contains("bill", totalVar.ReferencedVariables);
-        Assert.Contains("tip", totalVar.ReferencedVariables);
-        Assert.DoesNotContain("total", totalVar.ReferencedVariables);
+        Assert.Contains("bill", totalVar.ReferencedVariableNames);
+        Assert.Contains("tip", totalVar.ReferencedVariableNames);
+        Assert.DoesNotContain("total", totalVar.ReferencedVariableNames);
 
         // Constants like pi are not reported as variables
         var res3 = engine.Evaluate("2 * pi * r", context);
-        Assert.Contains("r", res3.ReferencedVariables);
-        Assert.DoesNotContain("pi", res3.ReferencedVariables);
+        Assert.Contains("r", res3.ReferencedVariableNames);
+        Assert.DoesNotContain("pi", res3.ReferencedVariableNames);
     }
 
     [TestMethod]
