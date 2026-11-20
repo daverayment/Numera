@@ -13,7 +13,7 @@ namespace Numera;
 /// <remarks>
 /// Results retain the culture used to read input, even if the current culture later
 /// changes. Use <see cref="EvaluationResult.PrimaryDisplay"/> for display text or
-/// <see cref="EvaluationResult.FormatResult(ResultFormatOptions?, CultureInfo?, bool)"/>
+/// <see cref="EvaluationResult.FormatResult(ResultFormatOptions?, CultureInfo?)"/>
 /// for a formatted result with alternatives retaining those settings. In contrast,
 /// this facade's FormatResult methods use library display defaults and current culture
 /// at call time, unless explicitly overridden.
@@ -226,13 +226,11 @@ public static class Calculator
     /// <param name="options">Display options, or null for library defaults.</param>
     /// <param name="culture">Display culture, or null for current culture at call time.
     /// </param>
-    /// <param name="prefixRadixOutput">Whether to include hexadecimal, binary, and octal
-    /// prefixes.</param>
     /// <returns>A fully prepared snapshot containing all applicable representations.
     /// </returns>
     /// <remarks>
     /// Options and culture override independently. Use
-    /// <see cref="EvaluationResult.FormatResult(ResultFormatOptions?, CultureInfo?, bool)"/>
+    /// <see cref="EvaluationResult.FormatResult(ResultFormatOptions?, CultureInfo?)"/>
     /// instead to retain the result's captured settings, as for calculator history.
     /// Formatting preserves the value and assignments without re-evaluating the
     /// expression.
@@ -241,12 +239,11 @@ public static class Calculator
     /// </exception>
     /// <exception cref="CalculationLimitException">A numerical formatting limit is
     /// exceeded.</exception>
-    public static FormattedCalculation FormatResult(
+    public static FormattedResult FormatResult(
         EvaluationResult result,
         ResultFormatOptions? options = null,
-        CultureInfo? culture = null,
-        bool prefixRadixOutput = true) =>
-        GetDefaultEngine().FormatResult(result, options, culture, prefixRadixOutput);
+        CultureInfo? culture = null) =>
+        GetDefaultEngine().FormatResult(result, options, culture);
 
     /// <summary>
     /// Formats a value using library display defaults and current culture at call time.
@@ -255,8 +252,6 @@ public static class Calculator
     /// <param name="options">Display options, or null for library defaults.</param>
     /// <param name="culture">Display culture, or null for current culture at call time.
     /// </param>
-    /// <param name="prefixRadixOutput">Whether to include hexadecimal, binary, and octal
-    /// prefixes.</param>
     /// <returns>A fully prepared snapshot containing all applicable representations, with
     /// no assignment metadata.</returns>
     /// <remarks>Options and culture override independently. The stored value and its
@@ -265,10 +260,9 @@ public static class Calculator
     /// </exception>
     /// <exception cref="CalculationLimitException">A numerical formatting limit is
     /// exceeded.</exception>
-    public static FormattedCalculation FormatResult(
+    public static FormattedResult FormatResult(
         MathValue value,
         ResultFormatOptions? options = null,
-        CultureInfo? culture = null,
-        bool prefixRadixOutput = true) =>
-        GetDefaultEngine().FormatResult(value, options, culture, prefixRadixOutput);
+        CultureInfo? culture = null) =>
+        GetDefaultEngine().FormatResult(value, options, culture);
 }

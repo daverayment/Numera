@@ -175,4 +175,19 @@ public sealed record CalculatorOptions
     /// <returns>New options using current culture and default settings.</returns>
     public static CalculatorOptions ForCurrentCulture() =>
         ForCulture(CultureInfo.CurrentCulture);
+
+    /// <summary>
+    /// Creates default options for machine-generated expressions: invariant culture
+    /// and no human-input normalization. Other language and safety settings retain their
+    /// defaults.
+    /// </summary>
+    /// <returns>New options for raw, invariant input.</returns>
+    /// <remarks>
+    /// Input passes to the parser unchanged. The invariant culture also becomes the
+    /// default result display culture. Use explicit formatting overrides when a
+    /// localized display is needed. This preset does not serialize values or preserve
+    /// exactness metadata when text is evaluated again.
+    /// </remarks>
+    public static CalculatorOptions ForMachineInput() =>
+        ForCulture(CultureInfo.InvariantCulture) with { Normalization = null };
 }

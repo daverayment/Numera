@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/FxGear128x128.png" alt="Numera logo" width="128" height="128" />
+  <img src="https://raw.githubusercontent.com/daverayment/Numera/main/assets/FxGear128x128.png" alt="Numera logo" width="128" height="128" />
 </p>
 
 <h1 align="center">Numera</h1>
@@ -15,7 +15,7 @@ The highlights:
 - Start with the static `Calculator` class; create a reusable `CalculatorEngine` when your app needs different defaults.
 - Named variables and a previous answer for calculations that build on each other.
 
-# Quickstart
+## Quickstart
 Let's start with one calculation, then turn it into a small calculator app.
 
 First, install Numera in your .NET project via NuGet:
@@ -24,7 +24,7 @@ First, install Numera in your .NET project via NuGet:
 dotnet add package Numera
 ```
 
-## 1. "I just want to calculate something"
+### 1. "I just want to calculate something"
 Evaluate your first expression:
 
 ```csharp
@@ -50,7 +50,7 @@ Numera preserves exact integer, decimal, and fractional arithmetic where support
 
 For scripts and one-off calculations, there's nothing else to set up.
 
-## 2. "I want to work with user input in my app"
+### 2. "I want to work with user input in my app"
 
 User input can contain typos, and an expression is often incomplete while being composed. Instead of throwing an exception for each unsuccessful calculation, let's give users a chance to try again in this next example:
 
@@ -59,21 +59,21 @@ using Numera;
 
 while (true)
 {
-	Console.Write("> ");
-	string? input = Console.ReadLine();
-	if (string.IsNullOrWhiteSpace(input))
-	{
-		break;
-	}
+    Console.Write("> ");
+    string? input = Console.ReadLine();
+    if (string.IsNullOrWhiteSpace(input))
+    {
+        break;
+    }
 
-	if (Calculator.TryEvaluate(input, out var result, out var diagnostic))
-	{
-		Console.WriteLine(result);
-	}
-	else
-	{
-		Console.WriteLine($"Couldn't calculate: {diagnostic.Message}");
-	}
+    if (Calculator.TryEvaluate(input, out var result, out var diagnostic))
+    {
+        Console.WriteLine(result);
+    }
+    else
+    {
+        Console.WriteLine($"Couldn't calculate: {diagnostic.Message}");
+    }
 }
 ```
 > [!NOTE]
@@ -92,7 +92,7 @@ Couldn't calculate: Unexpected end of input.
 
 The same `TryEvaluate` call suits a textbox event handler well. When it fails, `diagnostic.IsIncomplete` helps you avoid showing an error while the user is still composing an expression. The [diagnostics guide](https://github.com/daverayment/Numera/blob/main/docs/safety-and-limits.md#error-handling-patterns) also shows how to underline where a problem is in the expression or to supply your own messages.
 
-## 3. "I want to keep calculating with the previous answer"
+### 3. "I want to keep calculating with the previous answer"
 
 Suppose you're working out a restaurant bill. Give your calculator a context so it can remember named variables and the last answer at each step:
 
@@ -132,9 +132,9 @@ else
 
 An unsuccessful calculation leaves your saved context unchanged. Keep a separate context for each user's calculator.
 
-You can keep using `Calculator` for these kinds of application use cases. The [variables guide](https://github.com/daverayment/Numera/blob/main/docs/variables.md) further describes named values and sessions. You only need to create a custom `CalculatorEngine` when you want to go beyond the defaults.
+You can keep using `Calculator` for these kinds of application use cases. The [variables guide](https://github.com/daverayment/Numera/blob/main/docs/variables.md) further describes named values. You only need to create a custom `CalculatorEngine` when you want to go beyond the defaults.
 
-## 4. "My app needs different calculator defaults"
+### 4. "My app needs different calculator defaults"
 
 Let's say you're building a classroom calculator. You want angles in degrees instead of the radians default, and six significant digits are enough for its normal display.
 
@@ -145,11 +145,11 @@ using Numera;
 
 var options = new CalculatorOptions
 {
-	AngleUnit = AngleUnit.Degrees,
-	ResultFormat = new ResultFormatOptions
-	{
-		SignificantDigits = 6
-	}
+    AngleUnit = AngleUnit.Degrees,
+    ResultFormat = new ResultFormatOptions
+    {
+        SignificantDigits = 6
+    }
 };
 var calculator = new CalculatorEngine(options);
 
@@ -161,7 +161,7 @@ Reuse the calculator for later calculations. It keeps the options and culture it
 
 For an explicit culture choice, see the [culture guide](https://github.com/daverayment/Numera/blob/main/docs/normalization.md#quick-example). The [configuration guide](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#immutable-configuration) covers creating another configuration without changing this calculator.
 
-## 5. "I'd like a button that shows the exact fraction"
+### 5. "I'd like a button that shows the exact fraction"
 
 Sometimes the person using your app may want to see `1/3` instead of `0.333333`. Let's add a toggle for that without changing the calculation.
 
@@ -183,9 +183,9 @@ var result = calculator.Evaluate("1/3");
 var formatted = result.FormatResult();
 bool showFraction = true;
 
-if (showFraction && formatted.FractionRepresentation is not null)
+if (showFraction && formatted.ExactFractionDisplay is not null)
 {
-    Console.WriteLine(formatted.FractionRepresentation);
+    Console.WriteLine(formatted.ExactFractionDisplay);
 }
 else
 {
@@ -193,7 +193,7 @@ else
 }
 ```
 
-With `showFraction` set to `true`, this prints `1/3`. Set it to `false` and you'll see the decimal representation. In a UI, enable the fraction toggle when `formatted.FractionRepresentation` is present. `result.HasExactFraction` also tells you whether an exact fraction is available.
+With `showFraction` set to `true`, this prints `1/3`. Set it to `false` and you'll see the decimal representation. In a UI, use `formatted.HasExactFraction` to enable the toggle; `formatted.ExactFractionDisplay` holds its text. `result.HasExactFraction` reports availability before formatting, too.
 
 Try a few different answers:
 
@@ -213,7 +213,7 @@ Console.WriteLine(result * 3); // 1, not 0.999999
 
 Use the result itself for further calculations, rather than feeding its display text back into the calculator.
 
-## Optional recipe: "I want my own functions"
+### Optional recipe: "I want my own functions"
 
 Your app can expose its own calculations alongside the built-in functions. For example, let people convert kilometres to miles with `miles(...)`:
 
@@ -244,7 +244,7 @@ You don't need to learn the rest of the API to use the examples above. When your
 - **"I need to copy or save an answer without display rounding."** [Machine-readable expressions and serialization](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#display-vs-machine-readable-text-and-culture) serve different purposes from the user-facing display.
 - **"I want to show the formula, not just its answer."** [Expression rendering](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#on-demand-abstract-syntax-tree-ast--formatting) can produce typography or LaTeX / MathJAX.
 - **"I need other answer formats or have limited display space."** The [presentation guide](https://github.com/daverayment/Numera/blob/main/docs/architecture.md#representation-lengths) covers exact-fraction and radix alternatives, prepared formatting snapshots, and representation lengths.
-- **"What else can people type?"** Browse the [calculation examples](docs/examples.md) or the [syntax and functions reference](https://github.com/daverayment/Numera/blob/main/docs/syntax.md).
+- **"What else can people type?"** Browse the [calculation examples](https://github.com/daverayment/Numera/blob/main/docs/examples.md) or the [syntax and functions reference](https://github.com/daverayment/Numera/blob/main/docs/syntax.md).
 
 Before exposing a calculator to untrusted input, review the [limits and diagnostics guide](https://github.com/daverayment/Numera/blob/main/docs/safety-and-limits.md). Numera's exact arithmetic is bounded, and its limits do not impose execution-time guarantees on your custom functions.
 
@@ -259,4 +259,4 @@ dotnet test
 
 ## License
 
-[MIT](LICENSE).
+[MIT](https://github.com/daverayment/Numera/blob/main/LICENSE).

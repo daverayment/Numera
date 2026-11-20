@@ -905,8 +905,6 @@ public readonly record struct EvaluationResult :
     /// </param>
     /// <param name="culture">Display culture, or <see langword="null"/> to use the
     /// result's culture, falling back to current culture.</param>
-    /// <param name="prefixRadixOutput">Whether to include <c>0x</c>, <c>0b</c>, and
-    /// <c>0o</c> prefixes. Defaults to <see langword="true"/>.</param>
     /// <returns>Display text and alternatives, with rounding information and any assigned
     /// variables.</returns>
     /// <remarks>
@@ -918,18 +916,22 @@ public readonly record struct EvaluationResult :
     /// supported range.</exception>
     /// <exception cref="CalculationLimitException">Formatting arithmetic exceeds a
     /// numerical safety bound.</exception>
-    public FormattedCalculation FormatResult(
-        ResultFormatOptions? options = null, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
-        ResultFormatter.Format(this, options, culture, prefixRadixOutput);
+    public FormattedResult FormatResult(
+        ResultFormatOptions? options = null, CultureInfo? culture = null) =>
+        ResultFormatter.Format(this, options, culture);
 
     /// <summary>
     /// Gets the number as display text, using the result's formatting options and
     /// culture.
     /// </summary>
     /// <remarks>
+    /// Each access formats the value, just like <see cref="ToString()"/>, and can throw.
+    /// For repeated UI reads, prepare a <see cref="FormattedResult"/> once with
+    /// <see cref="FormatResult(ResultFormatOptions?, CultureInfo?)"/> and read its stored
+    /// <see cref="FormattedResult.PrimaryDisplay"/> instead.
     /// Uses library display defaults and current culture if none were supplied. Does
     /// not format alternatives; use
-    /// <see cref="FormatResult(ResultFormatOptions?, CultureInfo?, bool)"/> for those and
+    /// <see cref="FormatResult(ResultFormatOptions?, CultureInfo?)"/> for those and
     /// display-rounding information. Display text alone does not establish exactness.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">A formatting option is outside its

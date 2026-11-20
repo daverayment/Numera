@@ -20,7 +20,7 @@ public sealed class RationalResultFormattingTests
             {
                 SignificantDigits = digits,
                 Notation = notation,
-                Style = style,
+                ScientificStyle = style,
                 MaxFixedDigits = maxFixedDigits,
                 GroupDigits = groupDigits,
             },
@@ -112,7 +112,7 @@ public sealed class RationalResultFormattingTests
         {
             var options = new ResultFormatOptions
             {
-                Style = style,
+                ScientificStyle = style,
                 Notation = NumericNotation.Scientific,
                 ExponentMarker = marker,
             };
@@ -274,7 +274,7 @@ public sealed class RationalResultFormattingTests
         var options = new ResultFormatOptions
         {
             Notation = NumericNotation.Scientific,
-            Style = style,
+            ScientificStyle = style,
             ExponentMarker = marker,
         };
 
@@ -320,27 +320,49 @@ public sealed class RationalResultFormattingTests
         var formatted = Calculator.Evaluate("2 / 6").FormatResult(culture: CultureInfo.InvariantCulture);
         Assert.AreEqual("0.333333333333333333333333", formatted.PrimaryDisplay);
         Assert.IsTrue(formatted.IsDisplayRounded);
-        Assert.AreEqual("1/3", formatted.FractionRepresentation);
+        Assert.AreEqual("1/3", formatted.ExactFractionDisplay);
+        Assert.IsTrue(formatted.HasExactFraction);
         Assert.AreEqual("1/3", formatted.MachineReadable);
 
         var unverified = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture).FormatResult(new MathValue(0.5));
         Assert.IsFalse(unverified.IsDisplayRounded);
-        Assert.IsNull(unverified.FractionRepresentation);
+        Assert.IsNull(unverified.ExactFractionDisplay);
+        Assert.IsFalse(unverified.HasExactFraction);
     }
 
     [TestMethod]
-    public void ExistingSevenFieldDeconstructionRemainsAvailable()
+    public void PreparedSnapshotsExposeNamedDisplaysWithoutPublicConstructionOrDeconstruction()
     {
-        var result = new FormattedCalculation(new MathValue(5), "5", "5");
-        var (value, display, machine, hex, binary, octal, assignments) = result;
-        Assert.AreEqual(new MathValue(5), value);
-        Assert.AreEqual("5", display);
-        Assert.AreEqual("5", machine);
-        Assert.IsNull(hex);
-        Assert.IsNull(binary);
-        Assert.IsNull(octal);
-        Assert.IsNull(assignments);
+        var result = Calculator.Evaluate("5").FormatResult();
+        Assert.AreEqual(new MathValue(5), result.Value);
+        Assert.AreEqual("5", result.PrimaryDisplay);
+        Assert.AreEqual("5", result.MachineReadable);
+        Assert.AreEqual("0x5", result.HexDisplay);
+        Assert.AreEqual("0b101", result.BinaryDisplay);
+        Assert.AreEqual("0o5", result.OctalDisplay);
+        Assert.IsNull(result.AssignedVariables);
         Assert.IsFalse(result.IsDisplayRounded);
-        Assert.IsNull(result.FractionRepresentation);
+        Assert.AreEqual("5", result.ExactFractionDisplay);
+        Assert.IsTrue(result.HasExactFraction);
+        Assert.IsEmpty(typeof(FormattedResult).GetConstructors());
+        Assert.IsNull(typeof(FormattedResult).GetMethod("Deconstruct"));
+    }
+
+    [TestMethod]
+    public void InvalidScientificStylesAreRejectedForAllValuesAndFormattingRoutes()
+    {
+        var options = new ResultFormatOptions { ScientificStyle = (ExpressionFormatStyle)99 };
+        var engine = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture);
+        foreach (var value in new[] { MathValue.Zero, MathValue.One, new MathValue(double.NaN) })
+        {
+            var exception = Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
+                engine.FormatResult(value, options));
+            Assert.AreEqual(nameof(ResultFormatOptions.ScientificStyle), exception.ParamName);
+        }
+
+        var result = engine.Evaluate("1");
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => result.FormatResult(options));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => Calculator.FormatResult(result, options));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => engine.WithResultFormat(_ => options));
     }
 }

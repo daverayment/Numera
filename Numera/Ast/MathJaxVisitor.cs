@@ -45,7 +45,7 @@ internal sealed class MathJaxVisitor : IExpressionVisitor<string>
             var formatOptions = new ResultFormatOptions
             {
                 MaxFixedDigits = _options.MaxFixedDigits,
-                Style = ExpressionFormatStyle.MathJax,
+                ScientificStyle = ExpressionFormatStyle.MathJax,
                 Notation = NumericNotation.Auto,
             };
             return ResultValueFormatter.Format(node.Value, formatOptions, CultureInfo.InvariantCulture).Text;

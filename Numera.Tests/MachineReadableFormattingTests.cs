@@ -105,6 +105,6 @@ public sealed class MachineReadableFormattingTests
         var formatted = result.FormatResult();
         Assert.AreEqual("200", formatted.PrimaryDisplay);
         Assert.AreEqual("194.40", formatted.MachineReadable);
-        Assert.AreEqual("972/5", formatted.FractionRepresentation);
+        Assert.AreEqual("972/5", formatted.ExactFractionDisplay);
     }
 }

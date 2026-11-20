@@ -63,7 +63,7 @@ public sealed class ResultRepresentationLengthTests
         var options = new ResultFormatOptions
         {
             Notation = NumericNotation.Scientific,
-            Style = style,
+            ScientificStyle = style,
             ExponentMarker = marker
         };
         var formatted = InvariantEngine.FormatResult(value, options);
@@ -80,19 +80,20 @@ public sealed class ResultRepresentationLengthTests
         var value = new MathValue(-maximumMagnitude);
         var formatted = InvariantEngine.FormatResult(value);
 
-        Assert.AreEqual("-0b" + new string('1', 16384), formatted.BinaryRepresentation);
-        Assert.AreEqual("-0x" + new string('F', 4096), formatted.HexRepresentation);
-        Assert.AreEqual("-0o1" + new string('7', 5461), formatted.OctalRepresentation);
-        Assert.AreEqual(16387, formatted.BinaryRepresentation!.Length);
-        Assert.AreEqual(4099, formatted.HexRepresentation!.Length);
-        Assert.AreEqual(5465, formatted.OctalRepresentation!.Length);
+        Assert.AreEqual("-0b" + new string('1', 16384), formatted.BinaryDisplay);
+        Assert.AreEqual("-0x" + new string('F', 4096), formatted.HexDisplay);
+        Assert.AreEqual("-0o1" + new string('7', 5461), formatted.OctalDisplay);
+        Assert.AreEqual(16387, formatted.BinaryDisplay!.Length);
+        Assert.AreEqual(4099, formatted.HexDisplay!.Length);
+        Assert.AreEqual(5465, formatted.OctalDisplay!.Length);
         Assert.AreEqual(4934, formatted.MachineReadable.Length);
-        Assert.AreEqual(formatted.MachineReadable, formatted.FractionRepresentation);
+        Assert.AreEqual(formatted.MachineReadable, formatted.ExactFractionDisplay);
 
-        var unprefixed = InvariantEngine.FormatResult(value, prefixRadixOutput: false);
-        Assert.AreEqual("-" + new string('1', 16384), unprefixed.BinaryRepresentation);
-        Assert.AreEqual("-" + new string('F', 4096), unprefixed.HexRepresentation);
-        Assert.AreEqual("-1" + new string('7', 5461), unprefixed.OctalRepresentation);
+        var unprefixed = InvariantEngine.FormatResult(value,
+            InvariantEngine.Options.ResultFormat with { IncludeRadixPrefixes = false });
+        Assert.AreEqual("-" + new string('1', 16384), unprefixed.BinaryDisplay);
+        Assert.AreEqual("-" + new string('F', 4096), unprefixed.HexDisplay);
+        Assert.AreEqual("-1" + new string('7', 5461), unprefixed.OctalDisplay);
     }
 
     [TestMethod]
@@ -102,12 +103,12 @@ public sealed class ResultRepresentationLengthTests
         var formatted = result.FormatResult();
 
         Assert.AreEqual(result.PrimaryDisplay, formatted.PrimaryDisplay);
-        Assert.AreEqual("0b1" + new string('0', 16383), formatted.BinaryRepresentation);
-        Assert.AreEqual(16386, formatted.BinaryRepresentation!.Length);
+        Assert.AreEqual("0b1" + new string('0', 16383), formatted.BinaryDisplay);
+        Assert.AreEqual(16386, formatted.BinaryDisplay!.Length);
         Assert.AreEqual(result.MachineReadable, formatted.MachineReadable);
-        Assert.AreEqual(formatted.MachineReadable, formatted.FractionRepresentation);
-        Assert.IsNotNull(formatted.HexRepresentation);
-        Assert.IsNotNull(formatted.OctalRepresentation);
+        Assert.AreEqual(formatted.MachineReadable, formatted.ExactFractionDisplay);
+        Assert.IsNotNull(formatted.HexDisplay);
+        Assert.IsNotNull(formatted.OctalDisplay);
         Assert.IsNull(formatted.AssignedVariables);
     }
 
@@ -120,12 +121,12 @@ public sealed class ResultRepresentationLengthTests
         string expected = "-" + maximumComponent.ToString(CultureInfo.InvariantCulture)
             + "/" + (maximumComponent - 1).ToString(CultureInfo.InvariantCulture);
 
-        Assert.AreEqual(expected, formatted.FractionRepresentation);
+        Assert.AreEqual(expected, formatted.ExactFractionDisplay);
         Assert.AreEqual(expected, formatted.MachineReadable);
         Assert.AreEqual(9868, formatted.MachineReadable.Length);
         Assert.AreEqual("-1", formatted.PrimaryDisplay);
         Assert.IsTrue(formatted.IsDisplayRounded);
-        Assert.IsNull(formatted.BinaryRepresentation);
+        Assert.IsNull(formatted.BinaryDisplay);
     }
 
     [TestMethod]
@@ -186,6 +187,6 @@ public sealed class ResultRepresentationLengthTests
         Assert.AreEqual(culture.NumberFormat.NaNSymbol, formatted.PrimaryDisplay);
         Assert.AreEqual("NaN", formatted.MachineReadable);
         Assert.IsFalse(formatted.IsDisplayRounded);
-        Assert.IsNull(formatted.FractionRepresentation);
+        Assert.IsNull(formatted.ExactFractionDisplay);
     }
 }

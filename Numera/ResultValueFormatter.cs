@@ -415,7 +415,7 @@ internal static class ResultValueFormatter
     private static string ScientificSuffix(int exponent, ResultFormatOptions options)
     {
         string power = exponent.ToString(CultureInfo.InvariantCulture);
-        return options.Style switch
+        return options.ScientificStyle switch
         {
             ExpressionFormatStyle.NormalizedAscii =>
                 (options.ExponentMarker == ExponentMarker.Uppercase ? "E" : "e") + power,

@@ -71,27 +71,38 @@ public sealed record ResultFormatOptions
     public NumericNotation Notation { get; init; } = NumericNotation.Auto;
 
     /// <summary>
-    /// Gets the scientific rendering style, defaulting to compact e-notation.
+    /// Gets the rendering style used only for scientific notation, defaulting to compact
+    /// e-notation.
     /// </summary>
-    public ExpressionFormatStyle Style { get; init; } = ExpressionFormatStyle.NormalizedAscii;
+    public ExpressionFormatStyle ScientificStyle { get; init; } = ExpressionFormatStyle.NormalizedAscii;
 
     /// <summary>
-    /// Gets the exponent marker for compact scientific displays, defaulting to lowercase e.
-    /// Applies only to <see cref="ExpressionFormatStyle.NormalizedAscii"/> result displays;
-    /// expression formatting and machine-readable representations are unaffected.
+    /// Gets the exponent marker for compact scientific displays, defaulting to lowercase
+    /// e. Applies only to <see cref="ExpressionFormatStyle.NormalizedAscii"/> result
+    /// displays; expression formatting and machine-readable representations are
+    /// unaffected.
     /// </summary>
     public ExponentMarker ExponentMarker { get; init; } = ExponentMarker.Lowercase;
 
     /// <summary>
     /// Gets whether to group digits in the integer part of a number, defaulting to true.
-    /// Group sizes and separators follow the supplied culture, including variable group sizes.
+    /// Group sizes and separators follow the supplied culture, including variable group
+    /// sizes.
     /// </summary>
     public bool GroupDigits { get; init; } = true;
 
     /// <summary>
+    /// Gets whether hexadecimal, binary, and octal display alternatives include
+    /// their radix prefixes (0x, 0b, and 0o). Defaults to true.
+    /// Does not affect the primary display, exact fractions, or machine-readable text.
+    /// </summary>
+    public bool IncludeRadixPrefixes { get; init; } = true;
+
+    /// <summary>
     /// Validates the format options against supported ranges and safety limits.
     /// </summary>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown if any setting is outside its valid range.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if any setting is outside its
+    /// valid range.</exception>
     public void Validate()
     {
         if (SignificantDigits < 1 || SignificantDigits > CalculationLimits.MaxSignificantDigits)
@@ -120,9 +131,9 @@ public sealed record ResultFormatOptions
             throw new ArgumentOutOfRangeException(nameof(Notation));
         }
 
-        if (!Enum.IsDefined(Style))
+        if (!Enum.IsDefined(ScientificStyle))
         {
-            throw new ArgumentOutOfRangeException(nameof(Style));
+            throw new ArgumentOutOfRangeException(nameof(ScientificStyle));
         }
 
         if (!Enum.IsDefined(ExponentMarker))

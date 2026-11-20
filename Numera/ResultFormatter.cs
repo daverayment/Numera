@@ -9,7 +9,7 @@ namespace Numera;
 internal static class ResultFormatter
 {
     /// <summary>
-    /// Formats an evaluation result into a presentation-ready <see cref="FormattedCalculation"/>
+    /// Formats an evaluation result into a presentation-ready <see cref="FormattedResult"/>
     /// using the specified options and culture.
     /// </summary>
     /// <param name="result">The evaluation result to format.</param>
@@ -17,69 +17,60 @@ internal static class ResultFormatter
     /// result's options.</param>
     /// <param name="culture">The culture to use, or null to retain the result's culture.
     /// </param>
-    /// <param name="prefixRadixOutput">Whether to include radix prefixes ("0x", "0b",
-    /// "0o").</param>
-    /// <returns>A <see cref="FormattedCalculation"/> holding the formatted
+    /// <returns>A <see cref="FormattedResult"/> holding the formatted
     /// representations.</returns>
-    public static FormattedCalculation Format(
+    public static FormattedResult Format(
         EvaluationResult result,
         ResultFormatOptions? options = null,
-        CultureInfo? culture = null,
-        bool prefixRadixOutput = true)
+        CultureInfo? culture = null)
     {
         return FormatCore(
             result.Value,
             options ?? result.FormatOptions ?? ResultFormatOptions.Default,
             culture ?? result.Culture ?? CultureInfo.CurrentCulture,
-            result.HasAssignments ? result.AssignedVariables : null,
-            prefixRadixOutput);
+            result.HasAssignments ? result.AssignedVariables : null);
     }
 
     /// <summary>
-    /// Formats a calculation value into a presentation-ready <see cref="FormattedCalculation"/>
+    /// Formats a calculation value into a presentation-ready <see cref="FormattedResult"/>
     /// using the specified options and culture.
     /// </summary>
     /// <param name="value">The math value to format.</param>
     /// <param name="options">The formatting options to use, or <see langword="null"/> for
     /// defaults.</param>
     /// <param name="culture">The culture to use, or null for current culture.</param>
-    /// <param name="prefixRadixOutput">Whether to include radix prefixes ("0x", "0b",
-    /// "0o").</param>
-    /// <returns>A <see cref="FormattedCalculation"/> holding the formatted
+    /// <returns>A <see cref="FormattedResult"/> holding the formatted
     /// representations.</returns>
-    public static FormattedCalculation Format(
+    public static FormattedResult Format(
         MathValue value,
         ResultFormatOptions? options = null,
-        CultureInfo? culture = null,
-        bool prefixRadixOutput = true)
+        CultureInfo? culture = null)
     {
         return FormatCore(
             value,
             options ?? ResultFormatOptions.Default,
             culture ?? CultureInfo.CurrentCulture,
-            null,
-            prefixRadixOutput);
+            null);
     }
 
-    private static FormattedCalculation FormatCore(
+    private static FormattedResult FormatCore(
         MathValue value,
         ResultFormatOptions options,
         CultureInfo culture,
-        VariableCollection? assignedVariables,
-        bool prefixRadixOutput)
+        VariableCollection? assignedVariables)
     {
         options.Validate();
         var (primaryDisplay, isRounded) = ResultValueFormatter.Format(value, options, culture);
 
-        return new FormattedCalculation(
+        return new FormattedResult(
             value: value,
             primaryDisplay: primaryDisplay,
             machineReadable: value.ToInvariantExpression(),
-            hexRepresentation: value.ToHexString(prefixRadixOutput),
-            binaryRepresentation: value.ToBinaryString(prefixRadixOutput),
-            octalRepresentation: value.ToOctalString(prefixRadixOutput),
+            hexDisplay: value.ToHexString(options.IncludeRadixPrefixes),
+            binaryDisplay: value.ToBinaryString(options.IncludeRadixPrefixes),
+            octalDisplay: value.ToOctalString(options.IncludeRadixPrefixes),
             assignedVariables: assignedVariables,
-            fractionRepresentation: ResultValueFormatter.FormatExactFraction(value),
+            exactFractionDisplay: ResultValueFormatter.FormatExactFraction(value),
             isDisplayRounded: isRounded);
     }
 }

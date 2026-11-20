@@ -69,7 +69,7 @@ if (!result.IsFinite)
 
 // Use the readable result display; exact values remain available separately
 var card = result.FormatResult();
-Console.WriteLine($"Result: {card.PrimaryDisplay} ({result.Type}) | Hex: {card.HexRepresentation}");
+Console.WriteLine($"Result: {card.PrimaryDisplay} ({result.Type}) | Hex: {card.HexDisplay}");
 ```
 
 The examples below use decimal-point cultures. Enter decimal and argument separators according to your current culture, or create an engine with an explicit culture.
@@ -105,7 +105,7 @@ for examples and the distinction from history-entry identity or persistence.
 
 `Calculator` uses `CultureInfo.CurrentCulture` at each call. Parameterless constructors and the `CalculatorEngine.ForCurrentCulture()` and `CalculatorOptions.ForCurrentCulture()` factories capture the current culture when creating an instance. Reuse an engine to keep its culture and configuration stable.
 
-Use record `with` expressions to derive reusable options, or fluent `engine.WithCulture(...)`, `WithAngleUnit(...)`, and `WithOptions(...)` to create a differently configured engine without changing the original. `WithOptions(transform)` starts from existing settings; `WithOptions(options)` replaces the whole configuration. Required nulls and null transform results are rejected, not replaced with defaults. See [immutable configuration](docs/architecture.md#immutable-configuration) for examples and the intentionally optional null settings.
+Use record `with` expressions to derive reusable options, or fluent `engine.WithCulture(...)`, `WithAngleUnit(...)`, `WithResultFormat(...)`, and `WithOptions(...)` to create a differently configured engine without changing the original. `WithResultFormat(format => format with { SignificantDigits = 10 })` changes display precision while preserving other settings. `WithOptions(transform)` starts from existing settings; `WithOptions(options)` replaces the whole configuration. Required nulls and null transform results are rejected, not replaced with defaults. See [immutable configuration](docs/architecture.md#immutable-configuration) for examples and the intentionally optional null settings.
 
 Results retain their originating settings. Use `result.PrimaryDisplay` for text or `result.FormatResult()` for text, rounding information, and alternatives. Explicit options and culture override independently; omitted or null arguments retain the result's settings:
 
@@ -125,23 +125,24 @@ Both engine and facade methods also accept raw `MathValue` values. Explicit opti
 and culture override independently; null selects the defaults of the chosen entry point.
 The result overloads preserve assignment metadata; raw-value overloads have none.
 
-`FormattedCalculation` is an immutable, fully prepared snapshot: reading properties or switching views does not perform more formatting. `PrimaryDisplay` and `MachineReadable` are always present; null alternatives mean that view is unavailable for the value. Text has no character ceiling, so even long exact fractions and radix strings remain accessible. The default is still 24 significant digits, not 24 characters. Callers can check `.Length` to decide what fits their UI; see [representation lengths](docs/architecture.md#representation-lengths) for sizing guidance. Invalid options and numerical safety violations still throw when formatting, not when reading the snapshot.
+`FormattedResult` is an immutable, fully prepared snapshot created by `FormatResult()`: reading properties or switching views does not perform more formatting. `PrimaryDisplay` and `MachineReadable` are always present; null alternatives mean that view is unavailable for the value. In contrast, `EvaluationResult.PrimaryDisplay` formats on each read, just like `ToString()`. Text has no character ceiling, so even long exact fractions and radix strings remain accessible. The default is still 24 significant digits, not 24 characters. Callers can check `.Length` to decide what fits their UI; see [representation lengths](docs/architecture.md#representation-lengths) for sizing guidance. Invalid options and numerical safety violations still throw when formatting, not when reading the snapshot.
 
-For deterministic machine-authored input, use `new CalculatorEngine(CalculatorOptions.ForCulture(CultureInfo.InvariantCulture) with { Normalization = null })`. This bypasses human-input grouping and ambiguity rules. `MachineReadable` and serialization remain invariant. Matching input and display cultures avoids separator-related misinterpretation, but rounded display text does not preserve the original value. Manually constructed results without options use current culture when formatted.
+For deterministic machine-authored input, use `new CalculatorEngine(CalculatorOptions.ForMachineInput())`. This selects raw parsing and invariant culture for input and default displays, bypassing human-input grouping and ambiguity rules. `MachineReadable` and serialization remain invariant. Matching input and display cultures avoids separator-related misinterpretation, but rounded display text does not preserve the original value. Manually constructed results without options use current culture when formatted.
 
 ### Exact Fractions, Exactness, and Display
 
 ```csharp
 var thirds = Calculator.Evaluate("1/3");
 var card = thirds.FormatResult();
-Console.WriteLine(card.PrimaryDisplay);         // 0.333333333333333333333333
-Console.WriteLine(card.FractionRepresentation); // 1/3
-Console.WriteLine(card.IsDisplayRounded);       // True
-Console.WriteLine(thirds.Exactness);            // Exact
-Console.WriteLine((thirds * 3).Value);           // 1, without re-evaluation
+Console.WriteLine(card.PrimaryDisplay);       // 0.333333333333333333333333
+Console.WriteLine(card.ExactFractionDisplay); // 1/3
+Console.WriteLine(card.HasExactFraction);     // True
+Console.WriteLine(card.IsDisplayRounded);     // True
+Console.WriteLine(thirds.Exactness);          // Exact
+Console.WriteLine((thirds * 3).Value);         // 1, without re-evaluation
 ```
 
-`FormatResult().PrimaryDisplay` uses at most 24 significant digits and fixed notation for rounded decimal exponents -24 through 23 inclusive. Scientific displays default to compact lowercase e-notation, such as `1e-400`. Configure `CalculatorOptions.ResultFormat` to change precision, notation, or style; set `ExponentMarker = ExponentMarker.Uppercase` for `1E-400`. Marker casing affects only compact numeric displays, not expression identifiers or machine-readable output. Typographic Unicode and MathJax remain explicit result-style choices; expression formatting still defaults to typographic Unicode. Representation-native `ToString` formatting remains separate: Integer and Decimal retain their .NET formatting behavior, while Rational uses a numeric general format by default.
+`FormatResult().PrimaryDisplay` uses at most 24 significant digits and fixed notation for rounded decimal exponents -24 through 23 inclusive. Scientific displays default to compact lowercase e-notation, such as `1e-400`. Configure `CalculatorOptions.ResultFormat` to change precision, notation, or `ScientificStyle`; set `ExponentMarker = ExponentMarker.Uppercase` for `1E-400`. Marker casing affects only compact numeric displays, not expression identifiers or machine-readable output. Typographic Unicode and MathJax remain explicit scientific-style choices; expression formatting still defaults to typographic Unicode. Set `IncludeRadixPrefixes = false` to omit prefixes from `HexDisplay`, `BinaryDisplay`, and `OctalDisplay`. Representation-native `ToString` formatting remains separate: Integer and Decimal retain their .NET formatting behavior, while Rational uses a numeric general format by default.
 
 Fixed, unrounded displays preserve a bounded decimal-scale hint from literals and exact arithmetic: `194.40 - 100` displays `94.40`. Non-whole values preserve scales up to four decimal places; whole values preserve up to two. Larger scales normalize away trailing zeros. Padding never exceeds the significant-digit budget and is omitted for scientific or rounded displays. The hint survives captured values and serialization without changing the exact value, fraction alternate, equality, or exactness.
 

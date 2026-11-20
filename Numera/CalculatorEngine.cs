@@ -213,6 +213,24 @@ public sealed class CalculatorEngine
     /// range.</exception>
     public CalculatorEngine WithOptions(CalculatorOptions options) => new(options);
 
+    /// <summary>
+    /// Returns a new engine with result formatting transformed from its current settings.
+    /// The original engine and all other calculator settings are unchanged.
+    /// </summary>
+    /// <param name="configure">A function that takes the current result formatting
+    /// options and returns non-null, valid options.</param>
+    /// <returns>A new engine with the modified result formatting.</returns>
+    /// <exception cref="ArgumentNullException">The transformation is null.</exception>
+    /// <exception cref="ArgumentException">The transformation returns null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">A formatting option is invalid.</exception>
+    public CalculatorEngine WithResultFormat(Func<ResultFormatOptions, ResultFormatOptions> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        var resultFormat = configure(Options.ResultFormat) ?? throw new ArgumentException(
+            "The configuration transformation must return non-null options.", nameof(configure));
+        return WithOptions(options => options with { ResultFormat = resultFormat });
+    }
+
     private static CalculatorOptions ConfigureOptions(
         CalculatorOptions options,
         Func<CalculatorOptions, CalculatorOptions> configure)
@@ -629,23 +647,20 @@ public sealed class CalculatorEngine
     /// use this engine's default format.</param>
     /// <param name="culture">The culture to use for formatting, or <see langword="null"/>
     /// to use this engine's culture.</param>
-    /// <param name="prefixRadixOutput">Whether to prefix hexadecimal, binary, and octal
-    /// outputs with their respective radix indicators.</param>
-    /// <returns>A <see cref="FormattedCalculation"/> holding the original value, the
+    /// <returns>A <see cref="FormattedResult"/> holding the original value, the
     /// display text in the specified culture, an invariant-culture string for machine
     /// use, and hex, binary and octal forms.</returns>
     /// <remarks>Uses this engine's defaults, not the result's captured settings. Use
-    /// <see cref="EvaluationResult.FormatResult(ResultFormatOptions?, CultureInfo?, bool)"/>
+    /// <see cref="EvaluationResult.FormatResult(ResultFormatOptions?, CultureInfo?)"/>
     /// to retain the result's policy. Non-null options and culture override independently.
     /// All applicable representations are prepared without a character limit. Callers
     /// decide what fits their UI. Numerical safety bounds still apply.</remarks>
-    public FormattedCalculation FormatResult(
-        EvaluationResult result, ResultFormatOptions? options = null, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
+    public FormattedResult FormatResult(
+        EvaluationResult result, ResultFormatOptions? options = null, CultureInfo? culture = null) =>
         ResultFormatter.Format(
             result,
             options ?? Options.ResultFormat,
-            culture ?? Options.Culture,
-            prefixRadixOutput);
+            culture ?? Options.Culture);
 
     /// <summary>
     /// Formats a calculation value into a structured presentation-ready card using the
@@ -656,18 +671,15 @@ public sealed class CalculatorEngine
     /// use this engine's default format.</param>
     /// <param name="culture">The culture to use for formatting, or <see langword="null"/>
     /// to use this engine's culture.</param>
-    /// <param name="prefixRadixOutput">Whether to prefix hexadecimal, binary, and octal
-    /// outputs with their respective radix indicators.</param>
-    /// <returns>A <see cref="FormattedCalculation"/> holding the original value, the
+    /// <returns>A <see cref="FormattedResult"/> holding the original value, the
     /// display text in the specified culture, an invariant-culture string for machine
-    /// use, and prefixed hex, binary and octal forms.</returns>
+    /// use, and hex, binary and octal forms.</returns>
     /// <remarks>All applicable representations are prepared without a character limit.
     /// Callers decide what fits their UI. Numerical safety bounds still apply.</remarks>
-    public FormattedCalculation FormatResult(
-        MathValue value, ResultFormatOptions? options = null, CultureInfo? culture = null, bool prefixRadixOutput = true) =>
+    public FormattedResult FormatResult(
+        MathValue value, ResultFormatOptions? options = null, CultureInfo? culture = null) =>
         ResultFormatter.Format(
             value,
             options ?? Options.ResultFormat,
-            culture ?? Options.Culture,
-            prefixRadixOutput);
+            culture ?? Options.Culture);
 }

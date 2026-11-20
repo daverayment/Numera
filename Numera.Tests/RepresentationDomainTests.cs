@@ -293,7 +293,7 @@ public sealed class RepresentationDomainTests
         }
         Assert.AreEqual("1/2", half.MachineReadable);
         Assert.AreEqual("0.5", half.ToString(CultureInfo.InvariantCulture));
-        Assert.AreEqual("1/2", half.FormatResult().FractionRepresentation);
+        Assert.AreEqual("1/2", half.FormatResult().ExactFractionDisplay);
     }
 
     [TestMethod]

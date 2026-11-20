@@ -30,7 +30,7 @@ public sealed class DoubleResultFormattingTests
         Assert.IsTrue(snapshot.IsDisplayRounded);
         Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.IsFalse(result.HasExactFraction);
-        Assert.IsNull(snapshot.FractionRepresentation);
+        Assert.IsNull(snapshot.ExactFractionDisplay);
         Assert.AreEqual(machine, snapshot.MachineReadable);
         Assert.AreEqual(result.Value, InvariantEngine.Evaluate(machine).Value);
         Assert.AreEqual(bits, BitConverter.DoubleToInt64Bits(snapshot.Value.DoubleValue));
@@ -132,7 +132,7 @@ public sealed class DoubleResultFormattingTests
         Assert.AreEqual(expected, snapshot.PrimaryDisplay);
         Assert.AreEqual(rounded, snapshot.IsDisplayRounded);
         Assert.AreEqual(CalculationExactness.Unverified, snapshot.Value.Exactness);
-        Assert.IsNull(snapshot.FractionRepresentation);
+        Assert.IsNull(snapshot.ExactFractionDisplay);
     }
 
     [TestMethod]
@@ -159,8 +159,8 @@ public sealed class DoubleResultFormattingTests
         Assert.AreEqual("1e3", InvariantEngine.FormatResult(value, options).PrimaryDisplay);
         Assert.AreEqual("1,000", InvariantEngine.FormatResult(value, options with { Notation = NumericNotation.Fixed }).PrimaryDisplay);
         Assert.AreEqual("1E3", InvariantEngine.FormatResult(value, options with { ExponentMarker = ExponentMarker.Uppercase }).PrimaryDisplay);
-        Assert.AreEqual("1 × 10^3", InvariantEngine.FormatResult(value, options with { Style = ExpressionFormatStyle.TypographicUnicode }).PrimaryDisplay);
-        Assert.AreEqual(@"1 \times 10^{3}", InvariantEngine.FormatResult(value, options with { Style = ExpressionFormatStyle.MathJax }).PrimaryDisplay);
+        Assert.AreEqual("1 × 10^3", InvariantEngine.FormatResult(value, options with { ScientificStyle = ExpressionFormatStyle.TypographicUnicode }).PrimaryDisplay);
+        Assert.AreEqual(@"1 \times 10^{3}", InvariantEngine.FormatResult(value, options with { ScientificStyle = ExpressionFormatStyle.MathJax }).PrimaryDisplay);
         var german = CultureInfo.GetCultureInfo("de-DE");
         Assert.AreEqual("1.234.567,89012346", InvariantEngine.FormatResult(new MathValue(1234567.8901234567), culture: german).PrimaryDisplay);
         Assert.AreEqual("1,23456789012346e6", InvariantEngine.FormatResult(new MathValue(1234567.8901234567),
@@ -209,8 +209,8 @@ public sealed class DoubleResultFormattingTests
         Assert.AreEqual("0.1", snapshot.PrimaryDisplay);
         Assert.IsTrue(snapshot.IsDisplayRounded);
         Assert.AreEqual(CalculationExactness.Exact, snapshot.Value.Exactness);
-        Assert.AreEqual("3602879701896397/36028797018963968", snapshot.FractionRepresentation);
-        Assert.AreEqual(snapshot.FractionRepresentation, snapshot.MachineReadable);
+        Assert.AreEqual("3602879701896397/36028797018963968", snapshot.ExactFractionDisplay);
+        Assert.AreEqual(snapshot.ExactFractionDisplay, snapshot.MachineReadable);
     }
 
     [TestMethod]

@@ -100,7 +100,7 @@ public sealed class DecimalDisplayScaleTests
         var value = captured.Value - new MathValue(100);
         Assert.AreEqual("94.40", engine.FormatResult(value).PrimaryDisplay);
         Assert.AreEqual("94.40", value.ToInvariantExpression());
-        Assert.AreEqual("472/5", engine.FormatResult(value).FractionRepresentation);
+        Assert.AreEqual("472/5", engine.FormatResult(value).ExactFractionDisplay);
         Assert.AreEqual(new MathValue(94.4m), value);
         Assert.AreEqual(new MathValue(94.4m).GetHashCode(), value.GetHashCode());
         foreach (var stored in new[] { value, engine.Evaluate("1.00").Value, engine.Evaluate("1.00/3").Value })
@@ -126,7 +126,7 @@ public sealed class DecimalDisplayScaleTests
         Assert.AreEqual("100", engine.FormatResult(new MathValue(100.000m)).PrimaryDisplay);
         var unverified = new MathValue(94.40m).WithExactness(CalculationExactness.Unverified);
         Assert.AreEqual("94.40", engine.FormatResult(unverified).PrimaryDisplay);
-        Assert.IsNull(engine.FormatResult(unverified).FractionRepresentation);
+        Assert.IsNull(engine.FormatResult(unverified).ExactFractionDisplay);
         Assert.AreEqual("0.5", engine.FormatResult(new MathValue(0.5)).PrimaryDisplay);
     }
 
@@ -254,7 +254,7 @@ public sealed class DecimalDisplayScaleTests
     [TestMethod]
     public void ResultDefaultsAndOverridesAreSeparateFromExpressionFormatting()
     {
-        Assert.AreEqual(ExpressionFormatStyle.NormalizedAscii, ResultFormatOptions.Default.Style);
+        Assert.AreEqual(ExpressionFormatStyle.NormalizedAscii, ResultFormatOptions.Default.ScientificStyle);
         Assert.AreEqual(ExponentMarker.Lowercase, ResultFormatOptions.Default.ExponentMarker);
         var result = Calculator.Evaluate("1e-400");
         Assert.AreEqual("1e-400", result.Value.ToString(CultureInfo.InvariantCulture));
@@ -279,6 +279,6 @@ public sealed class DecimalDisplayScaleTests
         Assert.IsFalse(formatted.IsDisplayRounded);
         string fraction = "1/1" + new string('0', 50);
         Assert.AreEqual(fraction, formatted.MachineReadable);
-        Assert.AreEqual(fraction, formatted.FractionRepresentation);
+        Assert.AreEqual(fraction, formatted.ExactFractionDisplay);
     }
 }

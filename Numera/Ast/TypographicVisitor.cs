@@ -55,7 +55,7 @@ internal sealed class TypographicVisitor : IExpressionVisitor<string>
             var formatOptions = new ResultFormatOptions
             {
                 MaxFixedDigits = _options.MaxFixedDigits,
-                Style = _options.Style,
+                ScientificStyle = _options.Style,
                 Notation = NumericNotation.Auto,
 
                 // Expression normalization keeps its own convention, independent of

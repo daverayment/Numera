@@ -166,10 +166,12 @@ var engine = new CalculatorEngine(options);
 
 ```csharp
 var machineEngine = new CalculatorEngine(
-	CalculatorOptions.ForCulture(CultureInfo.InvariantCulture) with { Normalization = null });
+	CalculatorOptions.ForMachineInput());
 
 // Commas are always argument separators in raw mode, never digit grouping.
 var machineResult = machineEngine.Evaluate("pow(2,100)");
 ```
+
+`ForMachineInput()` selects invariant culture and `Normalization = null`, leaving other language and safety settings at their defaults. Its default result displays are invariant too; use a formatting culture override when a localized display is needed. Re-evaluating machine text preserves the stored finite number, not storage or exactness metadata; use value serialization when those distinctions matter.
 
 Raw mode does not accept localized numbers, semicolon arguments, or launcher/typographic rewrites. `ExpressionNormalizer` remains public for callers that only want text normalization and its diagnostics. Its output is invariant parser input: do not normalize it a second time.

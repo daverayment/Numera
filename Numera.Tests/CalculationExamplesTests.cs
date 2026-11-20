@@ -182,7 +182,7 @@ public sealed class CalculationExamplesTests
 
         Assert.AreEqual(numericDisplay, result.ToString());
         Assert.AreEqual(numericDisplay, formatted.PrimaryDisplay);
-        Assert.AreEqual(exactFraction, formatted.FractionRepresentation);
+        Assert.AreEqual(exactFraction, formatted.ExactFractionDisplay);
         Assert.AreEqual(exactFraction is not null, result.HasExactFraction);
         Assert.AreEqual(isDisplayRounded, formatted.IsDisplayRounded);
         if (expression == "1/3")

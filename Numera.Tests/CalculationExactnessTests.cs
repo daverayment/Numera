@@ -133,7 +133,8 @@ public sealed class CalculationExactnessTests
         Assert.AreEqual(exactness, formatted.Value.Exactness);
         Assert.AreEqual(rounded, formatted.IsDisplayRounded);
         Assert.AreEqual(hasExactFraction, result.HasExactFraction);
-        Assert.AreEqual(hasExactFraction, formatted.FractionRepresentation is not null);
+        Assert.AreEqual(hasExactFraction, formatted.ExactFractionDisplay is not null);
+        Assert.AreEqual(hasExactFraction, formatted.HasExactFraction);
     }
 
     [TestMethod]
@@ -170,7 +171,7 @@ public sealed class CalculationExactnessTests
         var formattedHalf = CalculatorEngine.ForCulture(CultureInfo.InvariantCulture).FormatResult(binaryHalf);
         Assert.AreEqual("0.5", formattedHalf.PrimaryDisplay);
         Assert.IsFalse(formattedHalf.IsDisplayRounded);
-        Assert.IsNull(formattedHalf.FractionRepresentation);
+        Assert.IsNull(formattedHalf.ExactFractionDisplay);
     }
 
     [TestMethod]

@@ -228,17 +228,15 @@ the original or change settings captured by an earlier result:
 ```csharp
 var scientific = engine
 	.WithAngleUnit(AngleUnit.Radians)
-	.WithOptions(options => options with
-	{
-		ResultFormat = options.ResultFormat with { SignificantDigits = 12 }
-	});
+	.WithResultFormat(format => format with { SignificantDigits = 12 });
 
 var replacement = engine.WithOptions(common);
 ```
 
-`WithOptions(transform)` receives the existing engine's options and invokes the function
-once. Use nested `with` expressions to preserve other formatting settings when changing
-one. `WithOptions(options)` replaces the complete configuration instead of merging it:
+`WithResultFormat(transform)` receives the existing result formatting options and invokes
+the function once. Use `with` to preserve the other display settings; all other calculator
+settings remain unchanged. `WithOptions(transform)` transforms the whole configuration
+once. `WithOptions(options)` replaces the complete configuration instead of merging it:
 in the example, `replacement` uses `common`'s culture, not the German engine's culture.
 Both overloads validate the chosen configuration before returning a new engine.
 
@@ -258,6 +256,11 @@ For optional settings, the culture factories' null `configure` parameter means n
 customization, and `Normalization = null` selects raw input. Construction and derivation do
 not alter per-session variables or `ans`; those remain in `EvaluationContext`.
 
+For machine-generated expressions, `CalculatorOptions.ForMachineInput()` selects raw
+input and invariant culture without changing other defaults. This also selects invariant
+result displays; see [raw input and culture](normalization.md) for localized presentation
+and value-transfer guidance.
+
 ---
 
 ## High-Performance & Radix Formatting
@@ -266,7 +269,7 @@ not alter per-session variables or `ans`; those remain in `EvaluationContext`.
 
 - **`ISpanFormattable` and `IUtf8SpanFormattable`**: Write formatted values into caller-provided character or UTF-8 buffers. Rational formatting can allocate temporary integer and text storage.
 - **Multi-Radix Helpers**: For finite integral values, `value.ToHexString()`, `value.ToBinaryString()`, and `value.ToOctalString()` format with (or without) standard prefixes (`0x`, `0b`, `0o`), returning `null` otherwise. Availability does not establish calculation exactness: an Unverified Double containing 2 can still be shown as binary `0b10`.
-- **Launcher Presentation**: `CalculatorEngine.FormatResult(value)` produces a structured `FormattedCalculation` containing primary display text in the engine's culture, machine-readable invariant text, and integer radix strings.
+- **Launcher Presentation**: `CalculatorEngine.FormatResult(value)` produces a structured `FormattedResult` containing primary display text in the engine's culture, machine-readable invariant text, and integer radix strings. `IncludeRadixPrefixes` in `ResultFormatOptions` controls whether `HexDisplay`, `BinaryDisplay`, and `OctalDisplay` include prefixes; it defaults to true.
 
 The primary display uses culture-aware digit grouping and midpoint-to-even rounding.
 Two `ResultFormatOptions` settings control how many significant digits it shows:
@@ -284,13 +287,13 @@ Automatic notation uses the rounded base-10 exponent: fixed notation applies fro
 -24 through 23 inclusive (`MaxFixedDigits = 24`); other magnitudes use scientific
 notation. This threshold controls magnitude, independently of display precision.
 
-Scientific result displays default to compact lowercase e-notation (`Style = ExpressionFormatStyle.NormalizedAscii`), for example `1e-400`. Set `ExponentMarker = ExponentMarker.Uppercase` for `1E-400`. This setting affects only the numeric exponent marker, not identifiers, expression formatting, or machine-readable text. Explicit `TypographicUnicode` and `MathJax` result styles use mathematical exponent notation and ignore marker casing. Expression formatting defaults to typographic Unicode; its normalized ASCII style uses uppercase E.
+Scientific result displays default to compact lowercase e-notation (`ScientificStyle = ExpressionFormatStyle.NormalizedAscii`), for example `1e-400`. This style applies only when the number uses scientific notation. Set `ExponentMarker = ExponentMarker.Uppercase` for `1E-400`. Marker casing affects only the numeric exponent marker, not identifiers, expression formatting, or machine-readable text. Explicit `TypographicUnicode` and `MathJax` scientific styles use mathematical exponent notation and ignore marker casing. Expression formatting has a separate `Style` setting and defaults to typographic Unicode; its normalized ASCII style uses uppercase E.
 
 Digit grouping follows the culture's complete group-size sequence, including variable-sized groups and a terminal zero that stops further grouping. There is no character-output ceiling: signs, separators, exponents, and place-holding zeros can make a display longer than its significant-digit budget. Exact and radix alternatives remain available even when impractical to show inline. See [representation lengths](#representation-lengths).
 
 Use the structured primary display for calculator UIs. Representation-native `ToString` and explicit .NET numeric format strings are a separate surface; Integer and Decimal formatting can retain more digits than the primary display. Exact invariant expressions may exceed a receiving engine's input-length limit even when their numeric components fit; serialization is the separate value-transfer surface.
 
-`FractionRepresentation` is a reduced slash fraction for known or asserted Exact finite results (`"1/3"`, `"1/2"`, or `"5"` for integers), otherwise null. `EvaluationResult.HasExactFraction` reports that availability. Use `IsDisplayRounded` for a rounded-display indicator and `Value.Exactness` for a separate exactness explanation: `1/3` is Exact with a rounded display, while `ln(1)` is Unverified without display rounding. See [UI guidance](exactness.md#i-want-a-useful-indicator-beside-the-answer).
+`ExactFractionDisplay` is a reduced slash fraction for known or asserted Exact finite results (`"1/3"`, `"1/2"`, or `"5"` for integers), otherwise null. Both `EvaluationResult.HasExactFraction` and `FormattedResult.HasExactFraction` report availability; the snapshot property is computed from its fraction text for UI binding. Use `IsDisplayRounded` for a rounded-display indicator and `Value.Exactness` for a separate exactness explanation: `1/3` is Exact with a rounded display, while `ln(1)` is Unverified without display rounding. See [UI guidance](exactness.md#i-want-a-useful-indicator-beside-the-answer).
 
 Decimal literals and explicit Decimal values carry a bounded display-scale hint independently of canonical representation. Exact arithmetic and captured values retain it, including across Rational intermediates, without replaying expressions.
 
@@ -368,7 +371,7 @@ if (value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCultu
 
 ### Display vs. Machine-Readable Text and Culture
 
-`FormattedCalculation` deliberately carries two text forms of the same value:
+`FormattedResult` deliberately carries two text forms of the same value:
 
 | Property | Culture | Use it for |
 | :--- | :--- | :--- |
@@ -381,9 +384,9 @@ var engine = new CalculatorEngine(CalculatorOptions.ForCulture(new CultureInfo("
 var value = engine.Evaluate("1000 + 2,5");   // the user types a decimal comma
 var shown = value.FormatResult();
 
-shown.PrimaryDisplay;    // "1.002,5" (decimal comma and digit grouping)
-shown.MachineReadable;   // "1002.5"  (always invariant)
-shown.HexRepresentation; // null      (not an integer)
+shown.PrimaryDisplay;  // "1.002,5" (decimal comma and digit grouping)
+shown.MachineReadable; // "1002.5"  (always invariant)
+shown.HexDisplay;      // null      (not an integer)
 ```
 
 The culture rules to be aware of:
@@ -398,7 +401,15 @@ The culture rules to be aware of:
 
 ### Complete Presentation Snapshots
 
-`result.FormatResult()` and the engine and facade formatting routes return an immutable `FormattedCalculation`. All numeric representations are prepared before returning. `PrimaryDisplay` and `MachineReadable` are non-null, and `IsDisplayRounded` is a boolean. Alternatives are null only when unavailable for the value, such as binary for a third or an exact fraction for an Unverified result. Reading properties, caching the snapshot, or switching views does not trigger formatting or new formatting exceptions.
+`result.FormatResult()` and the engine and facade formatting routes return an immutable `FormattedResult`. All numeric representations are prepared before returning. `PrimaryDisplay` and `MachineReadable` are non-null, and `IsDisplayRounded` is a boolean. Alternatives are null only when unavailable for the value, such as binary for a third or an exact fraction for an Unverified result. Reading properties, caching the snapshot, or switching views does not trigger formatting or new formatting exceptions.
+
+Snapshots are created by the formatting methods, not a public constructor. Read their
+named properties rather than deconstructing a positional list. `HasExactFraction` can
+drive a fraction button's visibility or enabled state without checking text in a binding.
+
+`EvaluationResult.PrimaryDisplay` is an on-demand convenience, equivalent to `ToString()`:
+each access formats the numeric value and can throw. For repeated display reads, call
+`FormatResult()` once and retain the snapshot's stored `PrimaryDisplay` instead.
 
 Both engine and facade provide separate `EvaluationResult` and `MathValue` overloads.
 Passing a result includes structured `AssignedVariables` metadata for application-defined
@@ -465,7 +476,7 @@ For example, `1e-50` has a five-character primary display and 53-character fract
 
 ```csharp
 var formatted = Calculator.Evaluate("1 << 16383").FormatResult();
-if (formatted.BinaryRepresentation is string binary)
+if (formatted.BinaryDisplay is string binary)
 {
 	if (binary.Length <= 30)
 	{

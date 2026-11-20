@@ -269,7 +269,7 @@ public sealed class RationalPowerTests
 
         var fraction = Engine.Evaluate("(-8)^(-1/3)");
         Assert.AreEqual("-0.5", fraction.PrimaryDisplay);
-        Assert.AreEqual("-1/2", fraction.FormatResult().FractionRepresentation);
+        Assert.AreEqual("-1/2", fraction.FormatResult().ExactFractionDisplay);
     }
 
     [TestMethod]

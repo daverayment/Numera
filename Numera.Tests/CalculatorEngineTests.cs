@@ -144,6 +144,95 @@ public class CalculatorEngineTests
     }
 
     [TestMethod]
+    public void WithResultFormatTransformsCurrentFormattingOnceAndPreservesOtherSettings()
+    {
+        var options = CalculatorOptions.ForMachineInput() with
+        {
+            AngleUnit = AngleUnit.Degrees,
+            MaxInputLength = 100,
+            ResultFormat = new ResultFormatOptions
+            {
+                SignificantDigits = 6,
+                GroupDigits = false,
+                IncludeRadixPrefixes = false,
+                ScientificStyle = ExpressionFormatStyle.MathJax
+            }
+        };
+        var original = new CalculatorEngine(options);
+        var earlierResult = original.Evaluate("1/3");
+        int calls = 0;
+        var derived = original.WithResultFormat(format =>
+        {
+            calls++;
+            Assert.AreSame(options.ResultFormat, format);
+            return format with { SignificantDigits = 10 };
+        });
+
+        Assert.AreEqual(1, calls);
+        Assert.AreNotSame(original, derived);
+        Assert.AreSame(options, original.Options);
+        Assert.AreEqual(options with { ResultFormat = derived.Options.ResultFormat }, derived.Options);
+        Assert.AreEqual(options.ResultFormat with { SignificantDigits = 10 }, derived.Options.ResultFormat);
+        Assert.AreEqual("0.333333", earlierResult.PrimaryDisplay);
+        Assert.AreEqual("0.3333333333", derived.Evaluate("1/3").PrimaryDisplay);
+        Assert.AreEqual(MathValue.One, derived.Evaluate("sin(90)").Value);
+        Assert.AreEqual("2A", derived.Evaluate("42").FormatResult().HexDisplay);
+    }
+
+    [TestMethod]
+    public void WithResultFormatRejectsNullAndInvalidTransformationsAndPropagatesCallbackErrors()
+    {
+        var engine = new CalculatorEngine();
+        var originalOptions = engine.Options;
+        Assert.AreEqual("configure", Assert.ThrowsExactly<ArgumentNullException>(() =>
+            engine.WithResultFormat(null!)).ParamName);
+        Assert.AreEqual("configure", Assert.ThrowsExactly<ArgumentException>(() =>
+            engine.WithResultFormat(_ => null!)).ParamName);
+        Assert.AreEqual(nameof(ResultFormatOptions.SignificantDigits),
+            Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
+                engine.WithResultFormat(format => format with { SignificantDigits = 0 })).ParamName);
+        var failure = new InvalidOperationException("Configuration failed.");
+        Assert.AreSame(failure, Assert.ThrowsExactly<InvalidOperationException>(() =>
+            engine.WithResultFormat(_ => throw failure)));
+        Assert.AreSame(originalOptions, engine.Options);
+    }
+
+    [TestMethod]
+    public void MachineInputPresetUsesRawInvariantInputWithoutChangingOtherDefaults()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            foreach (var culture in new[] { "de-DE", "en-US" })
+            {
+                CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
+                var options = CalculatorOptions.ForMachineInput();
+                Assert.AreSame(CultureInfo.InvariantCulture, options.Culture);
+                Assert.IsNull(options.Normalization);
+                Assert.AreEqual(CalculatorOptions.ForCulture(CultureInfo.InvariantCulture) with
+                {
+                    Normalization = null
+                }, options);
+                var engine = new CalculatorEngine(options);
+                Assert.AreEqual(new MathValue(4m), engine.Evaluate("1.5 + 2.5").Value);
+                Assert.AreEqual("0.125", engine.Evaluate("1/8").PrimaryDisplay);
+                Assert.IsFalse(engine.TryEvaluate("2×3", out _, out var diagnostic));
+                Assert.IsNotNull(diagnostic);
+                Assert.IsFalse(engine.TryEvaluate("2 + 3 =", out _, out diagnostic));
+                Assert.IsNotNull(diagnostic);
+                Assert.AreEqual(MathValue.FromFraction(1, 3), engine.Evaluate("1/3").Value);
+                var localized = engine.Evaluate("1/8").FormatResult(
+                    culture: CultureInfo.GetCultureInfo("de-DE"));
+                Assert.AreEqual("0,125", localized.PrimaryDisplay);
+            }
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [TestMethod]
     public void ExplicitCultureFactorySuppliesItsCultureToTheTransformationOnce()
     {
         var culture = CultureInfo.GetCultureInfo("fr-FR");

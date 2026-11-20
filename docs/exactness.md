@@ -60,8 +60,8 @@ else
 }
 ```
 
-For a fraction button, use `result.HasExactFraction` or the presence of
-`formatted.FractionRepresentation`. For `1/3` the button can show `1/3`; for `ln(1)`
+For a fraction button, use `result.HasExactFraction` or `formatted.HasExactFraction`.
+`formatted.ExactFractionDisplay` holds the text. For `1/3` the button can show `1/3`; for `ln(1)`
 it is unavailable, even though its decimal display needs no rounding.
 
 Double results display at most 15 significant digits by default. In radian mode,
@@ -171,7 +171,7 @@ exactness does not modify the static property.
 ## "I want to keep this information in history or transfer it"
 
 Keep the `EvaluationResult` or `MathValue` when continuing calculations; keep a
-`FormattedCalculation` when caching its prepared presentations. Its `Value.Exactness`
+`FormattedResult` when caching its prepared presentations. Its `Value.Exactness`
 retains the same status, while `IsDisplayRounded` describes that particular display.
 
 `MathValue.Serialize()` / `Deserialize()` preserve the `Exactness` field alongside the

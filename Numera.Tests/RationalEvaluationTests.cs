@@ -193,7 +193,7 @@ public sealed class RationalEvaluationTests
         var result = engine.Evaluate(expression);
         Assert.AreEqual(CalculationExactness.Unverified, result.Exactness);
         Assert.IsFalse(result.HasExactFraction);
-        Assert.IsNull(result.FormatResult().FractionRepresentation);
+        Assert.IsNull(result.FormatResult().ExactFractionDisplay);
         Assert.AreEqual(CalculationExactness.Unverified, (result + 0).Exactness);
         Assert.AreEqual(CalculationExactness.Unverified, engine.Evaluate("ans", result.Context).Exactness);
     }

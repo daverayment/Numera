@@ -170,9 +170,9 @@ public sealed class MathValueFormattingTests
         Assert.AreEqual(intResult, formattedInt.Value);
         Assert.AreEqual("1,092", formattedInt.PrimaryDisplay);
         Assert.AreEqual("1092", formattedInt.MachineReadable);
-        Assert.AreEqual("0x444", formattedInt.HexRepresentation);
-        Assert.AreEqual("0b10001000100", formattedInt.BinaryRepresentation);
-        Assert.AreEqual("0o2104", formattedInt.OctalRepresentation);
+        Assert.AreEqual("0x444", formattedInt.HexDisplay);
+        Assert.AreEqual("0b10001000100", formattedInt.BinaryDisplay);
+        Assert.AreEqual("0o2104", formattedInt.OctalDisplay);
 
         var decResult = Calculator.Evaluate("194.40");
         var formattedDec = decResult.FormatResult(culture: CultureInfo.InvariantCulture);
@@ -180,9 +180,9 @@ public sealed class MathValueFormattingTests
         Assert.AreEqual(decResult, formattedDec.Value);
         Assert.AreEqual("194.40", formattedDec.PrimaryDisplay);
         Assert.AreEqual("194.40", formattedDec.MachineReadable);
-        Assert.IsNull(formattedDec.HexRepresentation);
-        Assert.IsNull(formattedDec.BinaryRepresentation);
-        Assert.IsNull(formattedDec.OctalRepresentation);
+        Assert.IsNull(formattedDec.HexDisplay);
+        Assert.IsNull(formattedDec.BinaryDisplay);
+        Assert.IsNull(formattedDec.OctalDisplay);
     }
 
     [TestMethod]
@@ -237,7 +237,7 @@ public sealed class MathValueFormattingTests
             {
                 SignificantDigits = 5,
                 MaxFixedDigits = 4,
-                Style = ExpressionFormatStyle.NormalizedAscii
+                ScientificStyle = ExpressionFormatStyle.NormalizedAscii
             }
         });
         (MathValue Value, string Expected)[] cases =

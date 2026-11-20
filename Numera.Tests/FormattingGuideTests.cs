@@ -73,7 +73,7 @@ public sealed class FormattingGuideTests
 
         Assert.AreEqual("1.002,5", shown.PrimaryDisplay);
         Assert.AreEqual("1002.5", shown.MachineReadable);
-        Assert.IsNull(shown.HexRepresentation);
+        Assert.IsNull(shown.HexDisplay);
     }
 
     [TestMethod]
@@ -107,9 +107,9 @@ public sealed class FormattingGuideTests
         var shown = engine.FormatResult(engine.Evaluate("1100"));
 
         Assert.AreEqual("1100", shown.MachineReadable);
-        Assert.AreEqual("0x44C", shown.HexRepresentation);
-        Assert.AreEqual("0b10001001100", shown.BinaryRepresentation);
-        Assert.AreEqual("0o2114", shown.OctalRepresentation);
+        Assert.AreEqual("0x44C", shown.HexDisplay);
+        Assert.AreEqual("0b10001001100", shown.BinaryDisplay);
+        Assert.AreEqual("0o2114", shown.OctalDisplay);
     }
 
     [TestMethod]
@@ -304,7 +304,7 @@ public sealed class FormattingGuideTests
         var overridden = result.FormatResult(moreDigits, CultureInfo.InvariantCulture);
         Assert.AreEqual("12.345", overridden.PrimaryDisplay);
         Assert.AreEqual("12.345", overridden.MachineReadable);
-        Assert.AreEqual("2469/200", overridden.FractionRepresentation);
+        Assert.AreEqual("2469/200", overridden.ExactFractionDisplay);
         Assert.AreSame(result.AssignedVariables, overridden.AssignedVariables);
 
         var receiving = new CalculatorEngine(new CalculatorOptions
@@ -323,9 +323,10 @@ public sealed class FormattingGuideTests
         Assert.AreSame(options, result.FormatOptions);
 
         var integer = origin.Evaluate("n=42");
-        Assert.AreEqual("2A", integer.FormatResult(prefixRadixOutput: false).HexRepresentation);
-        Assert.AreEqual("101010", receiving.FormatResult(integer, prefixRadixOutput: false).BinaryRepresentation);
-        Assert.AreEqual("52", receiving.FormatResult(integer.Value, prefixRadixOutput: false).OctalRepresentation);
+        var unprefixed = options with { IncludeRadixPrefixes = false };
+        Assert.AreEqual("2A", integer.FormatResult(unprefixed).HexDisplay);
+        Assert.AreEqual("101010", receiving.FormatResult(integer, unprefixed).BinaryDisplay);
+        Assert.AreEqual("52", receiving.FormatResult(integer.Value, unprefixed).OctalDisplay);
     }
 
     [TestMethod]
@@ -429,8 +430,8 @@ public sealed class FormattingGuideTests
                 Assert.AreEqual(expected, formatted.PrimaryDisplay);
                 Assert.AreEqual(expected, raw.PrimaryDisplay);
                 Assert.AreEqual("12.345", formatted.MachineReadable);
-                Assert.AreEqual("2469/200", formatted.FractionRepresentation);
-                Assert.AreEqual(formatted.FractionRepresentation, raw.FractionRepresentation);
+                Assert.AreEqual("2469/200", formatted.ExactFractionDisplay);
+                Assert.AreEqual(formatted.ExactFractionDisplay, raw.ExactFractionDisplay);
                 Assert.AreSame(result.AssignedVariables, formatted.AssignedVariables);
                 Assert.IsNull(raw.AssignedVariables);
                 Assert.AreEqual(CalculatorEngine.ForCurrentCulture().FormatResult(result, options, culture), formatted);
@@ -453,16 +454,17 @@ public sealed class FormattingGuideTests
     public void FacadeResultFormattingForwardsRadixPrefixChoice(bool prefixes, string hex, string binary, string octal)
     {
         var result = Calculator.Evaluate("n=42");
-        var formatted = Calculator.FormatResult(result, prefixRadixOutput: prefixes);
-        var raw = Calculator.FormatResult(result.Value, prefixRadixOutput: prefixes);
+        var options = new ResultFormatOptions { IncludeRadixPrefixes = prefixes };
+        var formatted = Calculator.FormatResult(result, options);
+        var raw = Calculator.FormatResult(result.Value, options);
 
         foreach (var card in new[] { formatted, raw })
         {
-            Assert.AreEqual(hex, card.HexRepresentation);
-            Assert.AreEqual(binary, card.BinaryRepresentation);
-            Assert.AreEqual(octal, card.OctalRepresentation);
+            Assert.AreEqual(hex, card.HexDisplay);
+            Assert.AreEqual(binary, card.BinaryDisplay);
+            Assert.AreEqual(octal, card.OctalDisplay);
             Assert.AreEqual("42", card.MachineReadable);
-            Assert.AreEqual("42", card.FractionRepresentation);
+            Assert.AreEqual("42", card.ExactFractionDisplay);
         }
 
         Assert.AreSame(result.AssignedVariables, formatted.AssignedVariables);
@@ -528,7 +530,7 @@ public sealed class FormattingGuideTests
     public void SnapshotConstructionPreservesSuppliedTextAndAssignmentMetadata()
     {
         VariableCollection assignments = [new Variable("x", MathValue.FromFraction(1, 3), "1/3")];
-        var supplied = new FormattedCalculation(new MathValue(42), "supplied display", "42",
+        var supplied = new FormattedResult(new MathValue(42), "supplied display", "42",
             assignedVariables: assignments);
 
         Assert.AreSame(assignments, supplied.AssignedVariables);
@@ -536,6 +538,33 @@ public sealed class FormattingGuideTests
         Assert.AreEqual("42", supplied.MachineReadable);
         Assert.AreEqual(MathValue.FromFraction(1, 3), supplied.AssignedVariables!["x"].Value);
         Assert.AreEqual("1/3", supplied.AssignedVariables["x"].Definition);
+    }
+
+    [TestMethod]
+    public void RadixPrefixDefaultsFollowCapturedAndReceivingPoliciesWithoutChangingTheValue()
+    {
+        Assert.IsTrue(ResultFormatOptions.Default.IncludeRadixPrefixes);
+        var origin = new CalculatorEngine(CalculatorOptions.ForMachineInput())
+            .WithResultFormat(format => format with { IncludeRadixPrefixes = false });
+        var receiving = new CalculatorEngine(CalculatorOptions.ForMachineInput());
+        var result = origin.Evaluate("n=42");
+        var stored = result.Value.Serialize();
+
+        Assert.AreEqual("2A", result.FormatResult().HexDisplay);
+        Assert.AreEqual("101010", origin.FormatResult(result).BinaryDisplay);
+        Assert.AreEqual("52", origin.FormatResult(result.Value).OctalDisplay);
+        Assert.AreEqual("0x2A", receiving.FormatResult(result).HexDisplay);
+        Assert.AreEqual("0b101010", receiving.FormatResult(result.Value).BinaryDisplay);
+        Assert.AreEqual("0o52", Calculator.FormatResult(result).OctalDisplay);
+        Assert.AreEqual("0x2A", Calculator.FormatResult(result.Value).HexDisplay);
+        Assert.AreEqual("0x2A", result.FormatResult(ResultFormatOptions.Default).HexDisplay);
+        Assert.AreEqual("2A", receiving.FormatResult(result, result.FormatOptions).HexDisplay);
+        Assert.AreEqual("2A", Calculator.FormatResult(result, result.FormatOptions).HexDisplay);
+        Assert.AreSame(result.AssignedVariables, receiving.FormatResult(result).AssignedVariables);
+        Assert.AreEqual("42", result.FormatResult().PrimaryDisplay);
+        Assert.AreEqual("42", result.FormatResult().MachineReadable);
+        Assert.AreEqual("42", result.FormatResult().ExactFractionDisplay);
+        Assert.AreEqual(stored, result.Value.Serialize());
     }
 
     [TestMethod]
